@@ -29,7 +29,12 @@ const source = computed(() => {
   >
     <ToggleSwitch
       :model-value="trip.enabled"
-      :label="`${trip.enabled ? 'Disable' : 'Enable'} ${trip.title} on ${trip.date}`"
+      :disabled="!!trip.disabledReason"
+      :label="
+        trip.disabledReason
+          ? `${trip.title} on ${trip.date} is off: ${trip.disabledReason}`
+          : `${trip.enabled ? 'Disable' : 'Enable'} ${trip.title} on ${trip.date}`
+      "
       @update:model-value="emit('toggle', $event)"
     />
     <div class="trip-main">
@@ -42,7 +47,7 @@ const source = computed(() => {
       </div>
       <div class="trip-sub small muted">
         <span>Leave {{ trip.departLocal }} · until {{ trip.endLocal }}</span>
-        <span>· {{ trip.placeName || trip.destination }}</span>
+        <span v-if="trip.placeName || trip.destination">· {{ trip.placeName || trip.destination }}</span>
         <span>· {{ source }}</span>
         <span v-if="trip.distanceSource === 'manual'" class="pill">Manual distance</span>
         <span v-if="trip.overridden.length" class="pill" title="Edited for this date">Edited</span>
@@ -51,8 +56,14 @@ const source = computed(() => {
           >Old route</span
         >
         <span v-if="trip.state === 'in_progress'" class="pill tone-info">On the road</span>
+        <span v-if="trip.disabledReason" class="pill" data-testid="disabled-reason">{{
+          trip.disabledReason
+        }}</span>
       </div>
-      <div v-if="trip.routeError" class="small text-warn">{{ trip.routeError }}</div>
+      <div v-if="trip.disabledReason" class="small muted">
+        Off until it has a route: edit to add a destination or a distance.
+      </div>
+      <div v-else-if="trip.routeError" class="small text-warn">{{ trip.routeError }}</div>
       <div class="row trip-actions">
         <button v-if="trip.needsReview" class="btn sm" type="button" @click="emit('review')">
           Confirm car trip

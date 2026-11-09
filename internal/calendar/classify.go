@@ -9,9 +9,8 @@ import (
 
 // Reasons an event is not a car trip.
 const (
-	ReasonNoLocation = "No location"
-	ReasonOnline     = "Online meeting"
-	ReasonAtHome     = "At home"
+	ReasonOnline = "Online meeting"
+	ReasonAtHome = "At home"
 )
 
 // Classification says whether a calendar event is a car trip.
@@ -26,13 +25,14 @@ var onlineMarkers = []string{
 	"microsoft teams", "google meet", "skype", "online",
 }
 
-// Classify applies the trip rules: a physical location other than home is a
-// trip. Saved places and address-like locations are clear; anything else is
-// counted but marked for review.
+// Classify applies the trip rules: online meetings and events at home are
+// not trips. An event without a location is a trip that stays disabled until
+// it gets one (it has no route). Saved places and address-like locations are
+// clear; anything else is counted but marked for review.
 func Classify(location, home string, places []model.Place) Classification {
 	loc := normalize(location)
 	if loc == "" {
-		return Classification{Reason: ReasonNoLocation}
+		return Classification{Trip: true}
 	}
 	for _, m := range onlineMarkers {
 		if strings.Contains(loc, m) {

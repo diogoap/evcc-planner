@@ -97,7 +97,7 @@ func TestClassify(t *testing.T) {
 		review   bool
 		reason   string
 	}{
-		{"", false, false, ReasonNoLocation},
+		{"", true, false, ""},
 		{"https://meet.google.com/abc-def", false, false, ReasonOnline},
 		{"Microsoft Teams Meeting", false, false, ReasonOnline},
 		{"Damrak 1, Amsterdam, Netherlands", false, false, ReasonAtHome},

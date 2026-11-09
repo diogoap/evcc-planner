@@ -96,6 +96,16 @@ test('confirm an unclear calendar trip', async ({ page }) => {
   await expect(page.getByText('Calendar events not counted as trips (1)')).toBeVisible()
 })
 
+test('calendar events without a location are shown disabled', async ({ page }) => {
+  await page.goto('/trips#day-2026-11-13')
+  const friday = page.locator('#day-2026-11-13')
+  const piano = friday.locator('li', { hasText: 'Piano lesson' })
+  await expect(piano.getByRole('switch')).toHaveAttribute('aria-checked', 'false')
+  await expect(piano.getByRole('switch')).toBeDisabled()
+  await expect(piano.getByTestId('disabled-reason')).toHaveText('No location')
+  await expect(page.getByText('Some trips have no distance')).toHaveCount(0)
+})
+
 test('settings persist and change the plan', async ({ page }) => {
   await page.goto('/settings')
   await expect(page.getByTestId('home-address')).toHaveValue('Demo Home 1, Demo Town')

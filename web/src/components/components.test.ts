@@ -124,6 +124,30 @@ describe('TripRow', () => {
   })
 })
 
+describe('TripRow without a route', () => {
+  it('locks the switch and explains why', () => {
+    const w = mount(TripRow, {
+      props: {
+        trip: trip({
+          source: 'calendar',
+          sourceLabel: 'Kids',
+          destination: '',
+          placeName: undefined,
+          enabled: false,
+          distanceKm: null,
+          energyKWh: null,
+          disabledReason: 'No location',
+        }),
+      },
+    })
+    const toggle = w.get('[role=switch]')
+    expect(toggle.attributes('disabled')).toBeDefined()
+    expect(toggle.attributes('aria-checked')).toBe('false')
+    expect(w.get('[data-testid=disabled-reason]').text()).toBe('No location')
+    expect(w.text()).toContain('edit to add a destination')
+  })
+})
+
 describe('DaysTable', () => {
   it('lists days and emits the selected date', async () => {
     const days: Day[] = [

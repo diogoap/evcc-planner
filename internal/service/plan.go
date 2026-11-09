@@ -68,6 +68,7 @@ type TripView struct {
 	RouteProvider      string    `json:"routeProvider,omitempty"`
 	RouteStale         bool      `json:"routeStale,omitempty"`
 	RouteError         string    `json:"routeError,omitempty"`
+	DisabledReason     string    `json:"disabledReason,omitempty"` // set when the distance is unknown
 	EnergyKWh          *float64  `json:"energyKWh"`
 	State              string    `json:"state"` // upcoming, in_progress, done
 	BlockIndex         *int      `json:"blockIndex,omitempty"`
@@ -187,14 +188,13 @@ func (s *Service) Plan(ctx context.Context) (*PlanView, error) {
 	resolved := s.resolveRoutes(ctx, list, settings)
 	var input []planner.Trip
 	for i, t := range list {
-		if !t.Enabled {
+		// Trips without a known distance are shown disabled and not planned.
+		if !t.Enabled || resolved[i].distanceKm == nil {
 			continue
 		}
-		km := 0.0
-		if resolved[i].distanceKm != nil {
-			km = *resolved[i].distanceKm
-		}
-		input = append(input, planner.Trip{Key: t.Key, DepartAt: resolved[i].departAt, ReturnAt: resolved[i].returnAt, DistanceKm: km})
+		input = append(input, planner.Trip{
+			Key: t.Key, DepartAt: resolved[i].departAt, ReturnAt: resolved[i].returnAt, DistanceKm: *resolved[i].distanceKm,
+		})
 	}
 
 	socIn, socView := s.currentSoC()
@@ -236,27 +236,27 @@ func (s *Service) Plan(ctx context.Context) (*PlanView, error) {
 		view.Next = &view.Blocks[result.Next]
 	}
 
-	unknownRoutes := 0
 	for i, t := range list {
 		r := resolved[i]
+		blocked := r.distanceKm == nil
 		tv := TripView{
 			Key: t.Key, Source: string(t.Source), SourceLabel: t.SourceLabel, SourceID: t.SourceID,
 			Title: t.Title, Destination: t.Destination, Address: t.Address, PlaceName: t.PlaceName,
 			Date: localtime.Date(t.Start, s.loc()), ArriveAt: t.Start, EndAt: t.End,
 			ArriveLocal: localtime.Clock(t.Start, s.loc()), EndLocal: localtime.Clock(t.End, s.loc()),
 			DepartAt: r.departAt, ReturnAt: r.returnAt, DepartLocal: localtime.Clock(r.departAt, s.loc()),
-			Enabled: t.Enabled, NeedsReview: t.NeedsReview, Overridden: t.Overridden,
+			Enabled: t.Enabled && !blocked, NeedsReview: t.NeedsReview, Overridden: t.Overridden,
 			DistanceOverrideKm: t.DistanceOverrideKm, DistanceSource: r.source, RouteProvider: r.provider,
 			RouteStale: r.stale, RouteError: r.err, State: "upcoming",
 		}
 		if tv.Overridden == nil {
 			tv.Overridden = []string{}
 		}
-		if r.distanceKm != nil {
+		if blocked {
+			tv.DisabledReason = r.err
+		} else {
 			tv.DistanceKm = ptr(round(*r.distanceKm, 2))
 			tv.EnergyKWh = ptr(round(*r.distanceKm*settings.ConsumptionKWhPer100Km/100, 3))
-		} else if t.Enabled {
-			unknownRoutes++
 		}
 		switch {
 		case !r.returnAt.After(now):
@@ -281,8 +281,6 @@ func (s *Service) Plan(ctx context.Context) (*PlanView, error) {
 	view.Days = s.days(from, view, result)
 	if view.HomeMissing {
 		view.Warnings = append(view.Warnings, "Set your home address in Settings to calculate routes.")
-	} else if unknownRoutes > 0 {
-		view.Warnings = append(view.Warnings, "Some trips have no distance yet; their energy is not counted.")
 	}
 	return view, nil
 }
@@ -411,7 +409,7 @@ func (s *Service) resolveTrip(ctx context.Context, t trips.Trip, settings model.
 		estimate()
 		return r
 	case t.Address == "":
-		r.err = "No destination"
+		r.err = "No location"
 		estimate()
 		return r
 	}

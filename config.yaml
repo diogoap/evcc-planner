@@ -18,7 +18,7 @@ evcc:
   url: http://127.0.0.1:7070   # set the real address with EVCC_URL
   loadpoint: 1             # EVCC loadpoint index, starting at 1
   vehicle: ""              # EVCC vehicle name; empty = the loadpoint's or only vehicle
-  poll_interval: 30s
+  poll_interval: 60s
   timeout: 10s
 
 calendar:

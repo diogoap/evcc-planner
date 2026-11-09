@@ -111,11 +111,13 @@ type plan struct {
 		NeedsReview bool     `json:"needsReview"`
 		Overridden  []string `json:"overridden"`
 		DistanceKm  *float64 `json:"distanceKm"`
+		Disabled    string   `json:"disabledReason"`
 	} `json:"trips"`
 	Ignored []struct {
 		Reason string `json:"reason"`
 	} `json:"ignored"`
-	Next *struct {
+	Warnings []string `json:"warnings"`
+	Next     *struct {
 		FirstTitle string  `json:"firstTitle"`
 		TargetSoC  int     `json:"targetSoc"`
 		Status     string  `json:"status"`
@@ -404,5 +406,52 @@ func TestEmptyTitleFallsBackToSource(t *testing.T) {
 	i, _ := p.trip(key)
 	if p.Trips[i].Title != "School pickup" || len(p.Trips[i].Overridden) != 0 {
 		t.Fatalf("cleared title should restore the schedule title: %+v", p.Trips[i])
+	}
+}
+
+func TestTripsWithoutRouteAreDisabled(t *testing.T) {
+	ta := newTestApp(t, "")
+	p := ta.plan()
+	var key string
+	for _, tr := range p.Trips {
+		if tr.Title == "Piano lesson" {
+			key = tr.Key
+		}
+	}
+	i, ok := p.trip(key)
+	if !ok {
+		t.Fatal("calendar event without location should be listed as a trip")
+	}
+	if tr := p.Trips[i]; tr.Enabled || tr.Disabled != "No location" || tr.DistanceKm != nil {
+		t.Fatalf("no-location trip = %+v, want disabled with reason", tr)
+	}
+	if fri := p.Days[4]; fri.TripCount != 2 || fri.EnergyKWh != 4.32 {
+		t.Errorf("Friday should count only the school runs: %+v", fri)
+	}
+	if len(p.Warnings) != 0 {
+		t.Errorf("expected no warnings, got %v", p.Warnings)
+	}
+
+	// Adding a destination gives it a route and enables it.
+	ta.json("PATCH", "/api/trips/"+key, map[string]any{"destination": "School"}, http.StatusOK, nil)
+	p = ta.plan()
+	i, _ = p.trip(key)
+	if tr := p.Trips[i]; !tr.Enabled || tr.Disabled != "" || tr.DistanceKm == nil || *tr.DistanceKm != 12 {
+		t.Fatalf("trip with destination = %+v", tr)
+	}
+
+	// Without a home address no route can be calculated: everything is off.
+	var s map[string]any
+	ta.json("GET", "/api/settings", nil, http.StatusOK, &s)
+	s["homeAddress"] = ""
+	ta.json("PUT", "/api/settings", s, http.StatusOK, nil)
+	p = ta.plan()
+	for _, tr := range p.Trips {
+		if tr.Enabled || tr.Disabled != "Home address not set" {
+			t.Fatalf("trip without home = %+v", tr)
+		}
+	}
+	if p.Next != nil || len(p.Warnings) != 1 {
+		t.Errorf("want no departure and only the home warning: next=%+v warnings=%v", p.Next, p.Warnings)
 	}
 }

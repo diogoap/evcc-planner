@@ -57,6 +57,8 @@ export interface Trip {
   routeProvider?: string
   routeStale?: boolean
   routeError?: string
+  /** Set when the distance is unknown (no location or no route); the trip is off. */
+  disabledReason?: string
   energyKWh: number | null
   state: 'upcoming' | 'in_progress' | 'done'
   blockIndex?: number

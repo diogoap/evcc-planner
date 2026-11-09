@@ -64,10 +64,11 @@ seed the vehicle and buffer defaults.
    addresses with commas. Names are read from the feeds; resetting a Google
    secret address keeps local trip edits.
 
-The planner syncs hourly (and on **Sync calendar now**). Timed events with a
-physical location other than home become trips; all-day events, online meetings,
-and events without a location are listed as "not counted". Unclear locations
-(no address and not a saved place) count toward demand and show **Needs review**.
+The planner syncs hourly (and on **Sync calendar now**). Timed events become
+trips unless they are online meetings or at home (listed as "not counted");
+all-day events are skipped. Events without a location are shown disabled until
+they get one. Unclear locations (no address and not a saved place) count toward
+demand and show **Needs review**.
 
 ### Google Routes API
 
@@ -109,7 +110,9 @@ to `main` deploy automatically, run `make verify` before pushing.
   buffer. The return leg leaves at the trip's end time. Everything is scheduled
   in Europe/Amsterdam, including across daylight-saving changes.
 - **Energy** = round-trip km × consumption. Trips that overlap merge into one
-  away period.
+  away period. A trip whose distance cannot be determined (no location, no
+  route, or no home address) is shown disabled with the reason until it gets a
+  destination or a manual distance.
 - **The car is assumed plugged in whenever it is home.** Each home period
   charges at wall power × efficiency, minus a charging time buffer.
 - **Targets:** each departure needs its own energy plus the arrival reserve, and
