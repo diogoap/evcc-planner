@@ -1,0 +1,30 @@
+# Local Docker run of the production image (used by `make docker-smoke`).
+# Daily development does not need Docker: use `make dev`.
+#   docker compose -f compose.dev.yaml up --build
+# Demo data by default; EVCC_PLANNER_DEMO=false uses your .env.
+
+services:
+  evcc-planner:
+    build:
+      context: .
+      secrets: [build_ca]
+      args:
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org/}
+    image: evcc-planner:dev
+    ports:
+      - "127.0.0.1:${DEV_PORT:-7203}:7201"
+    environment:
+      EVCC_PLANNER_DEMO: ${EVCC_PLANNER_DEMO:-true}
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - evcc-planner-dev-data:/opt/evcc-planner/data
+
+volumes:
+  evcc-planner-dev-data:
+
+secrets:
+  # Optional extra CA bundle for builds behind TLS inspection (see Dockerfile).
+  build_ca:
+    file: ${BUILD_CA_FILE:-/dev/null}

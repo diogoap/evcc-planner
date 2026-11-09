@@ -1,0 +1,11 @@
+# Optional: copy to config.local.yaml (ignored by Git) to override any value
+# in config.yaml without committing it. Lists replace the whole list.
+# Deployment addresses and secrets belong in environment variables (.env).
+
+defaults:
+  consumption_kwh_per_100km: 20   # e.g. a winter estimate
+
+# Saved places seeded once on first start (then managed in Settings).
+places:
+  - name: School
+    address: "School Street 2, 1234 AB Town"

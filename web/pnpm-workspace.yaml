@@ -1,0 +1,2 @@
+# Only install package versions that have been public for at least three days.
+minimumReleaseAge: 4320

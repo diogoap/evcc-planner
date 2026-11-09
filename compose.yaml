@@ -1,0 +1,32 @@
+# Production service; the image is built from this repository.
+#
+# Configuration comes from these environment variables (passed through by
+# name, never committed):
+#   EVCC_URL                  EVCC address, e.g. http://192.0.2.10:7070
+#   GOOGLE_CALENDAR_ICAL_URL  one or more secret iCal addresses, comma separated
+#   GOOGLE_MAPS_API_KEY       Google Routes API key
+# Everything personal is edited in the UI and stored in the data folder, a host
+# folder mounted at the same path in the container (SQLite; back it up from
+# the host).
+#
+# The container runs as a non-root user (uid 65532) and cannot take ownership
+# of the folder itself, so create it once, owned by that user:
+#   sudo install -d -o 65532 -g 65532 /opt/evcc-planner/data
+# (same as: sudo mkdir -p /opt/evcc-planner/data && sudo chown 65532:65532 /opt/evcc-planner/data)
+
+services:
+  evcc-planner:
+    build:
+      context: .
+    pull_policy: build # rebuild from source on every deploy
+    image: evcc-planner:latest
+    container_name: evcc-planner
+    restart: unless-stopped
+    ports:
+      - "7201:7201"
+    environment:
+      - EVCC_URL
+      - GOOGLE_CALENDAR_ICAL_URL
+      - GOOGLE_MAPS_API_KEY
+    volumes:
+      - /opt/evcc-planner/data:/opt/evcc-planner/data

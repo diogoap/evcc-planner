@@ -1,0 +1,48 @@
+# EVCC Trip Planner — system configuration (tracked in Git).
+#
+# Deployment-specific values and secrets come from environment variables (or
+# an ignored .env file locally): EVCC_URL, GOOGLE_CALENDAR_ICAL_URL,
+# GOOGLE_MAPS_API_KEY. Also: EVCC_PLANNER_LISTEN, EVCC_PLANNER_DATA_DIR,
+# EVCC_PLANNER_WEB_DIR, EVCC_PLANNER_DEMO. Optional overrides of this file go
+# in config.local.yaml (ignored). Personal data is edited in the UI.
+
+server:
+  listen: 127.0.0.1:7201   # Docker sets 0.0.0.0:7201
+  web_dir: web/dist
+
+timezone: Europe/Amsterdam
+data_dir: data
+
+evcc:
+  mode: live               # live | stub
+  url: http://127.0.0.1:7070   # set the real address with EVCC_URL
+  loadpoint: 1             # EVCC loadpoint index, starting at 1
+  vehicle: ""              # EVCC vehicle name; empty = the loadpoint's or only vehicle
+  poll_interval: 30s
+  timeout: 10s
+
+calendar:
+  mode: ical               # ical | stub
+  sync_interval: 1h
+  # Environment variable with one or more secret iCal addresses, separated by
+  # commas (Google Calendar > Settings > calendar > "Secret address in iCal
+  # format"). Calendar names are read from the feeds.
+  url_env: GOOGLE_CALENDAR_ICAL_URL
+
+routes:
+  mode: google             # google | stub (google without a key falls back to stub)
+  api_key_env: GOOGLE_MAPS_API_KEY
+  traffic_aware: true      # Compute Routes Pro; results cached per weekly time slot
+  cache_ttl: 168h
+
+# Bootstrap planning defaults. Values saved in Settings take precedence; the
+# home address is only set in Settings.
+defaults:
+  usable_capacity_kwh: 59
+  charge_power_kw: 3.68
+  consumption_kwh_per_100km: 18
+  arrival_reserve_pct: 15
+  charging_efficiency_pct: 90
+  departure_buffer_min: 15
+  charge_buffer_min: 30
+  default_stay_min: 15

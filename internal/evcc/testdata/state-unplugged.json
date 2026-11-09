@@ -1,0 +1,91 @@
+{
+  "version": "0.319.0",
+  "siteTitle": "",
+  "currency": "EUR",
+  "tariffGrid": 0.799,
+  "pvPower": 106.1,
+  "homePower": 417.1,
+  "loadpoints": [
+    {
+      "title": "Alfen Eve Pro",
+      "mode": "smart",
+      "connected": false,
+      "charging": false,
+      "chargePower": 0,
+      "vehicleName": "db:3",
+      "vehicleTitle": "Nissan Leaf",
+      "vehicleSoc": 0,
+      "effectiveLimitSoc": 80,
+      "planActive": false,
+      "effectivePlanSoc": 0,
+      "effectivePlanTime": null,
+      "planProjectedStart": null,
+      "planProjectedEnd": null,
+      "limitSoc": 0,
+      "minSoc": 0,
+      "phasesActive": 3
+    }
+  ],
+  "vehicles": {
+    "db:3": {
+      "title": "Nissan Leaf",
+      "icon": "car",
+      "capacity": 62,
+      "mode": "smart",
+      "alwaysCharge": "off",
+      "minSoc": 10,
+      "limitSoc": 80,
+      "minCurrent": 6,
+      "maxCurrent": 16,
+      "repeatingPlans": null,
+      "planStrategy": {
+        "continuous": false,
+        "precondition": 0
+      }
+    }
+  },
+  "forecast": {
+    "grid": [
+      [
+        1794178800,
+        1794179700,
+        0.4334
+      ],
+      [
+        1794179700,
+        1794180600,
+        0.4222
+      ],
+      [
+        1794180600,
+        1794181500,
+        0.4055
+      ],
+      [
+        1794181500,
+        1794182400,
+        0.3935
+      ],
+      [
+        1794182400,
+        1794183300,
+        0.4149
+      ],
+      [
+        1794183300,
+        1794184200,
+        0.4069
+      ],
+      [
+        1794184200,
+        1794185100,
+        0.411
+      ],
+      [
+        1794185100,
+        1794186000,
+        0.4066
+      ]
+    ]
+  }
+}

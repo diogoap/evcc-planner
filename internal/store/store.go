@@ -1,0 +1,803 @@
+// Package store persists personal planning data in SQLite.
+package store
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	_ "modernc.org/sqlite" // registers the "sqlite" driver
+
+	"github.com/diogoap/evcc-planner/internal/model"
+)
+
+// ErrNotFound is returned when a record does not exist.
+var ErrNotFound = errors.New("not found")
+
+// Store wraps the SQLite database.
+type Store struct {
+	db *sql.DB
+}
+
+var migrations = []string{
+	`CREATE TABLE settings (
+		key TEXT PRIMARY KEY,
+		value TEXT NOT NULL,
+		updated_at TEXT NOT NULL
+	);
+	CREATE TABLE places (
+		id INTEGER PRIMARY KEY,
+		name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+		address TEXT NOT NULL
+	);
+	CREATE TABLE recurring_templates (
+		id INTEGER PRIMARY KEY,
+		title TEXT NOT NULL,
+		destination TEXT NOT NULL,
+		weekdays TEXT NOT NULL,
+		start_time TEXT NOT NULL,
+		end_time TEXT NOT NULL,
+		enabled INTEGER NOT NULL,
+		exceptions TEXT NOT NULL DEFAULT '[]'
+	);
+	CREATE TABLE manual_trips (
+		id INTEGER PRIMARY KEY,
+		title TEXT NOT NULL,
+		destination TEXT NOT NULL,
+		start_at TEXT NOT NULL,
+		end_at TEXT NOT NULL,
+		enabled INTEGER NOT NULL,
+		distance_override_km REAL
+	);
+	CREATE INDEX manual_trips_start ON manual_trips(start_at);
+	CREATE TABLE trip_overrides (
+		trip_key TEXT PRIMARY KEY,
+		data TEXT NOT NULL,
+		updated_at TEXT NOT NULL
+	);
+	CREATE TABLE calendar_events (
+		key TEXT PRIMARY KEY,
+		calendar TEXT NOT NULL,
+		uid TEXT NOT NULL,
+		title TEXT NOT NULL,
+		location TEXT NOT NULL,
+		start_at TEXT NOT NULL,
+		end_at TEXT NOT NULL
+	);
+	CREATE INDEX calendar_events_start ON calendar_events(start_at);
+	CREATE TABLE calendar_sync (
+		calendar TEXT PRIMARY KEY,
+		last_attempt_at TEXT,
+		last_success_at TEXT,
+		last_error TEXT NOT NULL DEFAULT '',
+		event_count INTEGER NOT NULL DEFAULT 0
+	);
+	CREATE TABLE route_cache (
+		origin TEXT NOT NULL,
+		destination TEXT NOT NULL,
+		slot TEXT NOT NULL,
+		distance_m INTEGER NOT NULL,
+		duration_s INTEGER NOT NULL,
+		provider TEXT NOT NULL,
+		fetched_at TEXT NOT NULL,
+		PRIMARY KEY (origin, destination, slot)
+	);
+	CREATE TABLE vehicle_soc (
+		id INTEGER PRIMARY KEY CHECK (id = 1),
+		soc REAL NOT NULL,
+		observed_at TEXT NOT NULL,
+		source TEXT NOT NULL
+	);
+	CREATE TABLE plan_writes (
+		id INTEGER PRIMARY KEY,
+		vehicle TEXT NOT NULL,
+		soc INTEGER NOT NULL,
+		target_time TEXT NOT NULL,
+		trip_key TEXT NOT NULL DEFAULT '',
+		written_at TEXT NOT NULL
+	);`,
+	// Calendars are identified by an ID derived from their URL; names come
+	// from the feeds.
+	`ALTER TABLE calendar_events ADD COLUMN calendar_name TEXT NOT NULL DEFAULT '';
+	ALTER TABLE calendar_sync ADD COLUMN name TEXT NOT NULL DEFAULT '';`,
+}
+
+// Open opens (creating if needed) the database at path and migrates it.
+func Open(path string) (*Store, error) {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, fmt.Errorf("create data dir: %w", err)
+	}
+	dsn := "file:" + path + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)"
+	db, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		return nil, err
+	}
+	// One connection serializes writes and avoids SQLITE_BUSY; load is tiny.
+	db.SetMaxOpenConns(1)
+	s := &Store{db: db}
+	if err := s.migrate(); err != nil {
+		db.Close()
+		return nil, err
+	}
+	return s, nil
+}
+
+func (s *Store) migrate() error {
+	var version int
+	if err := s.db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
+		return fmt.Errorf("read schema version: %w", err)
+	}
+	for i := version; i < len(migrations); i++ {
+		tx, err := s.db.Begin()
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(migrations[i]); err != nil {
+			tx.Rollback()
+			return fmt.Errorf("migration %d: %w", i+1, err)
+		}
+		if _, err := tx.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, i+1)); err != nil {
+			tx.Rollback()
+			return err
+		}
+		if err := tx.Commit(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Close closes the database.
+func (s *Store) Close() error { return s.db.Close() }
+
+// Ping checks the database is usable.
+func (s *Store) Ping(ctx context.Context) error {
+	var one int
+	return s.db.QueryRowContext(ctx, `SELECT 1`).Scan(&one)
+}
+
+func fmtTime(t time.Time) string { return t.UTC().Format(time.RFC3339) }
+
+func parseTime(s string) (time.Time, error) { return time.Parse(time.RFC3339, s) }
+
+func boolInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
+// ---- settings ----
+
+const settingsKey = "planning"
+
+// Settings returns saved settings merged onto defaults, and whether the user
+// has saved settings at all. Fields added later keep their default value.
+func (s *Store) Settings(defaults model.Settings) (model.Settings, bool, error) {
+	var raw string
+	err := s.db.QueryRow(`SELECT value FROM settings WHERE key = ?`, settingsKey).Scan(&raw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return defaults, false, nil
+	}
+	if err != nil {
+		return defaults, false, err
+	}
+	merged := defaults
+	if err := json.Unmarshal([]byte(raw), &merged); err != nil {
+		return defaults, false, fmt.Errorf("decode settings: %w", err)
+	}
+	return merged, true, nil
+}
+
+// SaveSettings stores the full settings object.
+func (s *Store) SaveSettings(v model.Settings) error {
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+		ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+		settingsKey, string(raw), fmtTime(time.Now()))
+	return err
+}
+
+// ---- places ----
+
+// Places lists saved places by name.
+func (s *Store) Places() ([]model.Place, error) {
+	rows, err := s.db.Query(`SELECT id, name, address FROM places ORDER BY name COLLATE NOCASE`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	places := []model.Place{}
+	for rows.Next() {
+		var p model.Place
+		if err := rows.Scan(&p.ID, &p.Name, &p.Address); err != nil {
+			return nil, err
+		}
+		places = append(places, p)
+	}
+	return places, rows.Err()
+}
+
+// CreatePlace inserts a place and returns it with its ID.
+func (s *Store) CreatePlace(p model.Place) (model.Place, error) {
+	res, err := s.db.Exec(`INSERT INTO places (name, address) VALUES (?, ?)`, p.Name, p.Address)
+	if err != nil {
+		return p, uniqueErr(err, "a place with this name already exists")
+	}
+	p.ID, err = res.LastInsertId()
+	return p, err
+}
+
+// UpdatePlace replaces a place's name and address.
+func (s *Store) UpdatePlace(p model.Place) error {
+	res, err := s.db.Exec(`UPDATE places SET name = ?, address = ? WHERE id = ?`, p.Name, p.Address, p.ID)
+	if err != nil {
+		return uniqueErr(err, "a place with this name already exists")
+	}
+	return expectRow(res)
+}
+
+// DeletePlace removes a place.
+func (s *Store) DeletePlace(id int64) error {
+	res, err := s.db.Exec(`DELETE FROM places WHERE id = ?`, id)
+	if err != nil {
+		return err
+	}
+	return expectRow(res)
+}
+
+// ---- recurring templates ----
+
+// Templates lists recurring schedules.
+func (s *Store) Templates() ([]model.Template, error) {
+	rows, err := s.db.Query(`SELECT id, title, destination, weekdays, start_time, end_time, enabled, exceptions
+		FROM recurring_templates ORDER BY start_time, title`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	list := []model.Template{}
+	for rows.Next() {
+		t, err := scanTemplate(rows)
+		if err != nil {
+			return nil, err
+		}
+		list = append(list, t)
+	}
+	return list, rows.Err()
+}
+
+// Template returns one recurring schedule.
+func (s *Store) Template(id int64) (model.Template, error) {
+	row := s.db.QueryRow(`SELECT id, title, destination, weekdays, start_time, end_time, enabled, exceptions
+		FROM recurring_templates WHERE id = ?`, id)
+	t, err := scanTemplate(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return t, ErrNotFound
+	}
+	return t, err
+}
+
+type scanner interface{ Scan(...any) error }
+
+func scanTemplate(r scanner) (model.Template, error) {
+	var t model.Template
+	var weekdays, exceptions string
+	var enabled int
+	if err := r.Scan(&t.ID, &t.Title, &t.Destination, &weekdays, &t.Start, &t.End, &enabled, &exceptions); err != nil {
+		return t, err
+	}
+	t.Enabled = enabled == 1
+	if err := json.Unmarshal([]byte(weekdays), &t.Weekdays); err != nil {
+		return t, fmt.Errorf("decode weekdays: %w", err)
+	}
+	if err := json.Unmarshal([]byte(exceptions), &t.Exceptions); err != nil {
+		return t, fmt.Errorf("decode exceptions: %w", err)
+	}
+	if t.Exceptions == nil {
+		t.Exceptions = []model.DateRange{}
+	}
+	return t, nil
+}
+
+// CreateTemplate inserts a recurring schedule.
+func (s *Store) CreateTemplate(t model.Template) (model.Template, error) {
+	weekdays, exceptions, err := templateJSON(t)
+	if err != nil {
+		return t, err
+	}
+	res, err := s.db.Exec(`INSERT INTO recurring_templates (title, destination, weekdays, start_time, end_time, enabled, exceptions)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`, t.Title, t.Destination, weekdays, t.Start, t.End, boolInt(t.Enabled), exceptions)
+	if err != nil {
+		return t, err
+	}
+	t.ID, err = res.LastInsertId()
+	return t, err
+}
+
+// UpdateTemplate replaces a recurring schedule.
+func (s *Store) UpdateTemplate(t model.Template) error {
+	weekdays, exceptions, err := templateJSON(t)
+	if err != nil {
+		return err
+	}
+	res, err := s.db.Exec(`UPDATE recurring_templates SET title = ?, destination = ?, weekdays = ?, start_time = ?,
+		end_time = ?, enabled = ?, exceptions = ? WHERE id = ?`,
+		t.Title, t.Destination, weekdays, t.Start, t.End, boolInt(t.Enabled), exceptions, t.ID)
+	if err != nil {
+		return err
+	}
+	return expectRow(res)
+}
+
+func templateJSON(t model.Template) (string, string, error) {
+	if t.Exceptions == nil {
+		t.Exceptions = []model.DateRange{}
+	}
+	w, err := json.Marshal(t.Weekdays)
+	if err != nil {
+		return "", "", err
+	}
+	e, err := json.Marshal(t.Exceptions)
+	return string(w), string(e), err
+}
+
+// DeleteTemplate removes a schedule and the local edits of its occurrences.
+func (s *Store) DeleteTemplate(id int64) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	res, err := tx.Exec(`DELETE FROM recurring_templates WHERE id = ?`, id)
+	if err != nil {
+		return err
+	}
+	if err := expectRow(res); err != nil {
+		return err
+	}
+	prefix := fmt.Sprintf("recurring:%d:", id)
+	if _, err := tx.Exec(`DELETE FROM trip_overrides WHERE substr(trip_key, 1, ?) = ?`, len(prefix), prefix); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// ---- manual trips ----
+
+// ManualTrips lists manual trips overlapping [from, to).
+func (s *Store) ManualTrips(from, to time.Time) ([]model.ManualTrip, error) {
+	rows, err := s.db.Query(`SELECT id, title, destination, start_at, end_at, enabled, distance_override_km
+		FROM manual_trips WHERE start_at < ? AND end_at >= ? ORDER BY start_at`, fmtTime(to), fmtTime(from))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var list []model.ManualTrip
+	for rows.Next() {
+		m, err := scanManual(rows)
+		if err != nil {
+			return nil, err
+		}
+		list = append(list, m)
+	}
+	return list, rows.Err()
+}
+
+// ManualTrip returns one manual trip.
+func (s *Store) ManualTrip(id int64) (model.ManualTrip, error) {
+	row := s.db.QueryRow(`SELECT id, title, destination, start_at, end_at, enabled, distance_override_km
+		FROM manual_trips WHERE id = ?`, id)
+	m, err := scanManual(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return m, ErrNotFound
+	}
+	return m, err
+}
+
+func scanManual(r scanner) (model.ManualTrip, error) {
+	var m model.ManualTrip
+	var start, end string
+	var enabled int
+	var dist sql.NullFloat64
+	if err := r.Scan(&m.ID, &m.Title, &m.Destination, &start, &end, &enabled, &dist); err != nil {
+		return m, err
+	}
+	var err error
+	if m.Start, err = parseTime(start); err != nil {
+		return m, err
+	}
+	if m.End, err = parseTime(end); err != nil {
+		return m, err
+	}
+	m.Enabled = enabled == 1
+	if dist.Valid {
+		m.DistanceOverrideKm = &dist.Float64
+	}
+	return m, nil
+}
+
+// CreateManualTrip inserts a manual trip.
+func (s *Store) CreateManualTrip(m model.ManualTrip) (model.ManualTrip, error) {
+	res, err := s.db.Exec(`INSERT INTO manual_trips (title, destination, start_at, end_at, enabled, distance_override_km)
+		VALUES (?, ?, ?, ?, ?, ?)`, m.Title, m.Destination, fmtTime(m.Start), fmtTime(m.End), boolInt(m.Enabled), m.DistanceOverrideKm)
+	if err != nil {
+		return m, err
+	}
+	m.ID, err = res.LastInsertId()
+	return m, err
+}
+
+// UpdateManualTrip replaces a manual trip.
+func (s *Store) UpdateManualTrip(m model.ManualTrip) error {
+	res, err := s.db.Exec(`UPDATE manual_trips SET title = ?, destination = ?, start_at = ?, end_at = ?, enabled = ?,
+		distance_override_km = ? WHERE id = ?`,
+		m.Title, m.Destination, fmtTime(m.Start), fmtTime(m.End), boolInt(m.Enabled), m.DistanceOverrideKm, m.ID)
+	if err != nil {
+		return err
+	}
+	return expectRow(res)
+}
+
+// DeleteManualTrip removes a manual trip.
+func (s *Store) DeleteManualTrip(id int64) error {
+	res, err := s.db.Exec(`DELETE FROM manual_trips WHERE id = ?`, id)
+	if err != nil {
+		return err
+	}
+	return expectRow(res)
+}
+
+// ---- overrides ----
+
+type overrideJSON struct {
+	Title              *string    `json:"title,omitempty"`
+	Destination        *string    `json:"destination,omitempty"`
+	Start              *time.Time `json:"start,omitempty"`
+	End                *time.Time `json:"end,omitempty"`
+	Enabled            *bool      `json:"enabled,omitempty"`
+	DistanceOverrideKm *float64   `json:"distanceOverrideKm,omitempty"`
+	Reviewed           *bool      `json:"reviewed,omitempty"`
+}
+
+// Overrides returns all local trip edits keyed by trip key.
+func (s *Store) Overrides() (map[string]model.Override, error) {
+	rows, err := s.db.Query(`SELECT trip_key, data FROM trip_overrides`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]model.Override{}
+	for rows.Next() {
+		var key, data string
+		if err := rows.Scan(&key, &data); err != nil {
+			return nil, err
+		}
+		var o overrideJSON
+		if err := json.Unmarshal([]byte(data), &o); err != nil {
+			return nil, fmt.Errorf("decode override %s: %w", key, err)
+		}
+		out[key] = model.Override{
+			TripKey: key, Title: o.Title, Destination: o.Destination, Start: o.Start, End: o.End,
+			Enabled: o.Enabled, DistanceOverrideKm: o.DistanceOverrideKm, Reviewed: o.Reviewed,
+		}
+	}
+	return out, rows.Err()
+}
+
+// SaveOverride stores a trip's local edits, or deletes them when empty.
+func (s *Store) SaveOverride(o model.Override) error {
+	data := overrideJSON{
+		Title: o.Title, Destination: o.Destination, Start: o.Start, End: o.End,
+		Enabled: o.Enabled, DistanceOverrideKm: o.DistanceOverrideKm, Reviewed: o.Reviewed,
+	}
+	raw, err := json.Marshal(data)
+	if err != nil {
+		return err
+	}
+	if string(raw) == "{}" {
+		return s.DeleteOverride(o.TripKey)
+	}
+	_, err = s.db.Exec(`INSERT INTO trip_overrides (trip_key, data, updated_at) VALUES (?, ?, ?)
+		ON CONFLICT(trip_key) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`,
+		o.TripKey, string(raw), fmtTime(time.Now()))
+	return err
+}
+
+// DeleteOverride removes a trip's local edits.
+func (s *Store) DeleteOverride(key string) error {
+	_, err := s.db.Exec(`DELETE FROM trip_overrides WHERE trip_key = ?`, key)
+	return err
+}
+
+// ---- calendar ----
+
+// ReplaceCalendarEvents swaps the stored events of one calendar.
+func (s *Store) ReplaceCalendarEvents(calendarID, name string, events []model.CalendarEvent) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`DELETE FROM calendar_events WHERE calendar = ?`, calendarID); err != nil {
+		return err
+	}
+	stmt, err := tx.Prepare(`INSERT OR REPLACE INTO calendar_events (key, calendar, calendar_name, uid, title,
+		location, start_at, end_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+	for _, e := range events {
+		if _, err := stmt.Exec(e.Key, calendarID, name, e.UID, e.Title, e.Location, fmtTime(e.Start), fmtTime(e.End)); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// RemoveCalendarsExcept deletes events and sync state of calendars that are
+// no longer configured.
+func (s *Store) RemoveCalendarsExcept(ids []string) error {
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")
+	args := make([]any, len(ids))
+	for i, n := range ids {
+		args[i] = n
+	}
+	where := "1 = 1"
+	if len(ids) > 0 {
+		where = "calendar NOT IN (" + placeholders + ")"
+	}
+	if _, err := s.db.Exec(`DELETE FROM calendar_events WHERE `+where, args...); err != nil {
+		return err
+	}
+	_, err := s.db.Exec(`DELETE FROM calendar_sync WHERE `+where, args...)
+	return err
+}
+
+// CalendarEvents lists stored events overlapping [from, to).
+func (s *Store) CalendarEvents(from, to time.Time) ([]model.CalendarEvent, error) {
+	rows, err := s.db.Query(`SELECT key, calendar, calendar_name, uid, title, location, start_at, end_at FROM calendar_events
+		WHERE start_at < ? AND end_at >= ? ORDER BY start_at`, fmtTime(to), fmtTime(from))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var list []model.CalendarEvent
+	for rows.Next() {
+		var e model.CalendarEvent
+		var start, end string
+		if err := rows.Scan(&e.Key, &e.CalendarID, &e.Calendar, &e.UID, &e.Title, &e.Location, &start, &end); err != nil {
+			return nil, err
+		}
+		if e.Start, err = parseTime(start); err != nil {
+			return nil, err
+		}
+		if e.End, err = parseTime(end); err != nil {
+			return nil, err
+		}
+		list = append(list, e)
+	}
+	return list, rows.Err()
+}
+
+// SaveSyncStatus records a sync attempt.
+func (s *Store) SaveSyncStatus(st model.CalendarSyncStatus) error {
+	var attempt, success any
+	if st.LastAttemptAt != nil {
+		attempt = fmtTime(*st.LastAttemptAt)
+	}
+	if st.LastSuccessAt != nil {
+		success = fmtTime(*st.LastSuccessAt)
+	}
+	_, err := s.db.Exec(`INSERT INTO calendar_sync (calendar, name, last_attempt_at, last_success_at, last_error, event_count)
+		VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(calendar) DO UPDATE SET name = excluded.name,
+		last_attempt_at = excluded.last_attempt_at, last_success_at = excluded.last_success_at,
+		last_error = excluded.last_error, event_count = excluded.event_count`,
+		st.CalendarID, st.Name, attempt, success, st.LastError, st.EventCount)
+	return err
+}
+
+// SyncStatuses returns the sync state per calendar ID.
+func (s *Store) SyncStatuses() (map[string]model.CalendarSyncStatus, error) {
+	rows, err := s.db.Query(`SELECT calendar, name, last_attempt_at, last_success_at, last_error, event_count FROM calendar_sync`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]model.CalendarSyncStatus{}
+	for rows.Next() {
+		var st model.CalendarSyncStatus
+		var attempt, success sql.NullString
+		if err := rows.Scan(&st.CalendarID, &st.Name, &attempt, &success, &st.LastError, &st.EventCount); err != nil {
+			return nil, err
+		}
+		if attempt.Valid {
+			if t, err := parseTime(attempt.String); err == nil {
+				st.LastAttemptAt = &t
+			}
+		}
+		if success.Valid {
+			if t, err := parseTime(success.String); err == nil {
+				st.LastSuccessAt = &t
+			}
+		}
+		out[st.CalendarID] = st
+	}
+	return out, rows.Err()
+}
+
+// ---- route cache ----
+
+// CachedRoute is a stored route lookup.
+type CachedRoute struct {
+	DistanceM int
+	DurationS int
+	Provider  string
+	FetchedAt time.Time
+}
+
+// Route returns a cached route from provider for the exact slot.
+func (s *Store) Route(origin, destination, slot, provider string) (*CachedRoute, error) {
+	return s.route(`SELECT distance_m, duration_s, provider, fetched_at FROM route_cache
+		WHERE origin = ? AND destination = ? AND slot = ? AND provider = ?`, origin, destination, slot, provider)
+}
+
+// AnyRoute returns the most recently fetched route from provider for the
+// pair, in any slot.
+func (s *Store) AnyRoute(origin, destination, provider string) (*CachedRoute, error) {
+	return s.route(`SELECT distance_m, duration_s, provider, fetched_at FROM route_cache
+		WHERE origin = ? AND destination = ? AND provider = ? ORDER BY fetched_at DESC LIMIT 1`, origin, destination, provider)
+}
+
+func (s *Store) route(query string, args ...any) (*CachedRoute, error) {
+	var r CachedRoute
+	var fetched string
+	err := s.db.QueryRow(query, args...).Scan(&r.DistanceM, &r.DurationS, &r.Provider, &fetched)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	r.FetchedAt, err = parseTime(fetched)
+	return &r, err
+}
+
+// PutRoute stores a route lookup.
+func (s *Store) PutRoute(origin, destination, slot string, r CachedRoute) error {
+	_, err := s.db.Exec(`INSERT INTO route_cache (origin, destination, slot, distance_m, duration_s, provider, fetched_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(origin, destination, slot) DO UPDATE SET
+		distance_m = excluded.distance_m, duration_s = excluded.duration_s, provider = excluded.provider,
+		fetched_at = excluded.fetched_at`,
+		origin, destination, slot, r.DistanceM, r.DurationS, r.Provider, fmtTime(r.FetchedAt))
+	return err
+}
+
+// ---- vehicle SoC ----
+
+// LastSoC returns the last SoC read from EVCC, or nil if none was recorded.
+func (s *Store) LastSoC() (*model.SoCReading, error) {
+	var r model.SoCReading
+	var observed string
+	err := s.db.QueryRow(`SELECT soc, observed_at, source FROM vehicle_soc WHERE id = 1`).Scan(&r.Percent, &observed, &r.Source)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	r.ObservedAt, err = parseTime(observed)
+	return &r, err
+}
+
+// SaveSoC records the latest SoC reading.
+func (s *Store) SaveSoC(r model.SoCReading) error {
+	_, err := s.db.Exec(`INSERT INTO vehicle_soc (id, soc, observed_at, source) VALUES (1, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET soc = excluded.soc, observed_at = excluded.observed_at, source = excluded.source`,
+		r.Percent, fmtTime(r.ObservedAt), r.Source)
+	return err
+}
+
+// ---- plan writes ----
+
+// AddPlanWrite records a plan sent to EVCC.
+func (s *Store) AddPlanWrite(w model.PlanWrite) (model.PlanWrite, error) {
+	res, err := s.db.Exec(`INSERT INTO plan_writes (vehicle, soc, target_time, trip_key, written_at) VALUES (?, ?, ?, ?, ?)`,
+		w.Vehicle, w.SoC, fmtTime(w.TargetTime), w.TripKey, fmtTime(w.WrittenAt))
+	if err != nil {
+		return w, err
+	}
+	w.ID, err = res.LastInsertId()
+	return w, err
+}
+
+// LastPlanWrite returns the most recent plan sent to EVCC, if any.
+func (s *Store) LastPlanWrite() (*model.PlanWrite, error) {
+	var w model.PlanWrite
+	var target, written string
+	err := s.db.QueryRow(`SELECT id, vehicle, soc, target_time, trip_key, written_at FROM plan_writes
+		ORDER BY id DESC LIMIT 1`).Scan(&w.ID, &w.Vehicle, &w.SoC, &target, &w.TripKey, &written)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if w.TargetTime, err = parseTime(target); err != nil {
+		return nil, err
+	}
+	w.WrittenAt, err = parseTime(written)
+	return &w, err
+}
+
+// ---- helpers ----
+
+// Reset deletes all personal data (demo mode only). The route cache is kept.
+func (s *Store) Reset() error {
+	for _, table := range []string{"settings", "places", "recurring_templates", "manual_trips", "trip_overrides",
+		"calendar_events", "calendar_sync", "vehicle_soc", "plan_writes"} {
+		if _, err := s.db.Exec("DELETE FROM " + table); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// IsEmpty reports whether no personal data has been saved yet.
+func (s *Store) IsEmpty() (bool, error) {
+	var n int
+	err := s.db.QueryRow(`SELECT (SELECT COUNT(*) FROM settings WHERE key = ?) + (SELECT COUNT(*) FROM places)
+		+ (SELECT COUNT(*) FROM recurring_templates) + (SELECT COUNT(*) FROM manual_trips)`, settingsKey).Scan(&n)
+	return n == 0, err
+}
+
+// Meta returns an internal flag stored alongside settings.
+func (s *Store) Meta(key string) (string, error) {
+	var v string
+	err := s.db.QueryRow(`SELECT value FROM settings WHERE key = ?`, "meta."+key).Scan(&v)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return v, err
+}
+
+// SetMeta stores an internal flag.
+func (s *Store) SetMeta(key, value string) error {
+	_, err := s.db.Exec(`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+		ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+		"meta."+key, value, fmtTime(time.Now()))
+	return err
+}
+
+func expectRow(res sql.Result) error {
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// ValidationError is a user-facing input problem.
+type ValidationError struct{ Msg string }
+
+func (e ValidationError) Error() string { return e.Msg }
+
+func uniqueErr(err error, msg string) error {
+	if strings.Contains(err.Error(), "UNIQUE constraint failed") {
+		return ValidationError{Msg: msg}
+	}
+	return err
+}

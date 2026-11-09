@@ -1,0 +1,30 @@
+# Private configuration, secrets, and runtime data (supplied at runtime)
+config.local.yaml
+.env
+.env.*
+!.env.example
+data/
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+
+# Dependencies and build output
+node_modules/
+dist/
+bin/
+
+# Test output
+coverage/
+playwright-report/
+test-results/
+blob-report/
+*.out
+*.test
+
+# Editor, OS, and local tool settings
+.DS_Store
+.idea/
+.vscode/
+*.swp
+.claude/settings.local.json
