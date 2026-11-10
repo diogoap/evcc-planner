@@ -161,7 +161,17 @@ func (k *KNMI) getJSON(ctx context.Context, u string, out any) error {
 		if json.Unmarshal(data, &e) == nil && (e.Error != "" || e.Message != "") {
 			msg = e.Error + e.Message
 		}
-		return fmt.Errorf("knmi: %s", clip(msg, 200))
+		msg = clip(msg, 200)
+		// KNMI issues a separate key per API; the gateway's messages do not
+		// say which key is needed.
+		switch lower := strings.ToLower(msg); {
+		case strings.Contains(lower, "disallowed"):
+			msg += ` (the key is for another KNMI API: request an "Open Data API" key in the KNMI Developer Portal's API Catalogue)`
+		case resp.StatusCode == http.StatusUnauthorized || strings.Contains(lower, "not authori") ||
+			strings.Contains(lower, "authorization field missing"):
+			msg += " (check the KNMI API key: it is missing, mistyped, or expired)"
+		}
+		return fmt.Errorf("knmi: %s", msg)
 	}
 	return json.Unmarshal(data, out)
 }

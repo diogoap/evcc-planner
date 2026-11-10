@@ -237,10 +237,15 @@ func TestOpenRouterRequestAndResponse(t *testing.T) {
 	if !strings.Contains(user, "Prognose voor 9 t/m 15 nov") || strings.Contains(user, "http") {
 		t.Errorf("user message = %q", user)
 	}
-	for _, k := range []string{"tools", "plugins"} {
+	// No optional parameters that would rule out providers (temperature is
+	// not supported by recent Claude models), and a token cap.
+	for _, k := range []string{"tools", "plugins", "temperature", "top_p"} {
 		if _, ok := body[k]; ok {
 			t.Errorf("request must not use %s", k)
 		}
+	}
+	if body["max_tokens"] != float64(maxOutputTokens) {
+		t.Errorf("max_tokens = %v", body["max_tokens"])
 	}
 	rf := body["response_format"].(map[string]any)
 	js := rf["json_schema"].(map[string]any)
@@ -259,6 +264,15 @@ func TestOpenRouterErrorsHideTheKey(t *testing.T) {
 			w.Write([]byte(`{"error":{"message":"No auth credentials found","code":401}}`))
 			return
 		}
+		if r.Header.Get("Authorization") == "Bearer routing" {
+			w.WriteHeader(http.StatusNotFound)
+			w.Write([]byte(`{"error":{"message":"No endpoints found that can handle the requested parameters.","code":404}}`))
+			return
+		}
+		if r.Header.Get("Authorization") == "Bearer long" {
+			w.Write([]byte(`{"choices":[{"finish_reason":"length","message":{"content":"{\"period\""}}]}`))
+			return
+		}
 		w.Write([]byte(`{"choices":[{"message":{"content":"{\"unexpected\":true}"}}]}`))
 	}))
 	defer srv.Close()
@@ -271,6 +285,16 @@ func TestOpenRouterErrorsHideTheKey(t *testing.T) {
 	if _, _, err := o.Extract(context.Background(), ExtractRequest{FetchedAt: fetched, Location: ams}); err == nil ||
 		!strings.Contains(err.Error(), "does not match the schema") {
 		t.Errorf("schema mismatch error = %v", err)
+	}
+	o.APIKey = "routing"
+	if _, _, err := o.Extract(context.Background(), ExtractRequest{FetchedAt: fetched, Location: ams}); err == nil ||
+		!strings.Contains(err.Error(), "choose another openrouter.model") {
+		t.Errorf("routing error = %v", err)
+	}
+	o.APIKey = "long"
+	if _, _, err := o.Extract(context.Background(), ExtractRequest{FetchedAt: fetched, Location: ams}); err == nil ||
+		!strings.Contains(err.Error(), "cut off") {
+		t.Errorf("truncation error = %v", err)
 	}
 }
 
@@ -356,5 +380,30 @@ func TestStubsFollowTheClock(t *testing.T) {
 	w, _ := StubKNMI{Clock: c, Location: ams}.Fetch(context.Background())
 	if len(w.Days) != 7 || w.Days[0].Date != "2026-11-09" || *w.Day("2026-11-10").WindBft <= *w.Day("2026-11-12").WindBft {
 		t.Errorf("demo weather = %+v", w.Days)
+	}
+}
+
+func TestKNMIKeyErrorsExplainTheFix(t *testing.T) {
+	cases := map[string]struct {
+		status int
+		body   string
+		want   string
+	}{
+		"key for another API": {http.StatusForbidden, `{"error": "Access to this API has been disallowed"}`, `request an "Open Data API" key`},
+		"invalid key":         {http.StatusForbidden, `{"error": "Key not authorised"}`, "missing, mistyped, or expired"},
+		"no key":              {http.StatusUnauthorized, `{"error": "Authorization field missing"}`, "missing, mistyped, or expired"},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(c.status)
+				w.Write([]byte(c.body))
+			}))
+			defer srv.Close()
+			k := &KNMI{BaseURL: srv.URL, APIKey: "k", Dataset: "d", Version: "1", HTTP: srv.Client(), Location: ams}
+			if _, err := k.Fetch(context.Background()); err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Errorf("error = %v, want %q", err, c.want)
+			}
+		})
 	}
 }

@@ -111,6 +111,9 @@ func dutchNumber(s string) (float64, error) {
 
 // ---- OpenRouter ----
 
+// maxOutputTokens caps the answer (a full extraction is about 1,000 tokens).
+const maxOutputTokens = 4000
+
 // OpenRouter calls a chat completions model with strict JSON Schema output
 // and only routes to providers that support it.
 type OpenRouter struct {
@@ -142,8 +145,12 @@ func (o *OpenRouter) Extract(ctx context.Context, req ExtractRequest) (Extractio
 			"type":        "json_schema",
 			"json_schema": map[string]any{"name": "tibber_outlook", "strict": true, "schema": ExtractionSchema()},
 		},
-		"provider":    map[string]any{"require_parameters": true},
-		"temperature": 0,
+		// Only providers that honour every parameter: strict structured
+		// output plus a token cap. Optional tuning such as temperature is left
+		// out, because many models (e.g. recent Claude ones) reject it and
+		// would then match no provider; the server validates the output anyway.
+		"provider":   map[string]any{"require_parameters": true},
+		"max_tokens": maxOutputTokens,
 	}
 	payload, err := json.Marshal(body)
 	if err != nil {
@@ -188,7 +195,11 @@ func (o *OpenRouter) Extract(ctx context.Context, req ExtractRequest) (Extractio
 		if jsonErr == nil && out.Error != nil && out.Error.Message != "" {
 			msg = out.Error.Message
 		}
-		return Extraction{}, Usage{}, fmt.Errorf("openrouter: %s", clip(msg, 300))
+		msg = clip(msg, 300)
+		if strings.Contains(strings.ToLower(msg), "no endpoints found") {
+			msg += " (" + o.Model + " has no provider with strict structured outputs: choose another openrouter.model)"
+		}
+		return Extraction{}, Usage{}, fmt.Errorf("openrouter: %s", msg)
 	}
 	if jsonErr != nil {
 		return Extraction{}, Usage{}, fmt.Errorf("decode openrouter response: %w", jsonErr)
@@ -196,6 +207,9 @@ func (o *OpenRouter) Extract(ctx context.Context, req ExtractRequest) (Extractio
 	usage := Usage{Model: out.Model, PromptTokens: out.Usage.PromptTokens, CompletionTokens: out.Usage.CompletionTokens}
 	if len(out.Choices) == 0 {
 		return Extraction{}, usage, errors.New("openrouter returned no choices")
+	}
+	if out.Choices[0].FinishReason == "length" {
+		return Extraction{}, usage, fmt.Errorf("model output cut off at %d tokens", maxOutputTokens)
 	}
 	content := strings.TrimSpace(out.Choices[0].Message.Content)
 	content = strings.TrimSuffix(strings.TrimPrefix(strings.TrimPrefix(content, "```json"), "```"), "```")

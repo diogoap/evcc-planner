@@ -99,8 +99,10 @@ a key it falls back to labelled stub distances.
   so cost is a fraction of a cent a week.
   Without a key a labelled pattern-based stub reads only the article's summary
   lines (report period, weekly average, dearest and cheapest day).
-- **KNMI**: register at the KNMI Data Platform, request an **Open Data API**
-  key in the API Catalogue, and set `KNMI_API_KEY`. KNMI's seven-day outlook is
+- **KNMI**: register at the KNMI Developer Portal, request an **Open Data
+  API** key in the API Catalogue (KNMI issues a separate key per API; an EDR,
+  WMS, or Notification Service key is refused with "Access to this API has
+  been disallowed"), and set `KNMI_API_KEY`. KNMI's seven-day outlook is
   national (no location): it gives wind, and sunshine for the days after
   EVCC's solar forecast. Without it the advice still works on prices.
 - **Local sun** comes from the solar forecast configured in EVCC (today and
