@@ -327,8 +327,16 @@ input[type='checkbox'] {
 
 .form-grid {
   display: grid;
-  gap: 12px;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px 20px;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  align-items: start;
+}
+
+.field-hint {
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: var(--muted);
+  opacity: 0.9;
 }
 
 .unit {

@@ -16,15 +16,63 @@ const saving = ref(false)
 const error = ref('')
 const demo = reactive({ connected: false, soc: 45 })
 
-const fields: { key: keyof Settings; label: string; unit: string; step: string }[] = [
-  { key: 'usableCapacityKWh', label: 'Usable capacity', unit: 'kWh', step: '0.1' },
-  { key: 'chargePowerKW', label: 'Charging power (at the wall)', unit: 'kW', step: '0.01' },
-  { key: 'consumptionKWhPer100Km', label: 'Consumption', unit: 'kWh/100 km', step: '0.1' },
-  { key: 'arrivalReservePct', label: 'Arrival reserve', unit: '%', step: '1' },
-  { key: 'chargingEfficiencyPct', label: 'Charging efficiency', unit: '%', step: '1' },
-  { key: 'departureBufferMin', label: 'Departure buffer', unit: 'min', step: '1' },
-  { key: 'chargeBufferMin', label: 'Charging time buffer', unit: 'min', step: '1' },
-  { key: 'defaultStayMin', label: 'Default stay', unit: 'min', step: '1' },
+const fields: { key: keyof Settings; label: string; unit: string; step: string; hint: string }[] = [
+  {
+    key: 'usableCapacityKWh',
+    label: 'Usable capacity',
+    unit: 'kWh',
+    step: '0.1',
+    hint: 'Energy the battery can actually use, which is less than its gross size (a Leaf e+ uses about 59 of 62 kWh). Converts kWh into SoC %.',
+  },
+  {
+    key: 'chargePowerKW',
+    label: 'Charging power (at the wall)',
+    unit: 'kW',
+    step: '0.01',
+    hint: 'What the charger delivers to the car, e.g. 3.68 kW at 16 A on one phase. Sets how long charging takes.',
+  },
+  {
+    key: 'consumptionKWhPer100Km',
+    label: 'Consumption',
+    unit: 'kWh/100 km',
+    step: '0.1',
+    hint: 'Average use including heating or cooling. Turns trip distance into energy; raise it in winter.',
+  },
+  {
+    key: 'arrivalReservePct',
+    label: 'Arrival reserve',
+    unit: '%',
+    step: '1',
+    hint: 'SoC to have left when you get back home. Added to every departure target; keep it at or above EVCC’s minimum SoC.',
+  },
+  {
+    key: 'chargingEfficiencyPct',
+    label: 'Charging efficiency',
+    unit: '%',
+    step: '1',
+    hint: 'Share of the energy from the wall that ends up in the battery (the rest is lost as heat). Lower values mean longer charging and more grid energy.',
+  },
+  {
+    key: 'departureBufferMin',
+    label: 'Departure buffer',
+    unit: 'min',
+    step: '1',
+    hint: 'Extra time to leave before the trip, on top of the travel time: departure = arrive-by time − travel time − buffer.',
+  },
+  {
+    key: 'chargeBufferMin',
+    label: 'Charging time buffer',
+    unit: 'min',
+    step: '1',
+    hint: 'Charging must be done this long before each departure, so the car is ready early. Shorter stays at home are not counted as charging time.',
+  },
+  {
+    key: 'defaultStayMin',
+    label: 'Default stay',
+    unit: 'min',
+    step: '1',
+    hint: 'How long you stay when a new trip has no end time; the return leaves after this.',
+  },
 ]
 
 const statusTone: Record<Connection['status'], string> = {
@@ -142,8 +190,12 @@ async function applyDemo() {
           <input
             v-model="settings.homeAddress"
             placeholder="Street and number, town"
+            aria-describedby="hint-home"
             data-testid="home-address"
           />
+          <span id="hint-home" class="field-hint">
+            Where every trip starts and ends; used to calculate route distances and travel times.
+          </span>
         </label>
         <div class="form-grid">
           <label v-for="f in fields" :key="f.key" class="field">
@@ -155,10 +207,12 @@ async function applyDemo() {
                 :step="f.step"
                 min="0"
                 required
+                :aria-describedby="`hint-${f.key}`"
                 :data-testid="`setting-${f.key}`"
               />
               <span>{{ f.unit }}</span>
             </span>
+            <span :id="`hint-${f.key}`" class="field-hint">{{ f.hint }}</span>
           </label>
         </div>
         <p class="small muted" style="margin: 0">

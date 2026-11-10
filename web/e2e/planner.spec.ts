@@ -114,6 +114,9 @@ test('calendar events without a location are shown disabled', async ({ page }) =
 test('settings persist and change the plan', async ({ page }) => {
   await page.goto('/settings')
   await expect(page.getByTestId('home-address')).toHaveValue('Demo Home 1, Demo Town')
+  await expect(page.getByTestId('setting-chargeBufferMin')).toHaveAccessibleDescription(
+    /Charging must be done this long before each departure/,
+  )
   await page.getByTestId('setting-consumptionKWhPer100Km').fill('20')
   await page.getByRole('button', { name: 'Save settings' }).click()
   await expect(page.getByText('Settings saved')).toBeVisible()
