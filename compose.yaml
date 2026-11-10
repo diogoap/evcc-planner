@@ -5,6 +5,9 @@
 #   EVCC_URL                  EVCC address, e.g. http://192.0.2.10:7070
 #   GOOGLE_CALENDAR_ICAL_URL  one or more secret iCal addresses, comma separated
 #   GOOGLE_MAPS_API_KEY       Google Routes API key
+# Optional, to join an existing network (e.g. your reverse proxy's):
+#   EVCC_PLANNER_NETWORK            network name (default: evcc-planner, created)
+#   EVCC_PLANNER_NETWORK_EXTERNAL   true if that network already exists
 # Everything personal is edited in the UI and stored in the data folder, a host
 # folder mounted at the same path in the container (SQLite; back it up from
 # the host).
@@ -30,3 +33,8 @@ services:
       - GOOGLE_MAPS_API_KEY
     volumes:
       - /opt/evcc-planner/data:/opt/evcc-planner/data
+
+networks:
+  default:
+    name: ${EVCC_PLANNER_NETWORK:-evcc-planner}
+    external: ${EVCC_PLANNER_NETWORK_EXTERNAL:-false}

@@ -104,7 +104,10 @@ from one design: `cd web && pnpm icons`.
    (same as `sudo mkdir -p … && sudo chown 65532:65532 …`).
 2. Provide `EVCC_URL`, `GOOGLE_CALENDAR_ICAL_URL`, and `GOOGLE_MAPS_API_KEY` as
    environment variables, then `docker compose up -d --build`.
-3. Point a reverse proxy at port 7201.
+3. Point a reverse proxy at port 7201. To put the container on the proxy's
+   existing Docker network instead, also set `EVCC_PLANNER_NETWORK` to that
+   network's name and `EVCC_PLANNER_NETWORK_EXTERNAL=true`; the proxy then
+   reaches it as `http://evcc-planner:7201`.
 
 The host folder `/opt/evcc-planner/data` is mounted at the same path in the
 container and keeps the SQLite database (`planner.db`) across restarts and
