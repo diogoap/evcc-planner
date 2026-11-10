@@ -286,7 +286,7 @@ func (s *Service) Connections() ([]ConnectionView, error) {
 	out = append(out,
 		ConnectionView{Name: "OpenRouter", Status: "planned", Detail: "Daily forecast extraction (V2)"},
 		ConnectionView{Name: "KNMI", Status: "planned", Detail: "Weather forecasts (V2)"},
-		ConnectionView{Name: "Home Assistant", Status: "planned", Detail: "Notifications (V3), always-on SoC (V6)"},
+		ConnectionView{Name: "Home Assistant", Status: "planned", Detail: "Notifications (V5), always-on SoC (V8)"},
 	)
 	return out, nil
 }

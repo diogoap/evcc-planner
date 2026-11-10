@@ -115,11 +115,11 @@ Automatically create plans from advice    [OFF]
 Manual mode: review a proposal and confirm each change.
 Automatic mode requires configured targets and expiry rules.
 
-PLANNING [V3]
+PLANNING [V5]
 Trip plan control                  [Preview / Automatic]
 Paused after a manual EVCC change?  [Resume]
 
-NOTIFICATIONS [V3]
+NOTIFICATIONS [V5]
 Enabled                [Off — provider setup pending]
 Destination            [Select after setup]
 Early reminder         [Before useful charging window]
@@ -154,7 +154,7 @@ EVCC keeps one plan per vehicle. Limits and repeating plans stay unchanged.
 [Cancel]                         [Confirm and send]
 ```
 
-Opening this dialog only reads EVCC (preview). Automatic sync of trip plans starts in V3.
+Opening this dialog only reads EVCC (preview). Automatic sync of trip plans starts in V5.
 
 **Create extra plan — an explicit, reviewable action [V2].**
 
@@ -173,6 +173,6 @@ unless you change them in EVCC in the meantime.
 [Cancel]                         [Confirm and create plan]
 ```
 
-Opening this dialog does not write to EVCC. The qualitative indicator itself has no fixed charging amount; any automatic target mapping must be explicitly configured by the user. Review postponement uses a similar proposal with a defer-until time; required trip charging remains protected. Advice auto-apply is off by default and independent of V3 trip automation.
+Opening this dialog does not write to EVCC. The qualitative indicator itself has no fixed charging amount; any automatic target mapping must be explicitly configured by the user. Review postponement uses a similar proposal with a defer-until time; required trip charging remains protected. Advice auto-apply is off by default and independent of V5 trip automation.
 
-**Delivery.** V1 delivers the shell, status/trip views, recurring schedules, personal settings, previews, and manual **Send plan to EVCC**. V2 adds advice cards, relevant graphs/settings, and extra-plan proposals. V3 adds automation state, notification preferences, reminders, and pause/resume. V4/V5 extend health/recovery views and schedule explanations.
+**Delivery.** V1 delivers the shell, status/trip views, recurring schedules, personal settings, previews, and manual **Send plan to EVCC**. V2 adds advice cards, relevant graphs/settings, and extra-plan proposals. V3 adds the Activity (audit) page. V4 polishes the visual design, graphs, and phone experience. V5 adds automation state, notification preferences, reminders, and pause/resume. V6/V7 extend health/recovery views and schedule explanations.

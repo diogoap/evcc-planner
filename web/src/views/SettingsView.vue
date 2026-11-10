@@ -168,7 +168,7 @@ async function applyDemo() {
         <div><button class="btn primary" type="submit" :disabled="saving">Save settings</button></div>
       </form>
       <p class="small muted" style="margin: 16px 0 0">
-        Advice, automatic trip plans, and notifications arrive in later versions (V2–V3).
+        Advice (V2), automatic trip plans and notifications (V5) arrive in later versions.
       </p>
     </section>
 

@@ -11,12 +11,12 @@ Have enough charge for upcoming trips by departure time, using the cheapest prac
 - Schedule in **Europe/Amsterdam**, respecting daylight-saving changes.
 - Beautiful, simple, responsive **EVCC-inspired UI**: clear cards, restrained colors, useful graphs, and a rolling **seven-day plan**. Distinguish published prices, estimates, and missing data.
 - **Only use/show energy prices including VAT**, in €/kWh, throughout calculations, recommendations, charts, and notifications. EVCC prices are confirmed to include VAT. Normalize other sources to the same retail basis; unclear conversions remain unknown.
-- **Daily advice is advisory by default**: offer **Create extra plan** for charge-ahead advice, followed by a proposal and confirmation. Optional advice auto-apply is a separate setting, **off by default**; enabling it requires explicit target/expiry rules because qualitative indicators alone do not define a charging amount. Automatic trip/deadline plan management starts in V3.
+- **Daily advice is advisory by default**: offer **Create extra plan** for charge-ahead advice, followed by a proposal and confirmation. Optional advice auto-apply is a separate setting, **off by default**; enabling it requires explicit target/expiry rules because qualitative indicators alone do not define a charging amount. Automatic trip/deadline plan management starts in V5. Every action is auditable from V3.
 
 **Context (2026-11-09).** Local EVCC API (`/api/state`; LAN address kept in private config): SoC, connection, prices, solar forecast. EVCC 0.319.0; Alfen Eve Pro charger (6–16 A); Leaf configured with 62 kWh gross; 15-minute price slots; optimizer automatic control off; Home Assistant connected.
 
 - Defaults: **59 kWh usable** and **3.68 kW** (Leaf charges single-phase at 16 A; about 3.3 kW into the battery at 90% efficiency). Validate both live.
-- Vehicle SoC comes from EVCC's Leaf integration and is **only available while plugged in**; EVCC reports 0 when unplugged. Home Assistant always has it (see V6).
+- Vehicle SoC comes from EVCC's Leaf integration and is **only available while plugged in**; EVCC reports 0 when unplugged. Home Assistant always has it (see V8).
 - EVCC plan endpoints need no login. Each vehicle holds **one one-off SoC plan** (`POST /api/vehicles/{name}/plan/soc/{soc}/{timestamp}`) plus optional repeating plans (none configured). Previews: `GET /api/loadpoints/{id}/plan/static/preview/soc/{soc}/{timestamp}`.
 
 Background EVCC preferences: cheap-grid charging and solar/export-price priority. Typical thresholds discussed: €0.15/€0.30 per kWh; snapshot: €0.20/€0.40. Trip requirements take priority.
@@ -38,7 +38,7 @@ Background EVCC preferences: cheap-grid charging and solar/export-price priority
 - Google Routes supplies road distances/travel times through the **Routes API** with a plain API key: traffic-aware travel times for the planned departure, cached per route and time slot so usage stays far below the free monthly cap (5,000 traffic-aware calls). OpenRouter supplies AI inference. Missing integrations can use explicitly labelled stubs with the same payload contracts, including inferred Tibber/KNMI fixtures. Real Tibber articles may be fetched while inference is stubbed; preserve report dates.
 - Personal/planning settings are editable in the app; system URLs/providers remain configurable through files, with connection status visible in the UI. Notification enablement, destination selection where configured, quiet hours, and reminder preferences are UI-managed; transport URLs/credentials remain server-configured.
 
-**UI direction.** EVCC-inspired cards, clear typography, generous spacing, restrained color, and responsive layouts. Navigation: **Overview**, **Trips**, **Recurring trips**, **Settings**. Overview combines EVCC status, the seven-day plan, and daily advice. Use graphs for published prices, planned charging, and projected SoC where useful; represent uncertain long-range advice with labelled signals. See [text UI mockup](UI-MOCKUP.md).
+**UI direction.** EVCC-inspired cards, clear typography, generous spacing, restrained color, and responsive layouts. Navigation: **Overview**, **Trips**, **Recurring trips**, **Settings**, plus **Activity** (audit trail) from V3. Overview combines EVCC status, the seven-day plan, and daily advice. Use graphs for published prices, planned charging, and projected SoC where useful; represent uncertain long-range advice with labelled signals. See [text UI mockup](UI-MOCKUP.md).
 
 **Local development and AI-agent verification.** Planned commands, to implement with the app:
 
@@ -79,7 +79,7 @@ Example: 100 km total at 18 kWh/100 km, 59 kWh usable capacity, and a configurab
 - Add UI settings for home address, trip defaults, and recurring-trip management; save personal data privately in SQLite.
 - Calculate routes, targets, charging duration, and feasibility.
 - UI: EVCC status (SoC, connection, charging power), seven-day agenda, and plan previews. When unplugged, show the last known SoC with a small tip that it is not current and when it was read. Trip cards show source, arrival and departure times, route, distance **(km)**, estimated energy **(kWh)**, and edit/disable controls. Add a demand/SoC timeline where useful.
-- **Send plan to EVCC** is user-triggered and needs confirmation. The confirmation shows the target SoC, deadline, EVCC preview, and any existing EVCC plan it replaces. EVCC holds one plan per vehicle, so V1 sends the next departure's target. Record app-written plans; never change repeating plans or limits. Automatic plan sync stays in V3.
+- **Send plan to EVCC** is user-triggered and needs confirmation. The confirmation shows the target SoC, deadline, EVCC preview, and any existing EVCC plan it replaces. EVCC holds one plan per vehicle, so V1 sends the next departure's target. Record app-written plans; never change repeating plans or limits. Automatic plan sync stays in V5.
 
 **V2 — Daily forecast ingestion and seven-day advice.**
 
@@ -99,11 +99,32 @@ Example: 100 km total at 18 kWh/100 km, 59 kWh usable capacity, and a configurab
 
 - UI: each day shows its recommendation, confidence level, qualitative charge indicator, rationale, wind/sun, and source freshness. Clearly label estimated prices and weak/stale/missing inputs; insufficient evidence produces no charging suggestion.
 - By default, **Create extra plan** opens an editable charge-ahead proposal with the SoC/energy target, deadline, and expiry; **Review postponement** does the same for deferral. Require confirmation before EVCC writes. Track and restore app-owned temporary settings when these plans end, preserving intervening manual changes. **Dismiss** makes no change; weak/no-data advice has no plan action.
-- Settings expose optional **Automatically create plans from daily advice**, off by default and independent of V3 trip automation. Auto-apply requires user-configured concrete target/expiry policies, honours trip requirements/manual pauses, and takes no action on weak/no-data advice. Its availability does not delay the manual V2 flow.
+- Settings expose optional **Automatically create plans from daily advice**, off by default and independent of V5 trip automation. Auto-apply requires user-configured concrete target/expiry policies, honours trip requirements/manual pauses, and takes no action on weak/no-data advice. Its availability does not delay the manual V2 flow.
 
-**V3 — Automatic plans and interaction.**
+**V3 — Audit trail.**
+
+- Record every action as an append-only audit event: time, source (UI, scheduled job, calendar sync, automation), action, subject (trip, schedule, place, setting, plan), before/after values, and outcome (success or failure with the error). Write the event in the same transaction as the change where possible.
+- **App actions:** EVCC plan submissions (target, deadline, the plan it replaced, EVCC's response), manual trips added/edited/deleted, trips or dates disabled/re-enabled/edited/reset, calendar trips confirmed, recurring schedules created/edited/paused/deleted, places and settings changes, and later advice and automation decisions.
+- **External API calls:** every call to a non-local service, e.g. Google Routes (route and time slot; real calls only, not cache hits), calendar feed fetches, and later OpenRouter, KNMI, and notification providers, with status, duration, and result size. Local EVCC and Home Assistant traffic is not logged per call; writes to EVCC are logged as actions.
+- Never store secrets: identify calendars by name/ID, never by their secret URL, and redact keys and tokens.
+- UI: an **Activity** page in the navigation, newest first, with filters by type, source, and date, and before→after details. Link trips and plans to their history. Show monthly external API usage, e.g. Google Routes calls against the free cap.
+- Configurable retention (default 1 year), pruned daily; export as CSV/JSON.
+- Tests: each mutation produces exactly one event with the correct change; no secret ever appears in events.
+
+**V4 — UI polish.**
+
+- Refine the visual design: typography scale, spacing, color tokens, dark-mode parity, icons, and empty, loading, and error states.
+- Better graphs: an interactive SoC timeline with trip markers and charging windows, a price chart with planned charging and confirmed vs estimated prices, day drill-downs, and tap-friendly tooltips on phones.
+- Clearer Overview hierarchy and a day detail view with quick actions.
+- Phone and installed-app polish: touch targets, bottom navigation on small screens, safe areas, pull-to-refresh, splash and theme colors.
+- Accessibility: contrast, focus order, screen-reader labels, reduced motion. Keep screenshot checks of key screens at desktop and phone sizes.
+
+**V5 — Automatic plans and interaction.**
 
 - Update managed trip plans after hourly calendar sync, new prices, connection changes, and manual edits. Keep trip automation separate from advice auto-apply; daily advice remains manual unless its own setting is explicitly enabled.
+- **Horizon planning:** while published prices (typically 24–36 hours after the ~14:00 update), the trips, and the solar forecast cover the coming day, plan for all trips in that horizon, not only the next one. For each later trip, compare charging its energy before the first departure (e.g. a cheap night block) with the cheapest feasible home window before that trip, including forecast solar surplus after household use; add it to the earlier target when that is cheaper.
+- EVCC keeps one plan per vehicle, so the managed plan is one SoC target by the first departure (EVCC picks the cheapest slots before it); it may exceed the 80% limit. Re-plan as the day unfolds. Beyond the published-price horizon, keep the minimum per-trip targets; V2 estimates stay advisory.
+- UI: explain a target that is higher than the next trip needs, e.g. "includes tomorrow's afternoon trips: night €0.21/kWh vs €0.32/kWh before them".
 - Manual changes made in EVCC pause app control for that vehicle until explicit **Resume**. Preserve plans/settings the app does not own.
 - Track temporary app-managed settings and restore their previous background values on expiry/completion/cancellation, provided the user has not subsequently changed them.
 - Prefer Home Assistant Companion notifications; Telegram is an alternative.
@@ -114,11 +135,11 @@ Example: 100 km total at 18 kWh/100 km, 59 kWh usable capacity, and a configurab
 - Persist snoozes/decisions and deduplicate notifications. Expose notification enablement, available destinations, early/urgent reminder timing, quiet hours/urgent handling, and snoozing in UI settings.
 - UI: target, charging windows, readiness/plug-in deadline, pause/resume, and notification actions. Graph published prices and planned charging.
 
-**V4 — Reliability.** Extend the tests already built from V1; harden recovery, credential renewal, stale-data handling, and notification delivery. UI: sync/health status and recovery actions.
+**V6 — Reliability.** Extend the tests already built from V1; harden recovery, credential renewal, stale-data handling, and notification delivery. UI: sync/health status and recovery actions.
 
-**V5 — Optimization and conversation.** Validate EVCC optimizer control for solar/grid scheduling; its regular planner selects tariff slots and uses available solar. Optional OpenClaw interface using the same core. UI: schedule comparisons/explanations.
+**V7 — Optimization and conversation.** Validate EVCC optimizer control for solar/grid scheduling; its regular planner selects tariff slots and uses available solar. Optional OpenClaw interface using the same core. UI: schedule comparisons/explanations.
 
-**V6 — Future improvements.**
+**V8 — Future improvements.**
 
 - **Always-on SoC:** read the Leaf's SoC from Home Assistant, which has it even when the car is unplugged, using the HA token in `.env`. Fall back to EVCC, and show the source and freshness of every SoC value.
 
