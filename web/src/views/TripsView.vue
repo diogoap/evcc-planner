@@ -1,14 +1,16 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { api } from '../api/client'
 import type { Place, Trip, TripSource } from '../api/types'
 import TripEditor from '../components/TripEditor.vue'
 import TripRow from '../components/TripRow.vue'
-import { dateTime, dayLong, km, kwh } from '../lib/format'
+import { historyLink } from '../lib/activity'
+import { dateTime, dayLong, dayShort, km, kwh } from '../lib/format'
 import { mutate, notify, refresh, state } from '../store'
 
 const route = useRoute()
+const router = useRouter()
 const plan = computed(() => state.plan)
 const source = ref<'' | TripSource>('')
 const places = ref<Place[]>([])
@@ -65,6 +67,10 @@ function remove(t: Trip) {
   mutate(() => api.deleteTrip(t.key), 'Trip deleted')
 }
 
+function history(t: Trip) {
+  router.push(historyLink(`trip:${t.key}`, `${t.title}, ${dayShort(t.date)}`))
+}
+
 function onSaved(message: string) {
   editor.value = null
   notify(message)
@@ -111,6 +117,7 @@ function onSaved(message: string) {
               @review="review(t)"
               @reset="reset(t)"
               @remove="remove(t)"
+              @history="history(t)"
             />
           </ul>
           <p v-else class="muted small" style="margin: 0">

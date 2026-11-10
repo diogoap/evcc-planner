@@ -12,6 +12,7 @@ const emit = defineEmits<{
   reset: []
   remove: []
   review: []
+  history: []
 }>()
 
 const source = computed(() => {
@@ -88,6 +89,14 @@ const source = computed(() => {
           @click="emit('remove')"
         >
           Delete
+        </button>
+        <button
+          class="btn sm ghost"
+          type="button"
+          :aria-label="`History of ${trip.title} on ${trip.date}`"
+          @click="emit('history')"
+        >
+          History
         </button>
       </div>
     </div>

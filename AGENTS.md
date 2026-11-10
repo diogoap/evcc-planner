@@ -1,7 +1,7 @@
 # Agent guide
 
 Instructions for AI coding agents working in this repository. Read
-[PLAN.md](PLAN.md) for scope (V1 and V2 are implemented; later versions are not) and
+[PLAN.md](PLAN.md) for scope (V1–V3 are implemented; later versions are not) and
 [README.md](README.md) for configuration and deployment.
 
 ## Commands
@@ -25,6 +25,9 @@ automatically. It needs no credentials or live services.
   variables (`.env` locally, ignored by Git). Personal data lives in the UI/SQLite.
 - **Never write to the real EVCC from tests.** Live tests are read-only; plan
   writes are only exercised against the stub.
+- Every change goes through the activity log: mutations use `Service.change`, which
+  writes the change and its audit event in one transaction (see `internal/service/activity.go`);
+  external HTTP clients use `audit.Transport`. Never put secrets in events.
 - Forecast text is structured by a model, but numbers are never computed by it:
   keep quote verification and conversions in `internal/forecast`.
 - Add tests with every change: Go `testing` + `httptest` (fixed clocks, temp

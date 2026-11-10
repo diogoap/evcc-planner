@@ -42,6 +42,7 @@ onUnmounted(() => window.clearInterval(timer))
         <RouterLink to="/trips">Trips</RouterLink>
         <RouterLink to="/recurring">Recurring trips</RouterLink>
         <RouterLink to="/settings">Settings</RouterLink>
+        <RouterLink to="/activity">Activity</RouterLink>
       </nav>
     </div>
   </header>

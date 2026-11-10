@@ -11,11 +11,17 @@ for the UI direction.
 route-based energy and SoC targets, feasibility, plan previews, and a
 confirmed, manual **Send plan to EVCC**.
 
-**V2 (this version):** daily forecast ingestion (Tibber's weekly price
-outlook structured with OpenRouter, KNMI's weather outlook) and one advisory
-recommendation per day (charge ahead, defer, or nothing), with confirmed
-**Create extra plan** and **Review postponement** actions that are undone
-when they expire. Optional auto-apply, off by default.
+**V2:** daily forecast ingestion (Tibber's weekly price outlook structured
+with OpenRouter, KNMI's weather outlook) and one advisory recommendation per
+day (charge ahead, defer, or nothing), with confirmed **Create extra plan**
+and **Review postponement** actions that are undone when they expire.
+Optional auto-apply, off by default.
+
+**V3 (this version):** an **Activity** page with the append-only activity
+log (every change, EVCC write, and external API call, with before → after
+values), history links from trips, schedules, and the EVCC plan, monthly
+external API usage, CSV/JSON export, and a daily cleanup of history older than
+90 days.
 
 ## Quick start
 
@@ -50,7 +56,7 @@ deletes it.
 
 | Location | Contents | In Git |
 | --- | --- | --- |
-| `config.yaml` | System settings: port, timezone, EVCC URL (loopback default), routing, forecast sources and model, planning defaults. | Yes |
+| `config.yaml` | System settings: port, timezone, EVCC URL (loopback default), routing, forecast sources and model, history retention, planning defaults. | Yes |
 | `.env` | Deployment values and secrets: `EVCC_URL`, `GOOGLE_CALENDAR_ICAL_URL`, `GOOGLE_MAPS_API_KEY`, and optionally `OPENROUTER_API_KEY`, `KNMI_API_KEY`. Copy `.env.example`. Real environment variables win. | No |
 | `config.local.yaml` | Optional overrides of `config.yaml` values, and saved places to seed. Copy `config.local.example.yaml`. | No |
 | `data/` | SQLite database with everything edited in the UI. | No |
@@ -209,13 +215,45 @@ to `main` deploy automatically, run `make verify` before pushing.
   It acts once a day on today's advice with enough confidence, keeps trip
   targets, and skips plans you set in EVCC.
 
+## Activity log and history
+
+The **Activity** page lists, newest first, everything the planner did:
+
+- **Changes:** trips added, edited, disabled, re-enabled, reset, deleted, or
+  confirmed; recurring schedules created, edited, paused, resumed, or
+  deleted; places and settings; plans sent to EVCC (with the plan they
+  replaced and EVCC's response); advice dismissed; extra plans and
+  postponements created, ended, and restored. Each shows only the values that
+  changed (before → after) and is saved in the same database transaction as
+  the change. Failed EVCC writes are recorded too; rejected input is not.
+- **Source:** the UI, a scheduled job (e.g. restoring an EVCC setting at
+  expiry), the calendar sync, or automation (plans created from advice).
+- **External API calls:** every request to Google Routes (route and time slot;
+  cache hits make no call), the calendar feeds, the Tibber page, OpenRouter,
+  and KNMI, with HTTP status, duration, and size. Calls to EVCC on your
+  network are not logged; writes to EVCC are logged as changes. The page shows
+  each month's calls per service, with Google Routes against its free
+  allowance (`routes.monthly_free_calls`).
+
+Filter by type, source, and dates; **History** on a trip, schedule, or the
+EVCC plan opens just its entries. **Export CSV/JSON** downloads the filtered
+log. Entries are never edited. Calendars appear by name and ID; API keys,
+secret iCal addresses, and signed download links are never recorded.
+
+Once a day the planner deletes history older than `retention.days` (90 by
+default): activity entries, manual trips that have ended, per-date edits of
+past dates, cached routes, plan records (keeping the latest), advice
+dismissals, and ended EVCC changes. Schedules, places, and settings are kept;
+calendar events only ever cover the next eight days.
+
 ## Diagnostics
 
 - Logs go to stdout (request, sync, and EVCC poll lines): `docker logs evcc-planner`.
 - The image has no shell. For one beside the app (same network, data at `/data`):
   `docker run --rm -it --network container:evcc-planner -v /opt/evcc-planner/data:/data busybox sh`
 - `GET /healthz`, `GET /readyz`, `GET /api/connections` (integration status, no secrets),
-  `GET /api/forecasts` (the stored outlook and weather payloads).
+  `GET /api/forecasts` (the stored outlook and weather payloads),
+  `GET /api/activity` (the activity log, including failed external calls).
 - Browser test failures: screenshots and traces in `web/test-results/`, HTML
   report in `web/playwright-report/`, server log path printed at the start.
 - On TLS-inspecting networks, `make setup` and `make docker-smoke` retry
@@ -230,6 +268,7 @@ cmd/devrun         `make dev` process manager
 internal/app       wiring shared by the server and API tests
 internal/planner   pure SoC/energy/feasibility planning
 internal/advice    pure daily charging advice
+internal/audit     activity log support: request source, redaction, auditing HTTP transport
 internal/forecast  Tibber outlook extraction (OpenRouter or pattern stub), validation, KNMI outlook
 internal/trips     merges manual, recurring, and calendar trips with local edits
 internal/calendar  iCal parsing, trip classification, sync, demo feed

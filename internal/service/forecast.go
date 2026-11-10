@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/diogoap/evcc-planner/internal/audit"
 	"github.com/diogoap/evcc-planner/internal/forecast"
 	"github.com/diogoap/evcc-planner/internal/localtime"
 	"github.com/diogoap/evcc-planner/internal/store"
@@ -82,7 +83,7 @@ func (s *Service) refreshOutlook(ctx context.Context, force bool) error {
 		s.Log.Warn("forecast fetch failed", "source", SourceTibber, "err", err)
 		return errors.Join(err, s.Store.SaveForecastFailure(SourceTibber, now, err.Error()))
 	}
-	page, err := f.Article.Fetch(ctx)
+	page, err := f.Article.Fetch(audit.WithCall(ctx, audit.Call{Summary: "Tibber price outlook page"}))
 	if err != nil {
 		return fail(err)
 	}
@@ -97,7 +98,10 @@ func (s *Service) refreshOutlook(ctx context.Context, force bool) error {
 		return s.Store.TouchForecast(SourceTibber, now)
 	}
 	req := forecast.ExtractRequest{Text: text, URL: f.Article.URL(), FetchedAt: now, Location: s.loc()}
-	ex, usage, err := f.Extractor.Extract(ctx, req)
+	ex, usage, err := f.Extractor.Extract(audit.WithCall(ctx, audit.Call{
+		Summary: "Structure the price outlook with " + s.Cfg.OpenRouter.Model,
+		Detail:  map[string]any{"model": s.Cfg.OpenRouter.Model, "articleChars": len(text)},
+	}), req)
 	if err != nil {
 		return fail(err)
 	}

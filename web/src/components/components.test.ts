@@ -1,6 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
-import type { Day, SoCView, Status, Trip } from '../api/types'
+import type { AuditEvent, Day, SoCView, Status, Trip } from '../api/types'
+import ActivityItem from './ActivityItem.vue'
 import DaysTable from './DaysTable.vue'
 import TripRow from './TripRow.vue'
 import VehicleCard from './VehicleCard.vue'
@@ -127,6 +128,12 @@ describe('TripRow', () => {
     expect(manual.text()).toContain('Manual')
   })
 
+  it('opens the trip history', async () => {
+    const w = mount(TripRow, { props: { trip: trip({}) } })
+    await w.get('[aria-label="History of School drop-off on 2026-11-10"]').trigger('click')
+    expect(w.emitted('history')).toHaveLength(1)
+  })
+
   it('mutes disabled trips and asks to review unclear calendar trips', async () => {
     const w = mount(TripRow, {
       props: { trip: trip({ enabled: false, needsReview: true, source: 'calendar', sourceLabel: 'Family' }) },
@@ -190,5 +197,67 @@ describe('DaysTable', () => {
     expect(row.text()).toContain('1 to review')
     await row.trigger('click')
     expect(w.emitted('select')).toEqual([['2026-11-10']])
+  })
+})
+
+describe('ActivityItem', () => {
+  const event: AuditEvent = {
+    id: 7,
+    at: '2026-11-09T18:02:00Z',
+    type: 'action',
+    source: 'ui',
+    action: 'trip.disable',
+    subjectType: 'trip',
+    subjectId: 'recurring:2:2026-11-12',
+    related: 'schedule:2',
+    summary: 'Disabled School pickup on Thu 12 Nov',
+    before: { enabled: true },
+    after: { enabled: false },
+    outcome: 'success',
+  }
+
+  it('shows the change and links to the trip history', async () => {
+    const w = mount(ActivityItem, { props: { event, showHistory: true } })
+    expect(w.text()).toContain('19:02')
+    expect(w.text()).toContain('Disabled School pickup on Thu 12 Nov')
+    expect(w.text()).toContain('UI')
+    const change = w.get('[data-testid=event-changes] tr')
+    expect(change.get('th').text()).toBe('On')
+    expect(change.get('td').text()).toBe('Yes → No')
+    await w.get('[aria-label="History of this trip"]').trigger('click')
+    expect(w.emitted('history')).toEqual([['trip:recurring:2:2026-11-12', 'this trip']])
+    expect(mount(ActivityItem, { props: { event } }).find('[aria-label^="History"]').exists()).toBe(false)
+  })
+
+  it('marks failed external calls with their status and details', () => {
+    const w = mount(ActivityItem, {
+      props: {
+        event: {
+          ...event,
+          type: 'api_call',
+          source: 'calendar_sync',
+          action: 'api.call',
+          subjectType: 'api',
+          service: 'calendar',
+          summary: 'Calendar feed: Family',
+          before: null,
+          after: null,
+          detail: { method: 'GET', endpoint: 'calendar.google.com' },
+          outcome: 'failure',
+          error: 'HTTP 500 Internal Server Error',
+          statusCode: 500,
+          durationMs: 120,
+          bytes: 0,
+        },
+      },
+    })
+    expect(w.classes()).toContain('failed')
+    expect(w.text()).toContain('Google Calendar')
+    expect(w.text()).toContain('Calendar sync')
+    expect(w.text()).toContain('Failed')
+    expect(w.text()).toContain('HTTP 500 · 120 ms · 0 B')
+    expect(w.get('[data-testid=event-error]').text()).toBe('HTTP 500 Internal Server Error')
+    expect(w.find('[data-testid=event-changes]').exists()).toBe(false)
+    expect(w.get('details').text()).toContain('Endpoint')
   })
 })

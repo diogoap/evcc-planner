@@ -147,6 +147,11 @@ func applyOverride(t Trip, overrides map[string]model.Override) Trip {
 	if !ok {
 		return t
 	}
+	return ApplyOverride(t, o)
+}
+
+// ApplyOverride returns the trip with a local edit applied.
+func ApplyOverride(t Trip, o model.Override) Trip {
 	if o.Title != nil {
 		t.Title = *o.Title
 	}

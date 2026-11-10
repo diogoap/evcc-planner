@@ -8,10 +8,12 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/diogoap/evcc-planner/internal/audit"
 	"github.com/diogoap/evcc-planner/internal/calendar"
 	"github.com/diogoap/evcc-planner/internal/clock"
 	"github.com/diogoap/evcc-planner/internal/config"
@@ -44,6 +46,8 @@ type Service struct {
 	Routes   *routes.Resolver
 	Calendar *calendar.Syncer
 	Log      *slog.Logger
+	// Audit records the activity log; every change goes through it.
+	Audit *audit.Recorder
 
 	// RoutesNote explains a stub fallback (e.g. missing API key).
 	RoutesNote string
@@ -155,12 +159,31 @@ func (s *Service) Settings() (model.Settings, error) {
 }
 
 // SaveSettings validates and stores planning settings.
-func (s *Service) SaveSettings(v model.Settings) (model.Settings, error) {
+func (s *Service) SaveSettings(ctx context.Context, v model.Settings) (model.Settings, error) {
 	v.HomeAddress = strings.TrimSpace(v.HomeAddress)
 	if err := v.Validate(); err != nil {
 		return v, ValidationError{Msg: err.Error()}
 	}
-	return v, s.Store.SaveSettings(v)
+	ev := model.AuditEvent{Action: "settings.update", SubjectType: "settings", SubjectID: "planning"}
+	return v, s.change(ctx, ev, func(tx *store.Store, e *model.AuditEvent) error {
+		before, _, err := tx.Settings(s.Cfg.Defaults.Settings())
+		if err != nil {
+			return err
+		}
+		if err := tx.SaveSettings(v); err != nil {
+			return err
+		}
+		e.Before, e.After = changes(before, v)
+		e.Summary = settingsSummary("settings", e.After)
+		return nil
+	})
+}
+
+func settingsSummary(what string, diff []byte) string {
+	if fields := fieldList(diff, settingLabels); fields != "" {
+		return "Changed " + what + ": " + fields
+	}
+	return "Saved " + what + " (no changes)"
 }
 
 // ---- places ----
@@ -177,31 +200,69 @@ func cleanPlace(p model.Place) (model.Place, error) {
 	return p, nil
 }
 
+func placeOf(p model.Place) placeRecord { return placeRecord{Name: p.Name, Address: p.Address} }
+
 // CreatePlace adds a saved place.
-func (s *Service) CreatePlace(p model.Place) (model.Place, error) {
+func (s *Service) CreatePlace(ctx context.Context, p model.Place) (model.Place, error) {
 	p, err := cleanPlace(p)
 	if err != nil {
 		return p, err
 	}
-	return s.Store.CreatePlace(p)
+	err = s.change(ctx, model.AuditEvent{Action: "place.create", SubjectType: "place"},
+		func(tx *store.Store, e *model.AuditEvent) error {
+			if p, err = tx.CreatePlace(p); err != nil {
+				return err
+			}
+			e.SubjectID = strconv.FormatInt(p.ID, 10)
+			e.Summary = "Added place " + p.Name
+			e.After = audit.Marshal(placeOf(p))
+			return nil
+		})
+	return p, err
 }
 
 // UpdatePlace edits a saved place.
-func (s *Service) UpdatePlace(p model.Place) (model.Place, error) {
+func (s *Service) UpdatePlace(ctx context.Context, p model.Place) (model.Place, error) {
 	p, err := cleanPlace(p)
 	if err != nil {
 		return p, err
 	}
-	return p, s.Store.UpdatePlace(p)
+	ev := model.AuditEvent{Action: "place.update", SubjectType: "place", SubjectID: strconv.FormatInt(p.ID, 10)}
+	return p, s.change(ctx, ev, func(tx *store.Store, e *model.AuditEvent) error {
+		before, err := tx.Place(p.ID)
+		if err != nil {
+			return err
+		}
+		if err := tx.UpdatePlace(p); err != nil {
+			return err
+		}
+		e.Before, e.After = changes(placeOf(before), placeOf(p))
+		e.Summary = "Edited place " + p.Name
+		return nil
+	})
 }
 
 // DeletePlace removes a saved place.
-func (s *Service) DeletePlace(id int64) error { return s.Store.DeletePlace(id) }
+func (s *Service) DeletePlace(ctx context.Context, id int64) error {
+	ev := model.AuditEvent{Action: "place.delete", SubjectType: "place", SubjectID: strconv.FormatInt(id, 10)}
+	return s.change(ctx, ev, func(tx *store.Store, e *model.AuditEvent) error {
+		before, err := tx.Place(id)
+		if err != nil {
+			return err
+		}
+		if err := tx.DeletePlace(id); err != nil {
+			return err
+		}
+		e.Before = audit.Marshal(placeOf(before))
+		e.Summary = "Deleted place " + before.Name
+		return nil
+	})
+}
 
 // ---- bootstrap ----
 
 // Bootstrap seeds saved places from private config once.
-func (s *Service) Bootstrap() error {
+func (s *Service) Bootstrap(ctx context.Context) error {
 	if len(s.Cfg.Places) == 0 {
 		return nil
 	}
@@ -215,7 +276,7 @@ func (s *Service) Bootstrap() error {
 	}
 	if len(existing) == 0 {
 		for _, p := range s.Cfg.Places {
-			if _, err := s.CreatePlace(model.Place{Name: p.Name, Address: p.Address}); err != nil {
+			if _, err := s.CreatePlace(ctx, model.Place{Name: p.Name, Address: p.Address}); err != nil {
 				return fmt.Errorf("seed place %q: %w", p.Name, err)
 			}
 		}

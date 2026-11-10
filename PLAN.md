@@ -116,8 +116,16 @@ As implemented (2026-11-10):
 - **External API calls:** every call to a non-local service, e.g. Google Routes (route and time slot; real calls only, not cache hits), calendar feed fetches, and later OpenRouter, KNMI, and notification providers, with status, duration, and result size. Local EVCC and Home Assistant traffic is not logged per call; writes to EVCC are logged as actions.
 - Never store secrets: identify calendars by name/ID, never by their secret URL, and redact keys and tokens.
 - UI: an **Activity** page in the navigation, newest first, with filters by type, source, and date, and before→after details. Link trips and plans to their history. Show monthly external API usage, e.g. Google Routes calls against the free cap.
-- Configurable retention (default 1 year), pruned daily; export as CSV/JSON.
+- Configurable retention (default 90 days, decided 2026-11-10), pruned daily together with past trips, per-date edits, route cache, plan records, and advice decisions; export as CSV/JSON.
 - Tests: each mutation produces exactly one event with the correct change; no secret ever appears in events.
+
+As implemented (2026-11-10):
+
+- One `audit_events` table; a trigger rejects updates. Each change and its event commit in one SQLite transaction; input errors (400/404) are not recorded, failed EVCC writes are. Events hold only changed fields (creations only "after", deletions only "before") as readable local values.
+- Source comes from the request context: API requests are UI; jobs mark theirs (scheduled job, calendar sync, automation for advice auto-apply). Restores at expiry are scheduled-job events.
+- External calls are recorded by an HTTP transport on each client (Routes, calendar, Tibber, OpenRouter, KNMI): status, duration, response size; never query strings, and only the host for secret iCal addresses. Configured keys and calendar URLs, bearer tokens, and signed URLs are redacted from every stored text.
+- History: an event's subject (`trip:<key>`, `schedule:<id>`, `place:<id>`, `plan`) plus a related subject (a date's edits belong to its schedule's history; plan sends to their trip's; extra plans to the plan's).
+- Retention: `retention.days` (90) in `config.yaml`; one daily cleanup also deletes ended manual trips, per-date edits of past dates (and of calendar events that are gone), cached routes, older plan records, advice dismissals, and ended EVCC changes. Google Routes' free allowance for the usage card: `routes.monthly_free_calls` (5,000).
 
 **V4 — UI polish.**
 

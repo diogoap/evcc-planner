@@ -5,11 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strconv"
 	"time"
 
+	"github.com/diogoap/evcc-planner/internal/audit"
 	"github.com/diogoap/evcc-planner/internal/evcc"
 	"github.com/diogoap/evcc-planner/internal/localtime"
 	"github.com/diogoap/evcc-planner/internal/model"
+	"github.com/diogoap/evcc-planner/internal/store"
 )
 
 // ProposalView is an editable extra plan or postponement, shown before
@@ -246,6 +249,8 @@ func (s *Service) applyAdjustment(ctx context.Context, in AdjustInput, source st
 		ExpiresAt: in.ExpiresAt.Truncate(time.Minute), Status: model.AdjustActive, CreatedAt: now,
 	}
 
+	ev := model.AuditEvent{Action: "adjustment.create", SubjectType: "adjustment", Detail: adviceDetail(p.Advice)}
+	var write *model.PlanWrite
 	switch in.Kind {
 	case model.AdjustExtraPlan:
 		switch {
@@ -267,22 +272,42 @@ func (s *Service) applyAdjustment(ctx context.Context, in AdjustInput, source st
 		if veh.Plan != nil {
 			a.PrevPlan = &model.PlanValue{SoC: veh.Plan.Soc, Time: veh.Plan.Time}
 		}
-		if _, err := s.EVCC.SetSocPlan(ctx, veh.Name, in.SoC, at); err != nil {
-			return nil, err
-		}
-		if err := s.recordPlanWrite(veh.Name, in.SoC, at, "advice:"+in.Date); err != nil {
-			return nil, err
-		}
 		a.Plan = &model.PlanValue{SoC: float64(in.SoC), Time: at}
 		a.Note = fmt.Sprintf("Extra plan %d%% by %s", in.SoC, dateTimeText(at, s.loc()))
+		ev.Related = "plan"
+		ev.Summary = fmt.Sprintf("Created an extra plan from the advice for %s: %d%% by %s, until %s",
+			s.dateText(in.Date), in.SoC, dateTimeText(at, s.loc()), dateTimeText(a.ExpiresAt, s.loc()))
+		ev.Before = audit.Marshal(map[string]string{"evccPlan": s.adjustPlanText(a.PrevPlan)})
+		ev.After = audit.Marshal(map[string]string{"evccPlan": s.adjustPlanText(a.Plan)})
+		if _, err := s.EVCC.SetSocPlan(ctx, veh.Name, in.SoC, at); err != nil {
+			return nil, s.failedAdjustment(ctx, ev, err)
+		}
+		write = &model.PlanWrite{Vehicle: veh.Name, SoC: in.SoC, TargetTime: at, TripKey: "advice:" + in.Date, WrittenAt: now}
 	case model.AdjustPostpone:
 		a.PrevSmartCostLimit = p.SmartCostLimit
-		if err := s.EVCC.SetSmartCostLimit(ctx, a.Loadpoint, nil); err != nil {
-			return nil, err
-		}
 		a.Note = fmt.Sprintf("Cheap-grid charging paused until %s", dateTimeText(a.ExpiresAt, s.loc()))
+		ev.Summary = fmt.Sprintf("Paused cheap-grid charging until %s (advice for %s)",
+			dateTimeText(a.ExpiresAt, s.loc()), s.dateText(in.Date))
+		ev.Before = audit.Marshal(map[string]string{"cheapChargingLimit": limitText(a.PrevSmartCostLimit)})
+		ev.After = audit.Marshal(map[string]string{"cheapChargingLimit": limitText(nil)})
+		if err := s.EVCC.SetSmartCostLimit(ctx, a.Loadpoint, nil); err != nil {
+			return nil, s.failedAdjustment(ctx, ev, err)
+		}
 	}
-	saved, err := s.Store.AddAdjustment(a)
+	var saved model.Adjustment
+	err = s.change(ctx, ev, func(tx *store.Store, e *model.AuditEvent) error {
+		if write != nil {
+			if _, err := tx.AddPlanWrite(*write); err != nil {
+				return err
+			}
+		}
+		var err error
+		if saved, err = tx.AddAdjustment(a); err != nil {
+			return err
+		}
+		e.SubjectID = strconv.FormatInt(saved.ID, 10)
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -291,6 +316,20 @@ func (s *Service) applyAdjustment(ctx context.Context, in AdjustInput, source st
 		s.Log.Warn("evcc refresh after adjustment failed", "err", err)
 	}
 	return &saved, nil
+}
+
+// failedAdjustment records an EVCC write that failed; nothing was changed.
+func (s *Service) failedAdjustment(ctx context.Context, ev model.AuditEvent, err error) error {
+	ev.Outcome, ev.Error = model.OutcomeFailure, err.Error()
+	s.record(ctx, ev)
+	return err
+}
+
+func (s *Service) adjustPlanText(p *model.PlanValue) string {
+	if p == nil {
+		return s.planText(0, time.Time{}, false)
+	}
+	return s.planText(p.SoC, p.Time, true)
 }
 
 // CancelAdjustment ends an active adjustment now and restores the previous
@@ -350,14 +389,33 @@ func (s *Service) CheckAdjustments(ctx context.Context) error {
 }
 
 // settle compares an active adjustment with EVCC: a value changed in EVCC is
-// kept; at expiry (or when cancelling) the previous value is restored.
+// kept; at expiry (or when cancelling) the previous value is restored. Each
+// ending is recorded with the value it leaves in EVCC.
 func (s *Service) settle(ctx context.Context, a *model.Adjustment, cancel bool) error {
 	now := s.now()
 	snap := s.snapshot()
-	end := func(status, note string) error {
+	// end stores the outcome, a restored plan's record, and the activity
+	// entry together. before and after are the EVCC values.
+	end := func(status, note string, before, after map[string]string, write *model.PlanWrite) error {
 		a.Status, a.Note, a.EndedAt = status, note, &now
 		s.Log.Info("evcc adjustment ended", "id", a.ID, "status", status, "note", note)
-		return s.Store.UpdateAdjustment(*a)
+		ev := model.AuditEvent{
+			Action: "adjustment.end", SubjectType: "adjustment", SubjectID: strconv.FormatInt(a.ID, 10),
+			Summary: kindTitle(a.Kind) + " ended: " + note,
+			Before:  audit.Marshal(before), After: audit.Marshal(after),
+			Detail: audit.Marshal(map[string]string{"status": status, "adviceDate": a.AdviceDate}),
+		}
+		if a.Kind == model.AdjustExtraPlan {
+			ev.Related = "plan"
+		}
+		return s.change(ctx, ev, func(tx *store.Store, e *model.AuditEvent) error {
+			if write != nil {
+				if _, err := tx.AddPlanWrite(*write); err != nil {
+					return err
+				}
+			}
+			return tx.UpdateAdjustment(*a)
+		})
 	}
 	done := model.AdjustRestored
 	if cancel {
@@ -371,11 +429,14 @@ func (s *Service) settle(ctx context.Context, a *model.Adjustment, cancel bool) 
 		}
 		ours := cur != nil && a.Plan != nil && int(math.Round(cur.Soc)) == int(math.Round(a.Plan.SoC)) &&
 			absDuration(cur.Time.Sub(a.Plan.Time)) < time.Minute
+		set := map[string]string{"evccPlan": s.adjustPlanText(a.Plan)}
 		switch {
 		case cur != nil && !ours:
-			return end(model.AdjustKept, "The plan was changed in EVCC; your change is kept.")
+			return end(model.AdjustKept, "The plan was changed in EVCC; your change is kept.", set,
+				map[string]string{"evccPlan": s.planText(cur.Soc, cur.Time, true)}, nil)
 		case cur == nil && !s.planFinished(a, now):
-			return end(model.AdjustKept, "The plan was removed in EVCC; left as is.")
+			return end(model.AdjustKept, "The plan was removed in EVCC; left as is.", set,
+				map[string]string{"evccPlan": s.adjustPlanText(nil)}, nil)
 		case !cancel && now.Before(a.ExpiresAt):
 			return nil
 		}
@@ -383,41 +444,51 @@ func (s *Service) settle(ctx context.Context, a *model.Adjustment, cancel bool) 
 		case a.PrevPlan != nil && a.PrevPlan.Time.After(now):
 			soc := int(math.Round(a.PrevPlan.SoC))
 			if _, err := s.EVCC.SetSocPlan(ctx, a.Vehicle, soc, a.PrevPlan.Time); err != nil {
-				return s.restoreFailed(a, err)
+				return s.restoreFailed(ctx, a, err)
 			}
-			if err := s.recordPlanWrite(a.Vehicle, soc, a.PrevPlan.Time, "restore"); err != nil {
-				return err
-			}
-			return end(done, fmt.Sprintf("Restored the previous plan: %d%% by %s.", soc, dateTimeText(a.PrevPlan.Time, s.loc())))
+			write := &model.PlanWrite{Vehicle: a.Vehicle, SoC: soc, TargetTime: a.PrevPlan.Time, TripKey: "restore", WrittenAt: now}
+			return end(done, fmt.Sprintf("Restored the previous plan: %d%% by %s.", soc, dateTimeText(a.PrevPlan.Time, s.loc())),
+				set, map[string]string{"evccPlan": s.adjustPlanText(a.PrevPlan)}, write)
 		case ours:
 			if err := s.EVCC.DeleteSocPlan(ctx, a.Vehicle); err != nil {
-				return s.restoreFailed(a, err)
+				return s.restoreFailed(ctx, a, err)
 			}
-			return end(done, "Removed the extra plan; there was no earlier plan to restore.")
+			return end(done, "Removed the extra plan; there was no earlier plan to restore.", set,
+				map[string]string{"evccPlan": s.adjustPlanText(nil)}, nil)
 		default:
-			return end(done, "The extra plan reached its target; there was no earlier plan to restore.")
+			return end(done, "The extra plan reached its target; there was no earlier plan to restore.", set,
+				map[string]string{"evccPlan": s.adjustPlanText(nil)}, nil)
 		}
 	case model.AdjustPostpone:
 		var cur *float64
 		if lp, ok := snap.state.Loadpoint(a.Loadpoint); ok {
 			cur = lp.SmartCostLimit
 		}
+		set := map[string]string{"cheapChargingLimit": limitText(a.SmartCostLimit)}
 		if !sameLimit(cur, a.SmartCostLimit) {
-			return end(model.AdjustKept, "The cheap-charging limit was changed in EVCC; your change is kept.")
+			return end(model.AdjustKept, "The cheap-charging limit was changed in EVCC; your change is kept.", set,
+				map[string]string{"cheapChargingLimit": limitText(cur)}, nil)
 		}
 		if !cancel && now.Before(a.ExpiresAt) {
 			return nil
 		}
 		if err := s.EVCC.SetSmartCostLimit(ctx, a.Loadpoint, a.PrevSmartCostLimit); err != nil {
-			return s.restoreFailed(a, err)
+			return s.restoreFailed(ctx, a, err)
 		}
 		note := "Cheap-grid charging restored."
 		if a.PrevSmartCostLimit != nil {
 			note = fmt.Sprintf("Cheap-grid charging restored at €%.2f/kWh.", *a.PrevSmartCostLimit)
 		}
-		return end(done, note)
+		return end(done, note, set, map[string]string{"cheapChargingLimit": limitText(a.PrevSmartCostLimit)}, nil)
 	}
 	return nil
+}
+
+func kindTitle(kind string) string {
+	if kind == model.AdjustPostpone {
+		return "Postponement"
+	}
+	return "Extra plan"
 }
 
 // planFinished tells EVCC's own clean-up from a removal by the user: EVCC
@@ -430,22 +501,25 @@ func (s *Service) planFinished(a *model.Adjustment, now time.Time) bool {
 	return err == nil && last != nil && last.Percent >= a.Plan.SoC-0.5
 }
 
-// recordPlanWrite remembers a plan the app wrote, so the status shows it as
-// set by the planner.
-func (s *Service) recordPlanWrite(vehicle string, soc int, at time.Time, key string) error {
-	_, err := s.Store.AddPlanWrite(model.PlanWrite{Vehicle: vehicle, SoC: soc, TargetTime: at, TripKey: key, WrittenAt: s.now()})
-	return err
-}
-
-func (s *Service) restoreFailed(a *model.Adjustment, err error) error {
-	a.Note = "Restoring failed, retrying: " + err.Error()
+// restoreFailed keeps the adjustment active so the next check retries, and
+// records the first failure (not every retry).
+func (s *Service) restoreFailed(ctx context.Context, a *model.Adjustment, err error) error {
+	note := "Restoring failed, retrying: " + err.Error()
+	if a.Note != note {
+		s.record(ctx, model.AuditEvent{
+			Action: "adjustment.restore", SubjectType: "adjustment", SubjectID: strconv.FormatInt(a.ID, 10),
+			Summary: "Restoring the previous EVCC setting after the " + kindText(a.Kind) + " failed; retrying",
+			Outcome: model.OutcomeFailure, Error: err.Error(),
+		})
+	}
+	a.Note = note
 	s.Log.Warn("evcc adjustment restore failed", "id", a.ID, "err", err)
 	return errors.Join(err, s.Store.UpdateAdjustment(*a))
 }
 
 // keepAfterPlanWrite marks active extra plans as replaced when the user
 // sends a trip plan from the planner.
-func (s *Service) keepAfterPlanWrite() {
+func (s *Service) keepAfterPlanWrite(ctx context.Context) {
 	s.adjustMu.Lock()
 	defer s.adjustMu.Unlock()
 	list, err := s.Store.Adjustments(localtime.Date(s.now(), s.loc()))
@@ -455,11 +529,20 @@ func (s *Service) keepAfterPlanWrite() {
 	}
 	now := s.now()
 	for _, a := range list {
-		if a.Status == model.AdjustActive && a.Kind == model.AdjustExtraPlan {
-			a.Status, a.Note, a.EndedAt = model.AdjustKept, "Replaced by a trip plan sent from the planner.", &now
-			if err := s.Store.UpdateAdjustment(a); err != nil {
-				s.Log.Warn("update adjustment", "err", err)
-			}
+		if a.Status != model.AdjustActive || a.Kind != model.AdjustExtraPlan {
+			continue
+		}
+		a.Status, a.Note, a.EndedAt = model.AdjustKept, "Replaced by a trip plan sent from the planner.", &now
+		ev := model.AuditEvent{
+			Action: "adjustment.end", SubjectType: "adjustment", SubjectID: strconv.FormatInt(a.ID, 10), Related: "plan",
+			Summary: "Extra plan ended: " + a.Note,
+			Before:  audit.Marshal(map[string]string{"status": model.AdjustActive}),
+			After:   audit.Marshal(map[string]string{"status": model.AdjustKept}),
+		}
+		if err := s.change(ctx, ev, func(tx *store.Store, e *model.AuditEvent) error {
+			return tx.UpdateAdjustment(a)
+		}); err != nil {
+			s.Log.Warn("update adjustment", "err", err)
 		}
 	}
 }
@@ -486,6 +569,7 @@ func dateTimeText(t time.Time, loc *time.Location) string {
 // concrete policy is configured. It skips weak, dismissed, or already
 // handled advice, and an EVCC plan the user set manually.
 func (s *Service) AutoApply(ctx context.Context) error {
+	ctx = audit.WithSource(ctx, model.SourceAutomation)
 	settings, err := s.AdviceSettings()
 	if err != nil || !settings.Enabled || !settings.AutoApply {
 		return err

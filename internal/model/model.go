@@ -3,6 +3,7 @@
 package model
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 )
@@ -298,4 +299,43 @@ type Adjustment struct {
 	Note               string     `json:"note"`
 	CreatedAt          time.Time  `json:"createdAt"`
 	EndedAt            *time.Time `json:"endedAt,omitempty"`
+}
+
+// Activity log event types, sources, and outcomes.
+const (
+	EventAction  = "action"   // a change made (or attempted) by the planner
+	EventAPICall = "api_call" // a request to an external service
+
+	SourceUI           = "ui"
+	SourceJob          = "job" // scheduled job, e.g. restoring an EVCC setting at expiry
+	SourceCalendarSync = "calendar_sync"
+	SourceAutomation   = "automation" // e.g. plans created automatically from advice
+
+	OutcomeSuccess = "success"
+	OutcomeFailure = "failure"
+)
+
+// AuditEvent is one entry of the append-only activity log. Before and After
+// hold the values that changed (a creation has only After, a deletion only
+// Before). Secrets are redacted before an event is stored.
+type AuditEvent struct {
+	ID          int64           `json:"id"`
+	At          time.Time       `json:"at"`
+	Type        string          `json:"type"`
+	Source      string          `json:"source"`
+	Action      string          `json:"action"`      // e.g. trip.disable, plan.send, api.call
+	SubjectType string          `json:"subjectType"` // trip, schedule, place, settings, plan, adjustment, advice, api
+	SubjectID   string          `json:"subjectId,omitempty"`
+	Related     string          `json:"related,omitempty"` // another subject whose history includes this event, e.g. schedule:3
+	Summary     string          `json:"summary"`
+	Before      json.RawMessage `json:"before,omitempty"`
+	After       json.RawMessage `json:"after,omitempty"`
+	Detail      json.RawMessage `json:"detail,omitempty"`
+	Outcome     string          `json:"outcome"`
+	Error       string          `json:"error,omitempty"`
+	// External API calls only.
+	Service    string `json:"service,omitempty"`
+	StatusCode int    `json:"statusCode,omitempty"`
+	DurationMs int64  `json:"durationMs,omitempty"`
+	Bytes      int64  `json:"bytes,omitempty"`
 }

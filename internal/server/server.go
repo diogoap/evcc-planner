@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/diogoap/evcc-planner/internal/audit"
 	"github.com/diogoap/evcc-planner/internal/config"
 	"github.com/diogoap/evcc-planner/internal/evcc"
 	"github.com/diogoap/evcc-planner/internal/model"
@@ -83,6 +84,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/adjustments", s.applyAdjustment)
 	mux.HandleFunc("POST /api/adjustments/{id}/cancel", s.cancelAdjustment)
 
+	mux.HandleFunc("GET /api/activity", s.activity)
+	mux.HandleFunc("GET /api/activity/usage", s.activityUsage)
+	mux.HandleFunc("GET /api/activity/export", s.exportActivity)
+
 	if s.Demo != nil {
 		mux.HandleFunc("POST /api/demo/vehicle", s.demoVehicle)
 	}
@@ -123,6 +128,10 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 		// POSTs must be JSON: browsers cannot send that cross-site without a
 		// CORS preflight, which this server never approves. PUT, PATCH, and
 		// DELETE always need a preflight.
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			// Changes and external calls made for a request come from the UI.
+			r = r.WithContext(audit.WithSource(r.Context(), model.SourceUI))
+		}
 		if r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/api/") {
 			if mt, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type")); mt != "application/json" {
 				writeError(rec, http.StatusUnsupportedMediaType, "requests must use Content-Type: application/json")
@@ -261,7 +270,7 @@ func (s *Server) createTrip(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	key, err := s.Svc.CreateTrip(in)
+	key, err := s.Svc.CreateTrip(r.Context(), in)
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -276,7 +285,7 @@ func (s *Server) updateTrip(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	key := r.PathValue("key")
-	if err := s.Svc.UpdateTrip(key, in); err != nil {
+	if err := s.Svc.UpdateTrip(r.Context(), key, in); err != nil {
 		s.fail(w, err)
 		return
 	}
@@ -284,7 +293,7 @@ func (s *Server) updateTrip(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteTrip(w http.ResponseWriter, r *http.Request) {
-	if err := s.Svc.DeleteTrip(r.PathValue("key")); err != nil {
+	if err := s.Svc.DeleteTrip(r.Context(), r.PathValue("key")); err != nil {
 		s.fail(w, err)
 		return
 	}
@@ -292,7 +301,7 @@ func (s *Server) deleteTrip(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) resetTrip(w http.ResponseWriter, r *http.Request) {
-	if err := s.Svc.ResetTrip(r.PathValue("key")); err != nil {
+	if err := s.Svc.ResetTrip(r.Context(), r.PathValue("key")); err != nil {
 		s.fail(w, err)
 		return
 	}
@@ -315,7 +324,7 @@ func (s *Server) createTemplate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	t.ID = 0
-	created, err := s.Svc.CreateTemplate(t)
+	created, err := s.Svc.CreateTemplate(r.Context(), t)
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -335,7 +344,7 @@ func (s *Server) updateTemplate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	t.ID = id
-	updated, err := s.Svc.UpdateTemplate(t)
+	updated, err := s.Svc.UpdateTemplate(r.Context(), t)
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -349,7 +358,7 @@ func (s *Server) deleteTemplate(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	if err := s.Svc.DeleteTemplate(id); err != nil {
+	if err := s.Svc.DeleteTemplate(r.Context(), id); err != nil {
 		s.fail(w, err)
 		return
 	}
@@ -372,7 +381,7 @@ func (s *Server) createPlace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p.ID = 0
-	created, err := s.Svc.CreatePlace(p)
+	created, err := s.Svc.CreatePlace(r.Context(), p)
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -392,7 +401,7 @@ func (s *Server) updatePlace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p.ID = id
-	updated, err := s.Svc.UpdatePlace(p)
+	updated, err := s.Svc.UpdatePlace(r.Context(), p)
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -406,7 +415,7 @@ func (s *Server) deletePlace(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	if err := s.Svc.DeletePlace(id); err != nil {
+	if err := s.Svc.DeletePlace(r.Context(), id); err != nil {
 		s.fail(w, err)
 		return
 	}
@@ -428,7 +437,7 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	saved, err := s.Svc.SaveSettings(v)
+	saved, err := s.Svc.SaveSettings(r.Context(), v)
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -523,7 +532,7 @@ func (s *Server) putAdviceSettings(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	saved, err := s.Svc.SaveAdviceSettings(v)
+	saved, err := s.Svc.SaveAdviceSettings(r.Context(), v)
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -602,4 +611,79 @@ func (s *Server) demoVehicle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, s.Svc.Status())
+}
+
+func activityQuery(r *http.Request) (service.ActivityQuery, error) {
+	v := r.URL.Query()
+	q := service.ActivityQuery{
+		Type: v.Get("type"), Source: v.Get("source"), From: v.Get("from"), To: v.Get("to"), Subject: v.Get("subject"),
+	}
+	if raw := v.Get("before"); raw != "" {
+		n, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || n < 1 {
+			return q, service.ValidationError{Msg: "before must be a positive number"}
+		}
+		q.Before = n
+	}
+	if raw := v.Get("limit"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n < 1 {
+			return q, service.ValidationError{Msg: "limit must be a positive number"}
+		}
+		q.Limit = n
+	}
+	return q, nil
+}
+
+func (s *Server) activity(w http.ResponseWriter, r *http.Request) {
+	q, err := activityQuery(r)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	v, err := s.Svc.Activity(q)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, v)
+}
+
+func (s *Server) activityUsage(w http.ResponseWriter, r *http.Request) {
+	v, err := s.Svc.APIUsage(r.URL.Query().Get("month"))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, v)
+}
+
+// exportActivity downloads the filtered activity log as CSV or JSON.
+func (s *Server) exportActivity(w http.ResponseWriter, r *http.Request) {
+	format := r.URL.Query().Get("format")
+	if format != "csv" && format != "json" {
+		s.fail(w, service.ValidationError{Msg: "format must be csv or json"})
+		return
+	}
+	q, err := activityQuery(r)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	events, err := s.Svc.ActivityExport(q)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	name := "evcc-planner-activity-" + s.Svc.Clock.Now().In(s.Svc.Cfg.Location).Format("2006-01-02") + "." + format
+	w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
+	w.Header().Set("Cache-Control", "no-store")
+	if format == "json" {
+		writeJSON(w, http.StatusOK, events)
+		return
+	}
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	if err := s.Svc.WriteActivityCSV(w, events); err != nil {
+		s.Log.Warn("write activity csv", "err", err)
+	}
 }

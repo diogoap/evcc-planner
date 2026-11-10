@@ -1,4 +1,7 @@
 import type {
+  ActivityFilter,
+  ActivityPage,
+  ActivityUsage,
   AdjustInput,
   Adjustment,
   AdjustmentKind,
@@ -57,6 +60,16 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 
 const enc = encodeURIComponent
 
+/** Query string for activity filters; empty values are left out. */
+export function activityQuery(f: ActivityFilter, extra: Record<string, string | number | undefined> = {}) {
+  const params = new URLSearchParams()
+  for (const [k, v] of Object.entries({ ...f, ...extra })) {
+    if (v !== undefined && v !== '') params.set(k, String(v))
+  }
+  const q = params.toString()
+  return q ? `?${q}` : ''
+}
+
 export const api = {
   meta: () => request<Meta>('GET', '/api/meta'),
   plan: () => request<Plan>('GET', '/api/plan'),
@@ -100,6 +113,13 @@ export const api = {
   applyAdjustment: (a: AdjustInput) =>
     request<Adjustment>('POST', '/api/adjustments', { ...a, confirm: true }),
   cancelAdjustment: (id: number) => request<Adjustment>('POST', `/api/adjustments/${id}/cancel`, {}),
+  activity: (f: ActivityFilter, before?: number) =>
+    request<ActivityPage>('GET', `/api/activity${activityQuery(f, { before })}`),
+  activityUsage: (month?: string) =>
+    request<ActivityUsage>('GET', `/api/activity/usage${activityQuery({}, { month })}`),
+  /** Download link for the filtered activity log. */
+  activityExportUrl: (format: 'csv' | 'json', f: ActivityFilter) =>
+    `/api/activity/export${activityQuery(f, { format })}`,
   demoVehicle: (connected: boolean, soc: number) =>
     request<Status>('POST', '/api/demo/vehicle', { connected, soc }),
 }

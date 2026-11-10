@@ -2,13 +2,19 @@ package service
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"fmt"
+	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/diogoap/evcc-planner/internal/audit"
 	"github.com/diogoap/evcc-planner/internal/localtime"
 	"github.com/diogoap/evcc-planner/internal/model"
+	"github.com/diogoap/evcc-planner/internal/store"
 	"github.com/diogoap/evcc-planner/internal/trips"
 )
 
@@ -96,8 +102,38 @@ func (s *Service) times(in TripInput, curStart, curEnd time.Time, stay time.Dura
 	return startAt, endAt, nil
 }
 
+// onlyEnabled reports an on/off switch without other edits.
+func (in TripInput) onlyEnabled() bool {
+	return in.Enabled != nil && in.Title == nil && in.Destination == nil && in.Date == nil && in.Start == nil &&
+		in.End == nil && !in.DistanceOverrideKm.Set && in.Reviewed == nil
+}
+
+func (in TripInput) onlyReviewed() bool {
+	return in.Reviewed != nil && in.Title == nil && in.Destination == nil && in.Date == nil && in.Start == nil &&
+		in.End == nil && !in.DistanceOverrideKm.Set && in.Enabled == nil
+}
+
+// describeTripEdit completes a trip edit's activity entry.
+func (s *Service) describeTripEdit(e *model.AuditEvent, in TripInput, before, after tripRecord, start time.Time) {
+	e.Before, e.After = changes(before, after)
+	what := fmt.Sprintf("%s on %s", after.Title, s.dayText(start))
+	switch {
+	case in.onlyEnabled() && *in.Enabled:
+		e.Action, e.Summary = "trip.enable", "Enabled "+what
+	case in.onlyEnabled():
+		e.Action, e.Summary = "trip.disable", "Disabled "+what
+	case in.onlyReviewed() && *in.Reviewed:
+		e.Action, e.Summary = "trip.confirm", "Confirmed "+what+" as a car trip"
+	default:
+		e.Action, e.Summary = "trip.update", "Edited "+what
+		if fields := fieldList(e.After, tripLabels); fields != "" {
+			e.Summary += ": " + fields
+		}
+	}
+}
+
 // CreateTrip adds a manual trip and returns its key.
-func (s *Service) CreateTrip(in TripInput) (string, error) {
+func (s *Service) CreateTrip(ctx context.Context, in TripInput) (string, error) {
 	settings, err := s.Settings()
 	if err != nil {
 		return "", err
@@ -125,20 +161,29 @@ func (s *Service) CreateTrip(in TripInput) (string, error) {
 	if in.Enabled != nil {
 		enabled = *in.Enabled
 	}
-	m, err := s.Store.CreateManualTrip(model.ManualTrip{
-		Title: title, Destination: dest, Start: startAt, End: endAt, Enabled: enabled,
-		DistanceOverrideKm: in.DistanceOverrideKm.Value,
-	})
-	if err != nil {
-		return "", err
-	}
-	return trips.ManualKey(m.ID), nil
+	var key string
+	err = s.change(ctx, model.AuditEvent{Action: "trip.create", SubjectType: "trip"},
+		func(tx *store.Store, e *model.AuditEvent) error {
+			m, err := tx.CreateManualTrip(model.ManualTrip{
+				Title: title, Destination: dest, Start: startAt, End: endAt, Enabled: enabled,
+				DistanceOverrideKm: in.DistanceOverrideKm.Value,
+			})
+			if err != nil {
+				return err
+			}
+			key = trips.ManualKey(m.ID)
+			e.SubjectID = key
+			e.Summary = fmt.Sprintf("Added %s on %s", m.Title, s.dayText(m.Start))
+			e.After = audit.Marshal(s.manualRecord(m))
+			return nil
+		})
+	return key, err
 }
 
 // UpdateTrip edits a trip. Manual trips change directly; recurring and
 // calendar trips store a per-trip override holding only the fields that
 // differ from the source.
-func (s *Service) UpdateTrip(key string, in TripInput) error {
+func (s *Service) UpdateTrip(ctx context.Context, key string, in TripInput) error {
 	k, err := trips.ParseKey(key)
 	if err != nil {
 		return ValidationError{Msg: err.Error()}
@@ -150,65 +195,74 @@ func (s *Service) UpdateTrip(key string, in TripInput) error {
 		return invalid("destination is required")
 	}
 	if k.Source == trips.SourceManual {
-		return s.updateManual(k.ID, in)
+		return s.updateManual(ctx, key, k.ID, in)
 	}
 
 	src, err := s.sourceTrip(key, k)
 	if err != nil {
 		return err
 	}
-	overrides, err := s.Store.Overrides()
-	if err != nil {
-		return err
-	}
-	ov, ok := overrides[key]
-	if !ok {
-		ov = model.Override{TripKey: key}
-	}
-	curStart, curEnd := src.Start, src.End
-	if ov.Start != nil {
-		curStart = *ov.Start
-	}
-	if ov.End != nil {
-		curEnd = *ov.End
-	}
-
-	if in.Title != nil {
-		// An empty title falls back to the schedule's or calendar's title.
-		ov.Title = nil
-		if t := trimmed(in.Title); t != "" {
-			ov.Title = differs(t, src.Title)
-		}
-	}
-	if in.Destination != nil {
-		ov.Destination = differs(trimmed(in.Destination), src.Destination)
-	}
-	if in.Date != nil || in.Start != nil || in.End != nil {
-		startAt, endAt, err := s.times(in, curStart, curEnd, 0)
+	ev := model.AuditEvent{SubjectType: "trip", SubjectID: key, Related: relatedSubject(k)}
+	return s.change(ctx, ev, func(tx *store.Store, e *model.AuditEvent) error {
+		overrides, err := tx.Overrides()
 		if err != nil {
 			return err
 		}
-		ov.Start, ov.End = nil, nil
-		if !startAt.Equal(src.Start) {
-			ov.Start = &startAt
+		ov, ok := overrides[key]
+		if !ok {
+			ov = model.Override{TripKey: key}
 		}
-		if !endAt.Equal(src.End) {
-			ov.End = &endAt
+		before := s.tripRecord(trips.ApplyOverride(src, ov))
+		curStart, curEnd := src.Start, src.End
+		if ov.Start != nil {
+			curStart = *ov.Start
 		}
-	}
-	if in.Enabled != nil {
-		ov.Enabled = differs(*in.Enabled, src.Enabled)
-	}
-	if in.DistanceOverrideKm.Set {
-		ov.DistanceOverrideKm = in.DistanceOverrideKm.Value
-	}
-	if in.Reviewed != nil {
-		ov.Reviewed = nil
-		if *in.Reviewed {
-			ov.Reviewed = ptr(true)
+		if ov.End != nil {
+			curEnd = *ov.End
 		}
-	}
-	return s.Store.SaveOverride(ov)
+
+		if in.Title != nil {
+			// An empty title falls back to the schedule's or calendar's title.
+			ov.Title = nil
+			if t := trimmed(in.Title); t != "" {
+				ov.Title = differs(t, src.Title)
+			}
+		}
+		if in.Destination != nil {
+			ov.Destination = differs(trimmed(in.Destination), src.Destination)
+		}
+		if in.Date != nil || in.Start != nil || in.End != nil {
+			startAt, endAt, err := s.times(in, curStart, curEnd, 0)
+			if err != nil {
+				return err
+			}
+			ov.Start, ov.End = nil, nil
+			if !startAt.Equal(src.Start) {
+				ov.Start = &startAt
+			}
+			if !endAt.Equal(src.End) {
+				ov.End = &endAt
+			}
+		}
+		if in.Enabled != nil {
+			ov.Enabled = differs(*in.Enabled, src.Enabled)
+		}
+		if in.DistanceOverrideKm.Set {
+			ov.DistanceOverrideKm = in.DistanceOverrideKm.Value
+		}
+		if in.Reviewed != nil {
+			ov.Reviewed = nil
+			if *in.Reviewed {
+				ov.Reviewed = ptr(true)
+			}
+		}
+		if err := tx.SaveOverride(ov); err != nil {
+			return err
+		}
+		after := trips.ApplyOverride(src, ov)
+		s.describeTripEdit(e, in, before, s.tripRecord(after), after.Start)
+		return nil
+	})
 }
 
 func differs[T comparable](v, source T) *T {
@@ -218,32 +272,39 @@ func differs[T comparable](v, source T) *T {
 	return &v
 }
 
-func (s *Service) updateManual(id int64, in TripInput) error {
-	m, err := s.Store.ManualTrip(id)
-	if err != nil {
-		return err
-	}
-	if in.Title != nil {
-		m.Title = trimmed(in.Title)
-	}
-	if in.Destination != nil {
-		m.Destination = trimmed(in.Destination)
-	}
-	if m.Title == "" {
-		m.Title = m.Destination
-	}
-	if in.Date != nil || in.Start != nil || in.End != nil {
-		if m.Start, m.End, err = s.times(in, m.Start, m.End, 0); err != nil {
+func (s *Service) updateManual(ctx context.Context, key string, id int64, in TripInput) error {
+	return s.change(ctx, model.AuditEvent{SubjectType: "trip", SubjectID: key}, func(tx *store.Store, e *model.AuditEvent) error {
+		m, err := tx.ManualTrip(id)
+		if err != nil {
 			return err
 		}
-	}
-	if in.Enabled != nil {
-		m.Enabled = *in.Enabled
-	}
-	if in.DistanceOverrideKm.Set {
-		m.DistanceOverrideKm = in.DistanceOverrideKm.Value
-	}
-	return s.Store.UpdateManualTrip(m)
+		before := s.manualRecord(m)
+		if in.Title != nil {
+			m.Title = trimmed(in.Title)
+		}
+		if in.Destination != nil {
+			m.Destination = trimmed(in.Destination)
+		}
+		if m.Title == "" {
+			m.Title = m.Destination
+		}
+		if in.Date != nil || in.Start != nil || in.End != nil {
+			if m.Start, m.End, err = s.times(in, m.Start, m.End, 0); err != nil {
+				return err
+			}
+		}
+		if in.Enabled != nil {
+			m.Enabled = *in.Enabled
+		}
+		if in.DistanceOverrideKm.Set {
+			m.DistanceOverrideKm = in.DistanceOverrideKm.Value
+		}
+		if err := tx.UpdateManualTrip(m); err != nil {
+			return err
+		}
+		s.describeTripEdit(e, in, before, s.manualRecord(m), m.Start)
+		return nil
+	})
 }
 
 // sourceTrip returns a recurring or calendar trip as its source defines it,
@@ -281,7 +342,7 @@ func (s *Service) sourceTrip(key string, k trips.Key) (trips.Trip, error) {
 }
 
 // ResetTrip removes local edits from a recurring or calendar trip.
-func (s *Service) ResetTrip(key string) error {
+func (s *Service) ResetTrip(ctx context.Context, key string) error {
 	k, err := trips.ParseKey(key)
 	if err != nil {
 		return ValidationError{Msg: err.Error()}
@@ -289,11 +350,34 @@ func (s *Service) ResetTrip(key string) error {
 	if k.Source == trips.SourceManual {
 		return invalid("manual trips have no source to reset to")
 	}
-	return s.Store.DeleteOverride(key)
+	// A trip no longer in the plan window can still be reset, without
+	// recorded values.
+	src, srcErr := s.sourceTrip(key, k)
+	ev := model.AuditEvent{Action: "trip.reset", SubjectType: "trip", SubjectID: key, Related: relatedSubject(k)}
+	return s.change(ctx, ev, func(tx *store.Store, e *model.AuditEvent) error {
+		overrides, err := tx.Overrides()
+		if err != nil {
+			return err
+		}
+		if err := tx.DeleteOverride(key); err != nil {
+			return err
+		}
+		if srcErr != nil {
+			e.Summary = "Removed the local edits of " + key
+			return nil
+		}
+		e.Before, e.After = changes(s.tripRecord(trips.ApplyOverride(src, overrides[key])), s.tripRecord(src))
+		origin := "schedule"
+		if k.Source == trips.SourceCalendar {
+			origin = "calendar event"
+		}
+		e.Summary = fmt.Sprintf("Reset %s on %s to its %s", src.Title, s.dayText(src.Start), origin)
+		return nil
+	})
 }
 
 // DeleteTrip removes a manual trip. Other trips can only be disabled.
-func (s *Service) DeleteTrip(key string) error {
+func (s *Service) DeleteTrip(ctx context.Context, key string) error {
 	k, err := trips.ParseKey(key)
 	if err != nil {
 		return ValidationError{Msg: err.Error()}
@@ -301,7 +385,19 @@ func (s *Service) DeleteTrip(key string) error {
 	if k.Source != trips.SourceManual {
 		return invalid("only manual trips can be deleted; disable this trip instead")
 	}
-	return s.Store.DeleteManualTrip(k.ID)
+	ev := model.AuditEvent{Action: "trip.delete", SubjectType: "trip", SubjectID: key}
+	return s.change(ctx, ev, func(tx *store.Store, e *model.AuditEvent) error {
+		m, err := tx.ManualTrip(k.ID)
+		if err != nil {
+			return err
+		}
+		if err := tx.DeleteManualTrip(k.ID); err != nil {
+			return err
+		}
+		e.Before = audit.Marshal(s.manualRecord(m))
+		e.Summary = fmt.Sprintf("Deleted %s on %s", m.Title, s.dayText(m.Start))
+		return nil
+	})
 }
 
 // ---- recurring schedules ----
@@ -406,22 +502,70 @@ func cleanTemplate(t model.Template) (model.Template, error) {
 }
 
 // CreateTemplate adds a recurring schedule.
-func (s *Service) CreateTemplate(t model.Template) (model.Template, error) {
+func (s *Service) CreateTemplate(ctx context.Context, t model.Template) (model.Template, error) {
 	t, err := cleanTemplate(t)
 	if err != nil {
 		return t, err
 	}
-	return s.Store.CreateTemplate(t)
+	err = s.change(ctx, model.AuditEvent{Action: "schedule.create", SubjectType: "schedule"},
+		func(tx *store.Store, e *model.AuditEvent) error {
+			if t, err = tx.CreateTemplate(t); err != nil {
+				return err
+			}
+			e.SubjectID = strconv.FormatInt(t.ID, 10)
+			e.Summary = "Added schedule " + t.Title
+			e.After = audit.Marshal(scheduleOf(t))
+			return nil
+		})
+	return t, err
 }
 
 // UpdateTemplate edits a schedule; dates with local edits keep them.
-func (s *Service) UpdateTemplate(t model.Template) (model.Template, error) {
+func (s *Service) UpdateTemplate(ctx context.Context, t model.Template) (model.Template, error) {
 	t, err := cleanTemplate(t)
 	if err != nil {
 		return t, err
 	}
-	return t, s.Store.UpdateTemplate(t)
+	ev := model.AuditEvent{SubjectType: "schedule", SubjectID: strconv.FormatInt(t.ID, 10)}
+	return t, s.change(ctx, ev, func(tx *store.Store, e *model.AuditEvent) error {
+		prev, err := tx.Template(t.ID)
+		if err != nil {
+			return err
+		}
+		if err := tx.UpdateTemplate(t); err != nil {
+			return err
+		}
+		before, after := scheduleOf(prev), scheduleOf(t)
+		e.Before, e.After = changes(before, after)
+		before.Enabled = after.Enabled
+		switch {
+		case prev.Enabled != t.Enabled && reflect.DeepEqual(before, after) && !t.Enabled:
+			e.Action, e.Summary = "schedule.pause", "Paused schedule "+t.Title
+		case prev.Enabled != t.Enabled && reflect.DeepEqual(before, after):
+			e.Action, e.Summary = "schedule.resume", "Resumed schedule "+t.Title
+		default:
+			e.Action, e.Summary = "schedule.update", "Edited schedule "+t.Title
+			if fields := fieldList(e.After, scheduleLabels); fields != "" {
+				e.Summary += ": " + fields
+			}
+		}
+		return nil
+	})
 }
 
-// DeleteTemplate removes a schedule.
-func (s *Service) DeleteTemplate(id int64) error { return s.Store.DeleteTemplate(id) }
+// DeleteTemplate removes a schedule and its per-date edits.
+func (s *Service) DeleteTemplate(ctx context.Context, id int64) error {
+	ev := model.AuditEvent{Action: "schedule.delete", SubjectType: "schedule", SubjectID: strconv.FormatInt(id, 10)}
+	return s.change(ctx, ev, func(tx *store.Store, e *model.AuditEvent) error {
+		prev, err := tx.Template(id)
+		if err != nil {
+			return err
+		}
+		if err := tx.DeleteTemplate(id); err != nil {
+			return err
+		}
+		e.Before = audit.Marshal(scheduleOf(prev))
+		e.Summary = "Deleted schedule " + prev.Title + " and its per-date edits"
+		return nil
+	})
+}

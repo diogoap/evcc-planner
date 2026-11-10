@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
+import { RouterLink } from 'vue-router'
 import { api } from '../api/client'
 import type { Occurrence, Place, Template, TemplateView } from '../api/types'
 import RecurringEditor from '../components/RecurringEditor.vue'
+import { historyLink } from '../lib/activity'
 import { dayShort, weekdays } from '../lib/format'
 import { mutate, notify, refresh } from '../store'
 
@@ -124,6 +126,7 @@ async function onSaved(message: string) {
             {{ t.enabled ? 'Pause schedule' : 'Resume' }}
           </button>
           <button class="btn sm ghost danger" type="button" @click="remove(t)">Delete</button>
+          <RouterLink class="btn sm ghost" :to="historyLink(`schedule:${t.id}`, t.title)">History</RouterLink>
         </div>
       </section>
     </div>

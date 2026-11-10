@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/diogoap/evcc-planner/internal/audit"
 	"github.com/diogoap/evcc-planner/internal/clock"
 	"github.com/diogoap/evcc-planner/internal/store"
 )
@@ -214,6 +215,13 @@ func (r *Resolver) Leg(ctx context.Context, origin, destination string, departAt
 	}
 	cctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+	cctx = audit.WithCall(cctx, audit.Call{
+		Summary: fmt.Sprintf("Route %s → %s", origin, destination),
+		Detail: map[string]any{
+			"from": origin, "to": destination, "slot": slot,
+			"departAt": departAt.In(r.Location).Format("2006-01-02 15:04"),
+		},
+	})
 	route, err := r.Router.Compute(cctx, origin, destination, &departAt)
 	if err != nil {
 		if c, cerr := r.Cache.AnyRoute(o, d, provider); cerr == nil && c != nil {

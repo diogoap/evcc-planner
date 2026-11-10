@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/diogoap/evcc-planner/internal/audit"
 	"github.com/diogoap/evcc-planner/internal/clock"
 	"github.com/diogoap/evcc-planner/internal/config"
 	"github.com/diogoap/evcc-planner/internal/localtime"
@@ -83,9 +84,24 @@ func (s *Syncer) SyncAll(ctx context.Context) error {
 	if err := s.Store.RemoveCalendarsExcept(ids); err != nil {
 		return err
 	}
+	// Calls are logged by the calendar's name and ID, never its secret address.
+	names := map[string]string{}
+	if prev, err := s.Store.SyncStatuses(); err == nil {
+		for id, st := range prev {
+			names[id] = st.Name
+		}
+	}
 	var errs []error
 	for _, c := range s.Calendars {
-		if err := s.syncOne(ctx, c); err != nil {
+		name := names[c.ID]
+		if name == "" {
+			name = c.Label
+		}
+		cctx := audit.WithCall(ctx, audit.Call{
+			Summary: "Calendar feed: " + name, SubjectID: c.ID,
+			Detail: map[string]any{"calendar": name, "calendarId": c.ID},
+		})
+		if err := s.syncOne(cctx, c); err != nil {
 			errs = append(errs, fmt.Errorf("%s: %w", c.Label, err))
 		}
 	}

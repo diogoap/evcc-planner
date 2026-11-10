@@ -18,6 +18,12 @@ export const router = createRouter({
       meta: { title: 'Recurring trips' },
     },
     {
+      path: '/activity',
+      name: 'activity',
+      component: () => import('./views/ActivityView.vue'),
+      meta: { title: 'Activity' },
+    },
+    {
       path: '/settings',
       name: 'settings',
       component: () => import('./views/SettingsView.vue'),

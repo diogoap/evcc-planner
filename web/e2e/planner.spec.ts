@@ -185,7 +185,7 @@ test('every page fits the viewport without errors', async ({ page }) => {
   const errors: string[] = []
   page.on('pageerror', (e) => errors.push(e.message))
   page.on('console', (m) => m.type() === 'error' && errors.push(m.text()))
-  for (const path of ['/', '/trips', '/recurring', '/settings']) {
+  for (const path of ['/', '/trips', '/recurring', '/settings', '/activity']) {
     await page.goto(path)
     await page.waitForLoadState('networkidle')
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)

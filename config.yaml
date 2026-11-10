@@ -33,7 +33,8 @@ routes:
   mode: google             # google | stub (google without a key falls back to stub)
   api_key_env: GOOGLE_MAPS_API_KEY
   traffic_aware: true      # Compute Routes Pro; results cached per weekly time slot
-  cache_ttl: 168h
+  cache_ttl: 168h          # cached for 1 week
+  monthly_free_calls: 5000 # free monthly Compute Routes Pro calls, shown on the Activity page
 
 # Daily advice inputs. Fetched once a day at forecast.daily_at (failures retry
 # hourly); the last valid forecast is kept when a fetch fails.
@@ -59,6 +60,12 @@ forecast:
   daily_at: "18:00"        # local time; Tibber publishes its outlook on Mondays around 17:00
   retry_interval: 1h
   vat_pct: 21              # converts the outlook's excl. market prices to incl. VAT
+
+# History kept in the database. Older activity log entries, past manual
+# trips, per-date trip edits, cached routes, plan records, and advice
+# decisions are deleted daily. Schedules, places, and settings are kept.
+retention:
+  days: 90
 
 # Bootstrap planning defaults. Values saved in Settings take precedence; the
 # home address is only set in Settings.

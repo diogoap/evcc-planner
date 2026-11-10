@@ -389,3 +389,60 @@ export interface TripInput {
   distanceOverrideKm?: number | null
   reviewed?: boolean
 }
+
+export type ActivitySource = 'ui' | 'job' | 'calendar_sync' | 'automation'
+export type ActivityType = 'trip' | 'schedule' | 'place' | 'settings' | 'evcc' | 'advice' | 'api' | 'system'
+
+/** One entry of the append-only activity log; before/after hold the changed values. */
+export interface AuditEvent {
+  id: number
+  at: string
+  type: 'action' | 'api_call'
+  source: ActivitySource
+  action: string
+  subjectType: string
+  subjectId?: string
+  related?: string
+  summary: string
+  before?: Record<string, unknown> | null
+  after?: Record<string, unknown> | null
+  detail?: Record<string, unknown> | null
+  outcome: 'success' | 'failure'
+  error?: string
+  service?: string
+  statusCode?: number
+  durationMs?: number
+  bytes?: number
+}
+
+export interface ActivityPage {
+  events: AuditEvent[]
+  next: number | null
+  retentionDays: number
+}
+
+export interface ActivityFilter {
+  type?: ActivityType | ''
+  source?: ActivitySource | ''
+  from?: string
+  to?: string
+  /** e.g. trip:manual:3, schedule:2, plan */
+  subject?: string
+}
+
+export interface ServiceUsage {
+  service: string
+  name: string
+  calls: number
+  failures: number
+  bytes: number
+  avgMs: number
+  freeCalls?: number
+  live: boolean
+  note?: string
+}
+
+export interface ActivityUsage {
+  month: string
+  services: ServiceUsage[]
+}

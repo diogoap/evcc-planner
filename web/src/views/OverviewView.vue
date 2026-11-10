@@ -13,6 +13,7 @@ import SendPlanDialog from '../components/SendPlanDialog.vue'
 import SocChart from '../components/SocChart.vue'
 import TripEditor from '../components/TripEditor.vue'
 import VehicleCard from '../components/VehicleCard.vue'
+import { historyLink } from '../lib/activity'
 import { dateTime } from '../lib/format'
 import { mutate, notify, refresh, state } from '../store'
 
@@ -108,6 +109,9 @@ function cancelAdjustment(id: number) {
           </dl>
           <div class="row" style="margin-top: 12px">
             <RouterLink class="btn" to="/settings">Settings</RouterLink>
+            <RouterLink class="btn" :to="historyLink('plan', 'the EVCC plan')" data-testid="plan-history"
+              >Plan history</RouterLink
+            >
           </div>
         </section>
       </div>

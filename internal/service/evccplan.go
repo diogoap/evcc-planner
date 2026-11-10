@@ -3,13 +3,16 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"strconv"
 	"time"
 
+	"github.com/diogoap/evcc-planner/internal/audit"
 	"github.com/diogoap/evcc-planner/internal/config"
 	"github.com/diogoap/evcc-planner/internal/evcc"
 	"github.com/diogoap/evcc-planner/internal/model"
+	"github.com/diogoap/evcc-planner/internal/store"
 )
 
 // StatusView is the EVCC status card.
@@ -184,15 +187,35 @@ func (s *Service) SendPlan(ctx context.Context, in SendPlanInput) (*EVCCPlanView
 		return nil, invalid("no EVCC vehicle found; set evcc.vehicle in the config")
 	}
 	at := in.Time.Truncate(time.Minute)
-	if _, err := s.EVCC.SetSocPlan(ctx, veh.Name, in.SoC, at); err != nil {
+	ev := model.AuditEvent{
+		Action: "plan.send", SubjectType: "plan", SubjectID: veh.Name,
+		Summary: fmt.Sprintf("Sent plan %d%% by %s to EVCC", in.SoC, dateTimeText(at, s.loc())),
+	}
+	if in.TripKey != "" {
+		ev.Related = "trip:" + in.TripKey
+	}
+	prev := s.planText(0, time.Time{}, false)
+	if veh.Plan != nil {
+		prev = s.planText(veh.Plan.Soc, veh.Plan.Time, true)
+	}
+	ev.Before = audit.Marshal(map[string]string{"evccPlan": prev})
+	ev.After = audit.Marshal(map[string]string{"evccPlan": s.planText(float64(in.SoC), at, true)})
+	resp, err := s.EVCC.SetSocPlan(ctx, veh.Name, in.SoC, at)
+	if err != nil {
+		ev.Outcome, ev.Error = model.OutcomeFailure, err.Error()
+		s.record(ctx, ev)
 		return nil, err
 	}
-	if _, err := s.Store.AddPlanWrite(model.PlanWrite{
-		Vehicle: veh.Name, SoC: in.SoC, TargetTime: at, TripKey: in.TripKey, WrittenAt: now,
+	ev.Detail = audit.Marshal(map[string]any{"tripKey": in.TripKey, "evccResponse": resp})
+	if err := s.change(ctx, ev, func(tx *store.Store, e *model.AuditEvent) error {
+		_, err := tx.AddPlanWrite(model.PlanWrite{
+			Vehicle: veh.Name, SoC: in.SoC, TargetTime: at, TripKey: in.TripKey, WrittenAt: now,
+		})
+		return err
 	}); err != nil {
 		return nil, err
 	}
-	s.keepAfterPlanWrite()
+	s.keepAfterPlanWrite(ctx)
 	s.Log.Info("plan sent to evcc", "vehicle", veh.Name, "soc", in.SoC, "time", at)
 	if err := s.PollEVCC(ctx); err != nil {
 		s.Log.Warn("evcc refresh after plan write failed", "err", err)

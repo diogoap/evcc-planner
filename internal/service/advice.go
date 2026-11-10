@@ -2,11 +2,14 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/diogoap/evcc-planner/internal/advice"
+	"github.com/diogoap/evcc-planner/internal/audit"
 	"github.com/diogoap/evcc-planner/internal/config"
 	"github.com/diogoap/evcc-planner/internal/evcc"
 	"github.com/diogoap/evcc-planner/internal/forecast"
@@ -64,11 +67,23 @@ func (s *Service) AdviceSettings() (model.AdviceSettings, error) {
 }
 
 // SaveAdviceSettings validates and stores advice settings.
-func (s *Service) SaveAdviceSettings(v model.AdviceSettings) (model.AdviceSettings, error) {
+func (s *Service) SaveAdviceSettings(ctx context.Context, v model.AdviceSettings) (model.AdviceSettings, error) {
 	if err := v.Validate(); err != nil {
 		return v, ValidationError{Msg: err.Error()}
 	}
-	return v, s.Store.SaveAdviceSettings(v)
+	ev := model.AuditEvent{Action: "settings.update", SubjectType: "settings", SubjectID: "advice"}
+	return v, s.change(ctx, ev, func(tx *store.Store, e *model.AuditEvent) error {
+		before, err := tx.AdviceSettings(model.DefaultAdviceSettings())
+		if err != nil {
+			return err
+		}
+		if err := tx.SaveAdviceSettings(v); err != nil {
+			return err
+		}
+		e.Before, e.After = changes(before, v)
+		e.Summary = settingsSummary("advice settings", e.After)
+		return nil
+	})
 }
 
 // Dismiss hides a day's advice actions without changing anything in EVCC;
@@ -77,14 +92,35 @@ func (s *Service) Dismiss(ctx context.Context, date string, undo bool) error {
 	if _, err := time.Parse(localtime.DateLayout, date); err != nil {
 		return invalid("invalid date")
 	}
+	ev := model.AuditEvent{SubjectType: "advice", SubjectID: date}
 	if undo {
-		return s.Store.Undismiss(date)
+		ev.Action, ev.Summary = "advice.undismiss", "Restored the advice for "+s.dateText(date)
+		return s.change(ctx, ev, func(tx *store.Store, e *model.AuditEvent) error {
+			e.Before, e.After = audit.Marshal(map[string]bool{"dismissed": true}), audit.Marshal(map[string]bool{"dismissed": false})
+			return tx.Undismiss(date)
+		})
 	}
 	day, _, err := s.adviceFor(ctx, date)
 	if err != nil {
 		return err
 	}
-	return s.Store.Dismiss(date, day.Recommendation, s.now())
+	ev.Action = "advice.dismiss"
+	ev.Summary = fmt.Sprintf("Dismissed the advice for %s (%s); nothing changed in EVCC", s.dateText(date),
+		strings.ReplaceAll(day.Recommendation, "_", " "))
+	ev.Before, ev.After = audit.Marshal(map[string]bool{"dismissed": false}), audit.Marshal(map[string]bool{"dismissed": true})
+	ev.Detail = adviceDetail(day)
+	return s.change(ctx, ev, func(tx *store.Store, e *model.AuditEvent) error {
+		return tx.Dismiss(date, day.Recommendation, s.now())
+	})
+}
+
+// adviceDetail is the advice an action was based on.
+func adviceDetail(day *DayAdviceView) json.RawMessage {
+	d := map[string]any{"adviceDate": day.Date, "recommendation": day.Recommendation, "confidence": day.Confidence}
+	if day.Indicator != "" {
+		d["chargeIndicator"] = day.Indicator
+	}
+	return audit.Marshal(d)
 }
 
 // adviceFor returns the current advice for a date in the window.

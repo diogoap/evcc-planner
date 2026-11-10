@@ -42,6 +42,7 @@ type Config struct {
 	OpenRouter OpenRouterConfig `yaml:"openrouter"`
 	KNMI       KNMIConfig       `yaml:"knmi"`
 	Forecast   ForecastConfig   `yaml:"forecast"`
+	Retention  RetentionConfig  `yaml:"retention"`
 	Defaults   Defaults         `yaml:"defaults"`
 	Places     []PlaceSeed      `yaml:"places"`
 
@@ -87,7 +88,10 @@ type RoutesConfig struct {
 	BaseURL      string        `yaml:"base_url"`
 	TrafficAware bool          `yaml:"traffic_aware"`
 	CacheTTL     time.Duration `yaml:"cache_ttl"`
-	APIKey       string        `yaml:"-"`
+	// MonthlyFreeCalls is the provider's free monthly allowance, shown next
+	// to the calls made (0 hides it).
+	MonthlyFreeCalls int    `yaml:"monthly_free_calls"`
+	APIKey           string `yaml:"-"`
 }
 
 // TibberConfig locates the weekly price outlook article.
@@ -122,6 +126,13 @@ type ForecastConfig struct {
 	DailyAt       string        `yaml:"daily_at"` // local HH:MM
 	RetryInterval time.Duration `yaml:"retry_interval"`
 	VATPct        float64       `yaml:"vat_pct"`
+}
+
+// RetentionConfig sets how long history is kept: activity log entries and
+// past trips, per-date edits, plan records, and advice decisions older than
+// Days are deleted daily.
+type RetentionConfig struct {
+	Days int `yaml:"days"`
 }
 
 // Defaults are bootstrap planning settings; UI-saved values take precedence.
@@ -171,6 +182,7 @@ func Default() Config {
 		Routes: RoutesConfig{
 			Mode: ModeGoogle, APIKeyEnv: "GOOGLE_MAPS_API_KEY",
 			BaseURL: "https://routes.googleapis.com", TrafficAware: true, CacheTTL: 7 * 24 * time.Hour,
+			MonthlyFreeCalls: 5000,
 		},
 		Tibber: TibberConfig{Mode: ModeLive, URL: "https://tibber.com/nl/stroomprijsprognose"},
 		OpenRouter: OpenRouterConfig{
@@ -181,7 +193,8 @@ func Default() Config {
 			Mode: ModeLive, BaseURL: "https://api.dataplatform.knmi.nl/open-data/v1",
 			Dataset: "outlook_weather_forecast", Version: "1.0", APIKeyEnv: "KNMI_API_KEY",
 		},
-		Forecast: ForecastConfig{DailyAt: "18:00", RetryInterval: time.Hour, VATPct: 21},
+		Forecast:  ForecastConfig{DailyAt: "18:00", RetryInterval: time.Hour, VATPct: 21},
+		Retention: RetentionConfig{Days: 90},
 		Defaults: Defaults{
 			UsableCapacityKWh: 59, ChargePowerKW: 3.68, ConsumptionKWhPer100Km: 18,
 			ArrivalReservePct: 15, ChargingEfficiencyPct: 90,
@@ -365,6 +378,10 @@ func (c *Config) finish() error {
 		return errors.New("evcc.poll_interval must be at least 1s")
 	case c.Calendar.SyncInterval < time.Minute:
 		return errors.New("calendar.sync_interval must be at least 1m")
+	case c.Retention.Days < 7:
+		return errors.New("retention.days must be at least 7")
+	case c.Routes.MonthlyFreeCalls < 0:
+		return errors.New("routes.monthly_free_calls must not be negative")
 	}
 	if _, err := time.Parse("15:04", c.Forecast.DailyAt); err != nil {
 		return fmt.Errorf("forecast.daily_at must be HH:MM: %w", err)
@@ -373,6 +390,19 @@ func (c *Config) finish() error {
 		return fmt.Errorf("defaults: %w", err)
 	}
 	return nil
+}
+
+// Secrets lists configured values that must never be stored or shown: API
+// keys and secret calendar addresses.
+func (c *Config) Secrets() []string {
+	out := []string{c.Routes.APIKey, c.OpenRouter.APIKey, c.KNMI.APIKey}
+	for _, src := range c.Calendar.Sources {
+		out = append(out, src.URL)
+		if rest, ok := strings.CutPrefix(src.URL, "webcal://"); ok {
+			out = append(out, "https://"+rest)
+		}
+	}
+	return out
 }
 
 // DBPath is the SQLite file; demo mode uses its own database.
