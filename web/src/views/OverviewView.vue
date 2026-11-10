@@ -77,7 +77,10 @@ function onSaved(message: string) {
           <button class="btn sm" type="button" @click="openAdd">+ Add trip</button>
         </div>
         <DaysTable :days="plan.days" @select="(d) => router.push({ path: '/trips', hash: `#day-${d}` })" />
-        <p class="small muted" style="margin: 10px 0 0">Daily charging advice arrives in V2.</p>
+        <p class="small muted" style="margin: 10px 0 0">
+          Charge is the SoC the day's departures need added, if each leaves with just its target; then the
+          first departure and the SoC it needs. Daily charging advice arrives in V2.
+        </p>
       </section>
 
       <div class="grid-2" style="margin-top: 16px">

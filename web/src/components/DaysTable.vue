@@ -32,6 +32,7 @@ const emit = defineEmits<{ select: [date: string] }>()
         <td class="right num">{{ kwh(d.energyKWh) }}</td>
         <td>
           <span class="pill" :class="`tone-${dayLabel(d).tone}`">{{ dayLabel(d).text }}</span>
+          <span v-if="dayLabel(d).detail" class="small muted plan-detail">{{ dayLabel(d).detail }}</span>
           <span v-if="d.reviewCount" class="pill tone-warn" style="margin-left: 6px"
             >{{ d.reviewCount }} to review</span
           >
@@ -40,3 +41,10 @@ const emit = defineEmits<{ select: [date: string] }>()
     </tbody>
   </table>
 </template>
+
+<style scoped>
+.plan-detail {
+  margin-left: 6px;
+  white-space: nowrap;
+}
+</style>

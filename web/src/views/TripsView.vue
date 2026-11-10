@@ -38,6 +38,13 @@ watch(
   { immediate: true },
 )
 
+// The SoC target belongs to a departure: show it on its first trip.
+function departureTarget(t: Trip) {
+  const b = t.blockIndex != null ? plan.value?.blocks[t.blockIndex] : undefined
+  if (!b || b.tripKeys[0] !== t.key || b.status === 'done' || b.status === 'in_progress') return undefined
+  return b.targetSoc
+}
+
 function toggle(t: Trip, enabled: boolean) {
   mutate(
     () => api.updateTrip(t.key, { enabled }),
@@ -98,6 +105,7 @@ function onSaved(message: string) {
               v-for="t in trips"
               :key="t.key"
               :trip="t"
+              :target="departureTarget(t)"
               @toggle="toggle(t, $event)"
               @edit="editor = { trip: t }"
               @review="review(t)"
@@ -105,7 +113,9 @@ function onSaved(message: string) {
               @remove="remove(t)"
             />
           </ul>
-          <p v-else class="muted small" style="margin: 0">No trips.</p>
+          <p v-else class="muted small" style="margin: 0">
+            {{ day.doneCount && !source ? 'No more trips.' : 'No trips.' }}
+          </p>
         </section>
       </div>
 

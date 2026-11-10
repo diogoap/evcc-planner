@@ -25,10 +25,7 @@ onUnmounted(() => window.clearInterval(timer))
   <header class="topbar">
     <div class="topbar-inner">
       <div class="brand">
-        <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
-          <rect width="32" height="32" rx="8" fill="currentColor" opacity="0.08" />
-          <path d="M18 4 8 18h7l-2 10 11-15h-7z" fill="var(--accent)" />
-        </svg>
+        <img class="brand-mark" src="/icon.svg" alt="" />
         <span>EVCC Trip Planner</span>
         <span v-if="state.meta?.demo" class="pill tone-warn" title="Seeded demo data and stubbed integrations"
           >DEMO</span

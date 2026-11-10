@@ -8,8 +8,10 @@ const day = (over: Partial<Day>): Day => ({
   energyKWh: 0,
   tripCount: 0,
   disabledCount: 0,
+  doneCount: 0,
   reviewCount: 0,
   status: 'none',
+  chargePct: 0,
   ...over,
 })
 
@@ -33,6 +35,7 @@ const block = (over: Partial<Block>): Block => ({
   startSoc: 38,
   departSoc: 41.8,
   arrivalSoc: 38.1,
+  chargePct: 3.8,
   chargeKWh: 2.24,
   gridKWh: 2.49,
   chargeMinutes: 41,
@@ -48,11 +51,20 @@ describe('status labels', () => {
     expect(dayLabel(day({ disabledCount: 2 })).text).toBe('All trips off')
     expect(dayLabel(day({ status: 'completed' })).text).toBe('Completed')
     expect(
-      dayLabel(day({ status: 'charge', requiredSoc: 41.8, firstDepartAt: '2026-11-10T06:48:00Z' })),
-    ).toEqual({
-      text: 'Needs 42% by 07:48',
-      tone: 'info',
-    })
+      dayLabel(
+        day({
+          status: 'charge',
+          chargePct: 14.2,
+          requiredSoc: 41.2,
+          targetSoc: 42,
+          firstDepartAt: '2026-11-10T06:48:00Z',
+        }),
+      ),
+    ).toEqual({ text: '+15% charge', tone: 'info', detail: '42% by 07:48' })
+    expect(dayLabel(day({ status: 'charge', chargePct: 0, targetSoc: 20 })).text).toBe('Covered')
+    expect(
+      dayLabel(day({ status: 'unknown', targetSoc: 30, firstDepartAt: '2026-11-10T06:48:00Z' })).detail,
+    ).toBe('30% by 07:48')
     expect(dayLabel(day({ status: 'shortfall' })).tone).toBe('bad')
   })
 

@@ -4,7 +4,8 @@ import type { Trip } from '../api/types'
 import { km, kwh } from '../lib/format'
 import ToggleSwitch from './ToggleSwitch.vue'
 
-const props = defineProps<{ trip: Trip }>()
+// target: SoC needed when leaving, shown on the first trip of a departure.
+const props = defineProps<{ trip: Trip; target?: number }>()
 const emit = defineEmits<{
   toggle: [enabled: boolean]
   edit: []
@@ -56,6 +57,9 @@ const source = computed(() => {
           >Old route</span
         >
         <span v-if="trip.state === 'in_progress'" class="pill tone-info">On the road</span>
+        <span v-if="target != null" class="pill tone-info" data-testid="departure-target"
+          >Needs {{ target }}% at departure</span
+        >
         <span v-if="trip.disabledReason" class="pill" data-testid="disabled-reason">{{
           trip.disabledReason
         }}</span>

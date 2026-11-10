@@ -83,9 +83,15 @@ export interface Day {
   energyKWh: number
   tripCount: number
   disabledCount: number
+  /** Trips already back home; they are not listed. */
+  doneCount: number
   reviewCount: number
   status: DayStatus
+  /** SoC points to add for the day's departures (minimum plan). */
+  chargePct: number
+  /** Target of the day's first upcoming departure. */
   requiredSoc?: number
+  targetSoc?: number
   firstDepartAt?: string
 }
 
@@ -109,6 +115,7 @@ export interface Block {
   startSoc: number | null
   departSoc: number | null
   arrivalSoc: number | null
+  chargePct: number
   chargeKWh: number
   gridKWh: number
   chargeMinutes: number

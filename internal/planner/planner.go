@@ -72,6 +72,7 @@ type Block struct {
 	StartSoC          *float64
 	DepartSoC         *float64
 	ArrivalSoC        *float64
+	ChargePct         float64 // SoC points added before departure
 	ChargeKWh         float64 // into the battery
 	GridKWh           float64 // drawn from the grid, including losses
 	ChargeDuration    time.Duration
@@ -190,6 +191,7 @@ func Plan(now time.Time, p Params, soc SoC, input []Trip) Result {
 
 		b.ChargeFrom = ptr(start)
 		b.StartSoC = ptr(cur)
+		b.ChargePct = add
 		b.ChargeKWh = add / 100 * p.CapacityKWh
 		b.GridKWh = b.ChargeKWh / (p.EfficiencyPct / 100)
 		b.ChargeDuration = hours(b.ChargeKWh / p.BatteryPowerKW())

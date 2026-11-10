@@ -90,11 +90,14 @@ type DayView struct {
 	Date          string     `json:"date"`
 	DistanceKm    float64    `json:"distanceKm"`
 	EnergyKWh     float64    `json:"energyKWh"`
-	TripCount     int        `json:"tripCount"`
+	TripCount     int        `json:"tripCount"` // upcoming or in progress, enabled
 	DisabledCount int        `json:"disabledCount"`
+	DoneCount     int        `json:"doneCount"` // already back home; not shown
 	ReviewCount   int        `json:"reviewCount"`
-	Status        string     `json:"status"` // none, completed, plus planner statuses
-	RequiredSoC   *float64   `json:"requiredSoc,omitempty"`
+	Status        string     `json:"status"`                // none, completed, plus planner statuses
+	ChargePct     float64    `json:"chargePct"`             // SoC points to add for the day's departures
+	RequiredSoC   *float64   `json:"requiredSoc,omitempty"` // first upcoming departure's
+	TargetSoC     *int       `json:"targetSoc,omitempty"`
 	FirstDepartAt *time.Time `json:"firstDepartAt,omitempty"`
 }
 
@@ -119,6 +122,7 @@ type BlockView struct {
 	StartSoC          *float64   `json:"startSoc"`
 	DepartSoC         *float64   `json:"departSoc"`
 	ArrivalSoC        *float64   `json:"arrivalSoc"`
+	ChargePct         float64    `json:"chargePct"` // SoC points to add before departure
 	ChargeKWh         float64    `json:"chargeKWh"`
 	GridKWh           float64    `json:"gridKWh"`
 	ChargeMinutes     int        `json:"chargeMinutes"`
@@ -278,7 +282,15 @@ func (s *Service) Plan(ctx context.Context) (*PlanView, error) {
 		})
 	}
 
-	view.Days = s.days(from, view, result)
+	view.Days = s.days(from, view.Trips, view.Blocks)
+	// Past trips (back home already) are not shown anywhere.
+	upcoming := view.Trips[:0]
+	for _, t := range view.Trips {
+		if t.State != "done" {
+			upcoming = append(upcoming, t)
+		}
+	}
+	view.Trips = upcoming
 	if view.HomeMissing {
 		view.Warnings = append(view.Warnings, "Set your home address in Settings to calculate routes.")
 	}
@@ -291,7 +303,7 @@ func blockView(i int, b planner.Block, byKey map[string]trips.Trip, s *Service) 
 		DistanceKm: round(b.DistanceKm, 2), EnergyKWh: round(b.EnergyKWh, 3), EnergyPct: round(b.EnergyPct, 2),
 		OwnRequiredSoC: round(b.OwnRequiredSoC, 1), RequiredSoC: round(b.RequiredSoC, 1),
 		TargetSoC: int(math.Min(100, math.Ceil(b.RequiredSoC-1e-6))), Status: string(b.Status), Overlap: b.Overlap,
-		ChargeKWh: round(b.ChargeKWh, 2), GridKWh: round(b.GridKWh, 2),
+		ChargePct: round(b.ChargePct, 1), ChargeKWh: round(b.ChargeKWh, 2), GridKWh: round(b.GridKWh, 2),
 		ChargeMinutes: int(math.Ceil(b.ChargeDuration.Minutes())), ChargeFrom: b.ChargeFrom,
 		LatestChargeStart: floorMinute(b.LatestChargeStart), Shortfall: round(b.Shortfall, 1),
 		StartSoC: roundPtr(b.StartSoC), DepartSoC: roundPtr(b.DepartSoC), ArrivalSoC: roundPtr(b.ArrivalSoC),
@@ -310,7 +322,11 @@ func blockView(i int, b planner.Block, byKey map[string]trips.Trip, s *Service) 
 	return v
 }
 
-func (s *Service) days(from time.Time, view *PlanView, result planner.Result) []DayView {
+// days summarizes each local day from its upcoming trips; trips already
+// back home are only counted as done. A day's charge is the SoC its
+// departures need added (minimum plan); its target is the first upcoming
+// departure's, which already covers later trips the car cannot recharge for.
+func (s *Service) days(from time.Time, all []TripView, blocks []BlockView) []DayView {
 	rank := map[string]int{
 		"ready": 1, "in_progress": 2, "charge": 3, "unknown": 4, "shortfall": 5, "exceeds": 6,
 	}
@@ -318,12 +334,15 @@ func (s *Service) days(from time.Time, view *PlanView, result planner.Result) []
 	for i := 0; i < WindowDays; i++ {
 		date := localtime.AddDays(from, i).Format(localtime.DateLayout)
 		d := DayView{Date: date, Status: "none"}
-		blocks := map[int]bool{}
-		for _, t := range view.Trips {
-			if t.Date != date {
+		inDay := map[int]bool{}
+		for _, t := range all {
+			switch {
+			case t.Date != date:
 				continue
-			}
-			if !t.Enabled {
+			case t.State == "done":
+				d.DoneCount++
+				continue
+			case !t.Enabled:
 				d.DisabledCount++
 				continue
 			}
@@ -338,29 +357,37 @@ func (s *Service) days(from time.Time, view *PlanView, result planner.Result) []
 				d.EnergyKWh += *t.EnergyKWh
 			}
 			if t.BlockIndex != nil {
-				blocks[*t.BlockIndex] = true
+				inDay[*t.BlockIndex] = true
 			}
 		}
 		d.DistanceKm, d.EnergyKWh = round(d.DistanceKm, 1), round(d.EnergyKWh, 2)
-		if d.TripCount > 0 {
-			d.Status = "completed"
-			for bi := range blocks {
-				b := view.Blocks[bi]
+		switch {
+		case d.TripCount > 0:
+			var first *BlockView
+			for bi := range inDay {
+				b := &blocks[bi]
 				if b.Status == string(planner.StatusDone) {
 					continue
 				}
-				if d.Status == "completed" || rank[b.Status] > rank[d.Status] {
+				if d.Status == "none" || rank[b.Status] > rank[d.Status] {
 					d.Status = b.Status
 				}
-				if b.Status != "in_progress" {
-					if d.RequiredSoC == nil || b.RequiredSoC > *d.RequiredSoC {
-						d.RequiredSoC = ptr(b.RequiredSoC)
-					}
-					if d.FirstDepartAt == nil || b.DepartAt.Before(*d.FirstDepartAt) {
-						d.FirstDepartAt = ptr(b.DepartAt)
-					}
+				if b.Status == string(planner.StatusInProgress) || localtime.Date(b.DepartAt, s.loc()) != date {
+					continue
+				}
+				d.ChargePct += b.ChargePct
+				if first == nil || b.DepartAt.Before(first.DepartAt) {
+					first = b
 				}
 			}
+			d.ChargePct = round(d.ChargePct, 1)
+			if first != nil {
+				d.RequiredSoC = ptr(first.RequiredSoC)
+				d.TargetSoC = ptr(first.TargetSoC)
+				d.FirstDepartAt = ptr(first.DepartAt)
+			}
+		case d.DoneCount > 0 && d.DisabledCount == 0:
+			d.Status = "completed"
 		}
 		days = append(days, d)
 	}

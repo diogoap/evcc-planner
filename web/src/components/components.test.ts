@@ -102,6 +102,16 @@ describe('TripRow', () => {
     expect(w.text()).not.toContain('Delete')
   })
 
+  it('shows the departure target when given', () => {
+    const w = mount(TripRow, { props: { trip: trip({}), target: 42 } })
+    expect(w.get('[data-testid=departure-target]').text()).toBe('Needs 42% at departure')
+    expect(
+      mount(TripRow, { props: { trip: trip({}) } })
+        .find('[data-testid=departure-target]')
+        .exists(),
+    ).toBe(false)
+  })
+
   it('offers reset for edited dates and delete for manual trips only', () => {
     const edited = mount(TripRow, { props: { trip: trip({ overridden: ['time'] }) } })
     expect(edited.text()).toContain('Reset')
@@ -157,9 +167,12 @@ describe('DaysTable', () => {
         energyKWh: 18,
         tripCount: 3,
         disabledCount: 0,
+        doneCount: 0,
         reviewCount: 1,
         status: 'charge',
+        chargePct: 3.8,
         requiredSoc: 41.8,
+        targetSoc: 42,
         firstDepartAt: '2026-11-10T06:48:00Z',
       },
     ]
@@ -168,7 +181,8 @@ describe('DaysTable', () => {
     expect(row.text()).toContain('Tue 10')
     expect(row.text()).toContain('100 km')
     expect(row.text()).toContain('18.0 kWh')
-    expect(row.text()).toContain('Needs 42% by 07:48')
+    expect(row.text()).toContain('+4% charge')
+    expect(row.text()).toContain('42% by 07:48')
     expect(row.text()).toContain('1 to review')
     await row.trigger('click')
     expect(w.emitted('select')).toEqual([['2026-11-10']])

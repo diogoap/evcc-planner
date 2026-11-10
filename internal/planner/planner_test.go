@@ -39,6 +39,7 @@ func TestPlanExampleFromPlan(t *testing.T) {
 		t.Errorf("status = %s, want charge", b.Status)
 	}
 	added := b.RequiredSoC - 38
+	near(t, "charge points", b.ChargePct, added, 1e-6)
 	near(t, "battery kWh", b.ChargeKWh, added/100*59, 1e-6)
 	near(t, "grid kWh incl. losses", b.GridKWh, added/100*59/0.9, 1e-6)
 	near(t, "charge hours", b.ChargeDuration.Hours(), added/100*59/(3.68*0.9), 1e-6)

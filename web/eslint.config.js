@@ -18,7 +18,7 @@ export default defineConfig(
     languageOptions: { globals: { ...globals.browser } },
   },
   {
-    files: ['vite.config.ts', 'playwright.config.ts', 'e2e/**/*.ts', 'eslint.config.js'],
+    files: ['vite.config.ts', 'playwright.config.ts', 'e2e/**/*.ts', 'eslint.config.js', 'scripts/**/*.mjs'],
     languageOptions: { globals: { ...globals.node } },
   },
   prettier,

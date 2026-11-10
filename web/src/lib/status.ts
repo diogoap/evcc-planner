@@ -13,28 +13,34 @@ export const blockTone: Record<BlockStatus, Tone> = {
   unknown: 'warn',
 }
 
-/** One-line plan status for a day row. */
-export function dayLabel(d: Day): { text: string; tone: Tone } {
+// Same whole-percent target the next-departure card shows.
+const target = (d: Day) => (d.targetSoc != null ? `${d.targetSoc}%` : pct(d.requiredSoc))
+const first = (d: Day) => (d.firstDepartAt ? `${target(d)} by ${clock(d.firstDepartAt)}` : undefined)
+
+/**
+ * Plan status for a day row: the charge the day's departures need (as SoC
+ * points), with the first departure's target as detail.
+ */
+export function dayLabel(d: Day): { text: string; tone: Tone; detail?: string } {
   switch (d.status) {
     case 'none':
       return { text: d.disabledCount ? 'All trips off' : 'No trips', tone: 'muted' }
     case 'completed':
       return { text: 'Completed', tone: 'muted' }
     case 'ready':
-      return { text: 'Covered', tone: 'ok' }
+      return { text: 'Covered', tone: 'ok', detail: first(d) }
     case 'in_progress':
       return { text: 'On the road', tone: 'info' }
     case 'charge':
-      return {
-        text: `Needs ${pct(d.requiredSoc)}${d.firstDepartAt ? ` by ${clock(d.firstDepartAt)}` : ''}`,
-        tone: 'info',
-      }
+      return d.chargePct > 0
+        ? { text: `+${Math.ceil(d.chargePct - 1e-6)}% charge`, tone: 'info', detail: first(d) }
+        : { text: 'Covered', tone: 'ok', detail: first(d) }
     case 'shortfall':
-      return { text: 'Not enough time to charge', tone: 'bad' }
+      return { text: 'Not enough time to charge', tone: 'bad', detail: first(d) }
     case 'exceeds':
       return { text: 'More than a full battery', tone: 'bad' }
     case 'unknown':
-      return { text: `Needs ${pct(d.requiredSoc)} · SoC unknown`, tone: 'warn' }
+      return { text: 'SoC unknown', tone: 'warn', detail: first(d) }
     default:
       return { text: d.status, tone: 'muted' }
   }

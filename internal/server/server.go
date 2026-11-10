@@ -23,6 +23,11 @@ import (
 	"github.com/diogoap/evcc-planner/internal/service"
 )
 
+func init() {
+	// Not in Go's built-in table, and the container has no mime.types file.
+	mime.AddExtensionType(".webmanifest", "application/manifest+json")
+}
+
 // Server holds HTTP dependencies.
 type Server struct {
 	Svc  *service.Service

@@ -22,7 +22,12 @@ test('overview shows status, the next departure, and seven days', async ({ page 
   const tue = page.getByTestId('day-2026-11-10')
   await expect(tue).toContainText('100 km')
   await expect(tue).toContainText('18.0 kWh')
+  await expect(tue).toContainText('42% by 07:48')
   await expect(page.getByTestId('day-2026-11-14')).toContainText('1 to review')
+  await page.goto('/trips#day-2026-11-10')
+  await expect(page.getByTestId('trip-recurring:1:2026-11-10').getByTestId('departure-target')).toHaveText(
+    'Needs 42% at departure',
+  )
   await shot(page, 'overview')
 })
 
@@ -152,6 +157,24 @@ test('send a plan to EVCC only after confirmation', async ({ page }) => {
   await expect(page.getByText('Plan sent to EVCC: 42% by Tue 10 Nov, 07:48')).toBeVisible()
   await expect(page.getByTestId('evcc-plan')).toContainText('42% by Tue 10 Nov, 07:48')
   await expect(page.getByTestId('evcc-plan')).toContainText('Set by planner')
+})
+
+test('installable as an app: manifest and icons', async ({ page, request }) => {
+  await page.goto('/')
+  await expect(page.locator('link[rel="manifest"]')).toHaveAttribute('href', '/manifest.webmanifest')
+  await expect(page.locator('link[rel="apple-touch-icon"]')).toHaveAttribute('href', '/apple-touch-icon.png')
+  const res = await request.get('/manifest.webmanifest')
+  expect(res.headers()['content-type']).toContain('application/manifest+json')
+  const manifest = await res.json()
+  expect(manifest).toMatchObject({ name: 'EVCC Trip Planner', start_url: '/', display: 'standalone' })
+  const sizes = manifest.icons.map((i: { sizes: string }) => i.sizes)
+  expect(sizes).toEqual(expect.arrayContaining(['192x192', '512x512']))
+  expect(manifest.icons.some((i: { purpose: string }) => i.purpose === 'maskable')).toBe(true)
+  for (const src of [...manifest.icons.map((i: { src: string }) => i.src), '/apple-touch-icon.png']) {
+    const icon = await request.get(src)
+    expect(icon.status(), src).toBe(200)
+    expect(icon.headers()['content-type'], src).toMatch(/^image\//)
+  }
 })
 
 test('every page fits the viewport without errors', async ({ page }) => {

@@ -83,6 +83,17 @@ calls per month) and caches each route per weekday and half hour for a week, so
 recurring trips reuse their result. Expect a few hundred calls per month. Without
 a key it falls back to labelled stub distances.
 
+## Install on your phone
+
+The UI can be installed as an app (PWA). It needs HTTPS, e.g. through your
+reverse proxy:
+
+- **Android (Chrome):** open the site → menu → **Install app**.
+- **iPhone (Safari):** open the site → Share → **Add to Home Screen**.
+
+It always shows live data, so there is no offline mode. The icons are generated
+from one design: `cd web && pnpm icons`.
+
 ## Deployment
 
 `compose.yaml` builds the image from this repository and runs it.
@@ -128,7 +139,9 @@ to `main` deploy automatically, run `make verify` before pushing.
 
 ## Diagnostics
 
-- Logs go to stdout (request, sync, and EVCC poll lines).
+- Logs go to stdout (request, sync, and EVCC poll lines): `docker logs evcc-planner`.
+- The image has no shell. For one beside the app (same network, data at `/data`):
+  `docker run --rm -it --network container:evcc-planner -v /opt/evcc-planner/data:/data busybox sh`
 - `GET /healthz`, `GET /readyz`, `GET /api/connections` (integration status, no secrets).
 - Browser test failures: screenshots and traces in `web/test-results/`, HTML
   report in `web/playwright-report/`, server log path printed at the start.

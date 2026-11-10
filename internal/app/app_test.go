@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -97,8 +98,12 @@ type plan struct {
 		EnergyKWh   float64  `json:"energyKWh"`
 		TripCount   int      `json:"tripCount"`
 		ReviewCount int      `json:"reviewCount"`
+		DoneCount   int      `json:"doneCount"`
 		Status      string   `json:"status"`
 		RequiredSoC *float64 `json:"requiredSoc"`
+		TargetSoC   *int     `json:"targetSoc"`
+		ChargePct   float64  `json:"chargePct"`
+		FirstDepart string   `json:"firstDepartAt"`
 	} `json:"days"`
 	Trips []struct {
 		Key         string   `json:"key"`
@@ -117,7 +122,12 @@ type plan struct {
 		Reason string `json:"reason"`
 	} `json:"ignored"`
 	Warnings []string `json:"warnings"`
-	Next     *struct {
+	Blocks   []struct {
+		ChargePct float64 `json:"chargePct"`
+		DepartAt  string  `json:"departAt"`
+		Status    string  `json:"status"`
+	} `json:"blocks"`
+	Next *struct {
 		FirstTitle string  `json:"firstTitle"`
 		TargetSoC  int     `json:"targetSoc"`
 		Status     string  `json:"status"`
@@ -384,6 +394,13 @@ func TestHealthConnectionsAndStatic(t *testing.T) {
 	if code, body := ta.do("GET", "/assets/a.js", nil); code != 200 || string(body) != "js" {
 		t.Errorf("asset = %d %s", code, body)
 	}
+	os.WriteFile(filepath.Join(web, "manifest.webmanifest"), []byte(`{"name":"x"}`), 0o644)
+	req := httptest.NewRequest("GET", "/manifest.webmanifest", nil)
+	rec := httptest.NewRecorder()
+	ta.app.Handler.ServeHTTP(rec, req)
+	if ct := rec.Header().Get("Content-Type"); rec.Code != 200 || ct != "application/manifest+json" {
+		t.Errorf("manifest = %d %q", rec.Code, ct)
+	}
 }
 
 func TestDemoReset(t *testing.T) {
@@ -453,5 +470,46 @@ func TestTripsWithoutRouteAreDisabled(t *testing.T) {
 	}
 	if p.Next != nil || len(p.Warnings) != 1 {
 		t.Errorf("want no departure and only the home warning: next=%+v warnings=%v", p.Next, p.Warnings)
+	}
+}
+
+func TestPastTripsHiddenAndDayTargetMatchesFirstDeparture(t *testing.T) {
+	ta := newTestApp(t, "")
+	p := ta.plan()
+	// At Monday 19:00 both school runs are back home: hidden, day completed.
+	for _, tr := range p.Trips {
+		if tr.Date == "2026-11-09" {
+			t.Errorf("past trip still listed: %+v", tr)
+		}
+	}
+	if mon := p.Days[0]; mon.Status != "completed" || mon.DoneCount != 2 || mon.DistanceKm != 0 || mon.TripCount != 0 {
+		t.Errorf("Monday = %+v", mon)
+	}
+	tue := p.Days[1]
+	sum := 0.0
+	for _, b := range p.Blocks {
+		if strings.HasPrefix(b.DepartAt, "2026-11-10") && b.Status != "done" {
+			sum += b.ChargePct
+		}
+	}
+	if sum <= 0 || math.Abs(tue.ChargePct-sum) > 0.15 {
+		t.Errorf("Tuesday charge = %.1f, want the sum of its departures' charge %.1f", tue.ChargePct, sum)
+	}
+	if tue.TargetSoC == nil || *tue.TargetSoC != p.Next.TargetSoC || tue.FirstDepart != p.Next.DepartAt {
+		t.Errorf("Tuesday target %v at %s should match the next departure %d%% at %s",
+			tue.TargetSoC, tue.FirstDepart, p.Next.TargetSoC, p.Next.DepartAt)
+	}
+
+	// Sunday: a short morning trip, then a long evening trip with time to
+	// charge in between. The day shows the morning target, not the larger
+	// evening one.
+	ta.json("POST", "/api/trips", map[string]any{"destination": "Short 1, Demo Town", "date": "2026-11-15",
+		"start": "09:00", "distanceOverrideKm": 10}, http.StatusCreated, nil)
+	ta.json("POST", "/api/trips", map[string]any{"destination": "Far 2, Demo Town", "date": "2026-11-15",
+		"start": "18:00", "end": "20:00", "distanceOverrideKm": 80}, http.StatusCreated, nil)
+	sun := ta.plan().Days[6]
+	morning := 10*0.18/59*100 + 15
+	if sun.TargetSoC == nil || *sun.TargetSoC != int(math.Ceil(morning)) || sun.RequiredSoC == nil || *sun.RequiredSoC > 25 {
+		t.Errorf("Sunday target = %v (%v), want the morning trip's %.0f%%", sun.TargetSoC, sun.RequiredSoC, math.Ceil(morning))
 	}
 }
