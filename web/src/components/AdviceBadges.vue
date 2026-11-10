@@ -10,6 +10,7 @@ import {
   sunSourceNames,
   sunText,
 } from '../lib/advice'
+import { clock } from '../lib/format'
 import AppIcon from './AppIcon.vue'
 
 // A day's advice as compact badges for the seven-day grid: recommendation,
@@ -20,9 +21,17 @@ const label = computed(() => adviceLabel(props.advice, props.day))
 const level = computed(() =>
   props.advice.indicator && !props.advice.noSuggestion ? indicatorLevel[props.advice.indicator] : 0,
 )
+// Published days show their lowest price; estimates only have a day level.
 const price = computed(() => {
   const p = props.advice.price
   if (!p) return null
+  if (p.basis === 'published' && p.min != null) {
+    return {
+      text: `min €${p.min.toFixed(2)}`,
+      basis: p.basis,
+      title: `Lowest published price €${p.min.toFixed(3)}/kWh${p.minAt ? ` at ${clock(p.minAt)}` : ''} (average €${p.value.toFixed(3)})`,
+    }
+  }
   const value = `€${p.value.toFixed(2)}`
   return {
     text: p.basis === 'published' ? value : `~${value}`,

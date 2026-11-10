@@ -27,6 +27,8 @@ export interface SoCView {
   observedAt: string | null
   estimated: boolean
   projected: number | null
+  /** EVCC's range at the reading (km); only reported while plugged in. */
+  rangeKm: number | null
 }
 
 export type TripSource = 'manual' | 'recurring' | 'calendar'
@@ -159,6 +161,9 @@ export interface DayPrice {
   basis: PriceBasis
   detail: string
   stale: boolean
+  /** Published days: the lowest slot (for today, of the remaining ones). */
+  min?: number
+  minAt?: string
 }
 
 export interface WeatherDay {

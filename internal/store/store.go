@@ -132,6 +132,8 @@ var migrations = []string{
 		data TEXT NOT NULL
 	);
 	CREATE INDEX evcc_adjustments_status ON evcc_adjustments(status);`,
+	// The vehicle's range, read with the SoC.
+	`ALTER TABLE vehicle_soc ADD COLUMN range_km REAL;`,
 }
 
 // Open opens (creating if needed) the database at path and migrates it.
@@ -715,12 +717,16 @@ func (s *Store) PutRoute(origin, destination, slot string, r CachedRoute) error 
 func (s *Store) LastSoC() (*model.SoCReading, error) {
 	var r model.SoCReading
 	var observed string
-	err := s.db.QueryRow(`SELECT soc, observed_at, source FROM vehicle_soc WHERE id = 1`).Scan(&r.Percent, &observed, &r.Source)
+	var rangeKm sql.NullFloat64
+	err := s.db.QueryRow(`SELECT soc, range_km, observed_at, source FROM vehicle_soc WHERE id = 1`).Scan(&r.Percent, &rangeKm, &observed, &r.Source)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
+	}
+	if rangeKm.Valid {
+		r.RangeKm = &rangeKm.Float64
 	}
 	r.ObservedAt, err = parseTime(observed)
 	return &r, err
@@ -728,9 +734,10 @@ func (s *Store) LastSoC() (*model.SoCReading, error) {
 
 // SaveSoC records the latest SoC reading.
 func (s *Store) SaveSoC(r model.SoCReading) error {
-	_, err := s.db.Exec(`INSERT INTO vehicle_soc (id, soc, observed_at, source) VALUES (1, ?, ?, ?)
-		ON CONFLICT(id) DO UPDATE SET soc = excluded.soc, observed_at = excluded.observed_at, source = excluded.source`,
-		r.Percent, fmtTime(r.ObservedAt), r.Source)
+	_, err := s.db.Exec(`INSERT INTO vehicle_soc (id, soc, range_km, observed_at, source) VALUES (1, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET soc = excluded.soc, range_km = excluded.range_km,
+		observed_at = excluded.observed_at, source = excluded.source`,
+		r.Percent, r.RangeKm, fmtTime(r.ObservedAt), r.Source)
 	return err
 }
 

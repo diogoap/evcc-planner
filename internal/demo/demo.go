@@ -64,5 +64,6 @@ func Seed(s *store.Store, now time.Time, loc *time.Location, defaults model.Sett
 			break
 		}
 	}
-	return s.SaveSoC(model.SoCReading{Percent: 38, ObservedAt: now.Add(-135 * time.Minute), Source: "demo"})
+	rangeKm := 122.0
+	return s.SaveSoC(model.SoCReading{Percent: 38, RangeKm: &rangeKm, ObservedAt: now.Add(-135 * time.Minute), Source: "demo"})
 }

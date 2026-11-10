@@ -12,7 +12,7 @@ import {
   tempText,
   windText,
 } from '../lib/advice'
-import { ago, dateTime, dayLong, dayShort } from '../lib/format'
+import { ago, clock, dateTime, dayLong, dayShort } from '../lib/format'
 
 const props = defineProps<{
   advice: DayAdvice
@@ -35,6 +35,14 @@ const canDismiss = computed(
   () => !props.advice.noSuggestion && props.advice.recommendation !== 'none' && !props.advice.adjustment,
 )
 const adj = computed(() => props.advice.adjustment)
+// "€0.510/kWh avg incl. VAT · lowest €0.370 at 03:45" (lowest: published days).
+const priceText = computed(() => {
+  const p = props.advice.price
+  if (!p) return ''
+  let text = `€${p.value.toFixed(3)}/kWh avg incl. VAT`
+  if (p.min != null) text += ` · lowest €${p.min.toFixed(3)}${p.minAt ? ` at ${clock(p.minAt)}` : ''}`
+  return text
+})
 </script>
 
 <template>
@@ -81,7 +89,7 @@ const adj = computed(() => props.advice.adjustment)
       <template v-if="advice.price">
         <dt>Price</dt>
         <dd>
-          €{{ advice.price.value.toFixed(3) }}/kWh avg incl. VAT
+          {{ priceText }}
           <span
             class="pill"
             :class="advice.price.basis === 'published' ? 'tone-ok' : 'tone-warn'"

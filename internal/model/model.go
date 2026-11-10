@@ -162,6 +162,7 @@ func (o Override) Fields() []string {
 // SoCReading is the last state of charge read from EVCC.
 type SoCReading struct {
 	Percent    float64
+	RangeKm    *float64 // EVCC's range estimate, when it reports one
 	ObservedAt time.Time
 	Source     string
 }

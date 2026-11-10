@@ -40,6 +40,7 @@ type SoCView struct {
 	ObservedAt *time.Time `json:"observedAt"`
 	Estimated  bool       `json:"estimated"` // lowered by trips driven since the reading
 	Projected  *float64   `json:"projected"` // after subtracting those trips
+	RangeKm    *float64   `json:"rangeKm"`   // EVCC's range at the reading
 }
 
 // TripView is one trip with its route and energy.
@@ -486,7 +487,7 @@ func (s *Service) currentSoC() (planner.SoC, SoCView) {
 		if lp, ok := snap.state.Loadpoint(s.Cfg.EVCC.Loadpoint); ok && lp.Connected && lp.VehicleSoc > 0 {
 			at := snap.okAt
 			return planner.SoC{Percent: lp.VehicleSoc, Known: true, ObservedAt: at},
-				SoCView{Percent: ptr(lp.VehicleSoc), Known: true, Live: true, ObservedAt: &at}
+				SoCView{Percent: ptr(lp.VehicleSoc), Known: true, Live: true, ObservedAt: &at, RangeKm: positive(lp.VehicleRange)}
 		}
 	}
 	last, err := s.Store.LastSoC()
@@ -495,7 +496,7 @@ func (s *Service) currentSoC() (planner.SoC, SoCView) {
 	}
 	at := last.ObservedAt
 	return planner.SoC{Percent: last.Percent, Known: true, ObservedAt: at},
-		SoCView{Percent: ptr(last.Percent), Known: true, ObservedAt: &at}
+		SoCView{Percent: ptr(last.Percent), Known: true, ObservedAt: &at, RangeKm: last.RangeKm}
 }
 
 func ptr[T any](v T) *T { return &v }

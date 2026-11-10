@@ -31,6 +31,9 @@ type Stub struct {
 // stubSmartCostLimit is the demo cheap-grid charging limit.
 const stubSmartCostLimit = 0.2
 
+// stubKmPerPct is the demo range per SoC point (a Leaf: about 3.2 km).
+const stubKmPerPct = 3.2
+
 // NewStub returns an unplugged demo car.
 func NewStub(c clock.Clock, loc *time.Location) *Stub {
 	s := &Stub{clock: c, loc: loc, powerKW: 3.68, capacity: 62}
@@ -72,13 +75,13 @@ func (s *Stub) State(ctx context.Context) (*State, error) {
 			break
 		}
 	}
-	soc := 0.0
+	soc, rangeKm := 0.0, 0.0
 	if s.conn {
-		soc = s.soc
+		soc, rangeKm = s.soc, math.Round(s.soc*stubKmPerPct)
 	}
 	lp := Loadpoint{
 		Title: "Demo charger", Mode: "smart", Connected: s.conn, VehicleName: StubVehicle,
-		VehicleTitle: "Nissan Leaf", VehicleSoc: soc, EffectiveLimitSoc: 80,
+		VehicleTitle: "Nissan Leaf", VehicleSoc: soc, VehicleRange: rangeKm, EffectiveLimitSoc: 80,
 	}
 	if s.smart != nil {
 		v := *s.smart

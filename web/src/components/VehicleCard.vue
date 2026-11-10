@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { SoCView, Status } from '../api/types'
-import { ago, dateTime, kw, pct } from '../lib/format'
+import { ago, dateTime, km, kw, pct } from '../lib/format'
 
 const props = defineProps<{ soc: SoCView; status: Status | null; now: string; target?: number }>()
 
@@ -15,6 +15,16 @@ const stale = computed(() => props.soc.known && !props.soc.live)
     <template v-if="soc.known">
       <div class="row">
         <span class="big" data-testid="soc">{{ pct(soc.percent) }}</span>
+        <span v-if="soc.rangeKm != null" class="muted" data-testid="soc-range"
+          >{{ km(soc.rangeKm) }} range</span
+        >
+        <span
+          v-else
+          class="muted small"
+          data-testid="soc-range"
+          title="EVCC reports the range only while the car is plugged in"
+          >Range: read when plugged in</span
+        >
         <span v-if="soc.estimated && soc.projected != null" class="muted small">
           ≈ {{ pct(soc.projected) }} after trips since
         </span>

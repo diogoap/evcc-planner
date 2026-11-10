@@ -18,7 +18,7 @@ test('daily advice per day, with a confirmed extra plan that can be ended', asyn
   const tue = page.getByTestId('advice-2026-11-10')
   await expect(tue.getByTestId('badge-advice')).toHaveText('Charge ahead')
   await expect(tue.getByTestId('badge-confidence')).toHaveText('2/3')
-  await expect(tue.getByTestId('badge-price')).toHaveText('€0.22')
+  await expect(tue.getByTestId('badge-price')).toHaveText(/^min €0\.\d\d$/)
   // Sun: EVCC's local forecast today and tomorrow, KNMI's sunshine after.
   await expect(tue.getByTestId('badge-sun')).toHaveText(/^\d+\.\d kWh$/)
   const wed = page.getByTestId('advice-2026-11-11')

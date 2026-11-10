@@ -32,8 +32,10 @@ type adviceDay struct {
 	Dismissed      bool   `json:"dismissed"`
 	DeferUntil     string `json:"deferUntil"`
 	Price          *struct {
-		Value float64 `json:"value"`
-		Basis string  `json:"basis"`
+		Value float64  `json:"value"`
+		Basis string   `json:"basis"`
+		Min   *float64 `json:"min"`
+		MinAt string   `json:"minAt"`
 	} `json:"price"`
 	SolarKWh     *float64    `json:"solarKWh"`
 	SolarHomeKWh *float64    `json:"solarHomeKWh"`
@@ -126,8 +128,12 @@ func TestDemoAdviceUsesPublishedPricesFirst(t *testing.T) {
 	if !wed.NoSuggestion || wed.Action != "" || wed.Price.Basis != "weekly" {
 		t.Errorf("Wednesday = %+v", wed)
 	}
-	if thu.Price == nil || thu.Price.Basis != "estimate" || thu.Price.Value < 0.29 || thu.Price.Value > 0.31 {
+	if thu.Price == nil || thu.Price.Basis != "estimate" || thu.Price.Value < 0.29 || thu.Price.Value > 0.31 || thu.Price.Min != nil {
 		t.Errorf("Thursday's converted estimate = %+v", thu.Price)
+	}
+	// Published days also give their lowest slot.
+	if tue.Price.Min == nil || *tue.Price.Min >= tue.Price.Value || !strings.HasPrefix(tue.Price.MinAt, "2026-11-10T") {
+		t.Errorf("Tuesday's lowest price = %v at %s (average %.3f)", tue.Price.Min, tue.Price.MinAt, tue.Price.Value)
 	}
 	statuses := map[string]string{}
 	for _, s := range a.Sources {

@@ -43,14 +43,14 @@ func TestParseLiveStateFixture(t *testing.T) {
 }
 
 func TestParseStateVariants(t *testing.T) {
-	legacy := `{"result":{"version":"0.200","loadpoints":[{"connected":true,"vehicleSoc":55,"vehicleName":"car"}],
+	legacy := `{"result":{"version":"0.200","loadpoints":[{"connected":true,"vehicleSoc":55,"vehicleRange":180,"vehicleName":"car"}],
 		"vehicles":{"car":{"title":"Car","capacity":40,"plan":{"soc":80,"time":"2026-11-10T07:00:00Z"}}},
 		"forecast":{"grid":[{"start":"2026-11-10T01:00:00+01:00","end":"2026-11-10T02:00:00+01:00","value":0.21}]}}}`
 	st, err := ParseState([]byte(legacy))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if lp, _ := st.Loadpoint(1); !lp.Connected || lp.VehicleSoc != 55 {
+	if lp, _ := st.Loadpoint(1); !lp.Connected || lp.VehicleSoc != 55 || lp.VehicleRange != 180 {
 		t.Errorf("wrapped loadpoint = %+v", lp)
 	}
 	if v := st.Vehicles["car"]; v.Plan == nil || v.Plan.Soc != 80 {

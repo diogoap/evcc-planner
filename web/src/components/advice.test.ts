@@ -78,6 +78,22 @@ describe('AdviceCard', () => {
     expect(weak.find('button.primary').exists()).toBe(false)
   })
 
+  it('shows the lowest published price with its time', () => {
+    const w = card(
+      advice({
+        price: {
+          value: 0.51,
+          basis: 'published',
+          detail: 'published',
+          stale: false,
+          min: 0.3696,
+          minAt: '2026-11-11T02:45:00Z',
+        },
+      }),
+    )
+    expect(w.text()).toContain('€0.510/kWh avg incl. VAT · lowest €0.370 at 03:45')
+  })
+
   it('labels estimates and shows an active change with a way to end it', async () => {
     const w = card(
       advice({
@@ -139,6 +155,25 @@ describe('AdviceBadges', () => {
     expect(w.findAll('[data-testid=badge-indicator] .bar-step.on')).toHaveLength(3)
     expect(w.get('[data-testid=badge-price]').text()).toBe('€0.22')
     expect(w.get('[data-testid=badge-price]').classes()).toContain('basis-published')
+    // With published slots the badge shows the day's lowest price.
+    const low = mount(AdviceBadges, {
+      props: {
+        advice: advice({
+          price: {
+            value: 0.51,
+            basis: 'published',
+            detail: 'published',
+            stale: false,
+            min: 0.3696,
+            minAt: '2026-11-11T02:45:00Z',
+          },
+        }),
+      },
+    })
+    expect(low.get('[data-testid=badge-price]').text()).toBe('min €0.37')
+    expect(low.get('[data-testid=badge-price]').attributes('title')).toBe(
+      'Lowest published price €0.370/kWh at 03:45 (average €0.510)',
+    )
     expect(w.get('[data-testid=badge-sun]').text()).toBe('7.6 kWh')
     expect(w.get('[data-testid=badge-sun]').attributes('title')).toContain('EVCC solar forecast, local')
     expect(w.get('[data-testid=badge-wind]').text()).toBe('5 Bft')

@@ -176,11 +176,15 @@ func TestSoCAndPlanWrites(t *testing.T) {
 		t.Fatalf("empty soc = %+v %v", r, err)
 	}
 	at := time.Date(2026, 11, 9, 18, 42, 0, 0, time.UTC)
-	s.SaveSoC(model.SoCReading{Percent: 38, ObservedAt: at, Source: "evcc"})
+	rangeKm := 107.0
+	s.SaveSoC(model.SoCReading{Percent: 38, RangeKm: &rangeKm, ObservedAt: at, Source: "evcc"})
+	if r, _ := s.LastSoC(); r.RangeKm == nil || *r.RangeKm != 107 {
+		t.Fatalf("range = %+v", r)
+	}
 	s.SaveSoC(model.SoCReading{Percent: 41, ObservedAt: at.Add(time.Hour), Source: "evcc"})
 	r, _ := s.LastSoC()
-	if r.Percent != 41 || !r.ObservedAt.Equal(at.Add(time.Hour)) {
-		t.Fatalf("last soc = %+v", r)
+	if r.Percent != 41 || !r.ObservedAt.Equal(at.Add(time.Hour)) || r.RangeKm != nil {
+		t.Fatalf("last soc = %+v (a reading without range clears it)", r)
 	}
 	w, err := s.AddPlanWrite(model.PlanWrite{Vehicle: "db:3", SoC: 46, TargetTime: at, WrittenAt: at})
 	if err != nil || w.ID == 0 {

@@ -46,10 +46,13 @@ const minHomeHours = 1.0
 
 // DayPrice is a date's expected price level.
 type DayPrice struct {
-	Value  float64 `json:"value"` // EUR/kWh incl. VAT
+	Value  float64 `json:"value"` // EUR/kWh incl. VAT, daily average
 	Basis  string  `json:"basis"`
 	Detail string  `json:"detail"`
 	Stale  bool    `json:"stale"`
+	// Published days: the lowest slot (for today, of the remaining ones).
+	Min   *float64   `json:"min,omitempty"`
+	MinAt *time.Time `json:"minAt,omitempty"`
 }
 
 // Day is one date's inputs.

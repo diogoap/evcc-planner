@@ -129,6 +129,7 @@ type Loadpoint struct {
 	VehicleName        string
 	VehicleTitle       string
 	VehicleSoc         float64
+	VehicleRange       float64 // km; 0 when unknown (e.g. unplugged)
 	EffectiveLimitSoc  int
 	PlanActive         bool
 	EffectivePlanSoc   float64
@@ -271,6 +272,7 @@ type rawLoadpoint struct {
 	VehicleName        string     `json:"vehicleName"`
 	VehicleTitle       string     `json:"vehicleTitle"`
 	VehicleSoc         float64    `json:"vehicleSoc"`
+	VehicleRange       float64    `json:"vehicleRange"`
 	EffectiveLimitSoc  int        `json:"effectiveLimitSoc"`
 	PlanActive         bool       `json:"planActive"`
 	EffectivePlanSoc   float64    `json:"effectivePlanSoc"`
@@ -310,7 +312,8 @@ func ParseState(body []byte) (*State, error) {
 		st.Loadpoints = append(st.Loadpoints, Loadpoint{
 			Title: lp.Title, Mode: lp.Mode, Connected: lp.Connected, Charging: lp.Charging,
 			ChargePowerW: lp.ChargePower, VehicleName: lp.VehicleName, VehicleTitle: lp.VehicleTitle,
-			VehicleSoc: lp.VehicleSoc, EffectiveLimitSoc: lp.EffectiveLimitSoc, PlanActive: lp.PlanActive,
+			VehicleSoc: lp.VehicleSoc, VehicleRange: lp.VehicleRange, EffectiveLimitSoc: lp.EffectiveLimitSoc,
+			PlanActive:       lp.PlanActive,
 			EffectivePlanSoc: lp.EffectivePlanSoc, EffectivePlanTime: nonZero(lp.EffectivePlanTime),
 			PlanProjectedStart: nonZero(lp.PlanProjectedStart), PlanProjectedEnd: nonZero(lp.PlanProjectedEnd),
 			SmartCostLimit: lp.SmartCostLimit,

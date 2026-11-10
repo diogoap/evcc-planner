@@ -65,6 +65,23 @@ func TestAdviceWithRealEVCCState(t *testing.T) {
 	if wed.Price == nil || wed.Price.Basis != "published" || wed.Price.Value < 0.505 || wed.Price.Value > 0.515 {
 		t.Errorf("tomorrow = %+v", wed.Price)
 	}
+	// Lowest slots: today's remaining one (€0.3869 at 23:45) and tomorrow's
+	// (€0.3696 at 03:45).
+	if tue.Price.Min == nil || *tue.Price.Min != 0.3869 || !strings.HasPrefix(tue.Price.MinAt, "2026-11-10T23:45") ||
+		wed.Price.Min == nil || *wed.Price.Min != 0.3696 || !strings.HasPrefix(wed.Price.MinAt, "2026-11-11T03:45") {
+		t.Errorf("lowest prices: today %v at %s, tomorrow %v at %s", val(tue.Price.Min), tue.Price.MinAt,
+			val(wed.Price.Min), wed.Price.MinAt)
+	}
+	var soc struct {
+		SoC struct {
+			Live    bool     `json:"live"`
+			RangeKm *float64 `json:"rangeKm"`
+		} `json:"soc"`
+	}
+	ta.json("GET", "/api/plan", nil, http.StatusOK, &soc)
+	if !soc.SoC.Live || soc.SoC.RangeKm == nil || *soc.SoC.RangeKm != 107 {
+		t.Errorf("EVCC's range = %+v", soc.SoC)
+	}
 	// EVCC's solar for today (remaining) and tomorrow; KNMI after that.
 	if tue.SunSource != "evcc" || tue.SolarKWh == nil || *tue.SolarKWh < 0.7 || *tue.SolarKWh > 0.85 {
 		t.Errorf("today's solar = %v (%s)", val(tue.SolarKWh), tue.SunSource)

@@ -254,7 +254,8 @@ func estimateDetail(p *forecast.Price) string {
 // counts the slots still ahead.
 func publishedPrice(slots []evcc.Rate, from, to time.Time, today bool) *advice.DayPrice {
 	var sum, hours float64
-	for _, r := range slots {
+	var low *evcc.Rate
+	for i, r := range slots {
 		start, end := maxTime(r.Start, from), minTime(r.End, to)
 		if !end.After(start) {
 			continue
@@ -262,6 +263,9 @@ func publishedPrice(slots []evcc.Rate, from, to time.Time, today bool) *advice.D
 		h := end.Sub(start).Hours()
 		sum += r.Value * h
 		hours += h
+		if low == nil || r.Value < low.Value {
+			low = &slots[i]
+		}
 	}
 	if hours < 0.25 || (!today && hours < 20) {
 		return nil
@@ -270,7 +274,11 @@ func publishedPrice(slots []evcc.Rate, from, to time.Time, today bool) *advice.D
 	if today {
 		detail = fmt.Sprintf("published prices for the remaining %s", hoursText(hours))
 	}
-	return &advice.DayPrice{Value: math.Round(sum/hours*10000) / 10000, Basis: advice.BasisPublished, Detail: detail}
+	minAt := maxTime(low.Start, from)
+	return &advice.DayPrice{
+		Value: math.Round(sum/hours*10000) / 10000, Basis: advice.BasisPublished, Detail: detail,
+		Min: ptr(low.Value), MinAt: &minAt,
+	}
 }
 
 // homeHours is the time in [from, to) outside away blocks.

@@ -26,7 +26,7 @@ func TestRealStateSolarAndSmartCost(t *testing.T) {
 	st := realState(t)
 	ams, _ := time.LoadLocation("Europe/Amsterdam")
 	lp, ok := st.Loadpoint(1)
-	if !ok || !lp.Connected || lp.VehicleSoc <= 0 || lp.SmartCostLimit == nil {
+	if !ok || !lp.Connected || lp.VehicleSoc <= 0 || lp.VehicleRange <= 0 || lp.SmartCostLimit == nil {
 		t.Fatalf("loadpoint = %+v", lp)
 	}
 	if len(st.PriceSlots) == 0 || st.Solar == nil {

@@ -94,6 +94,7 @@ type plan struct {
 	SoC struct {
 		Percent *float64 `json:"percent"`
 		Live    bool     `json:"live"`
+		RangeKm *float64 `json:"rangeKm"`
 	} `json:"soc"`
 	Days []struct {
 		Date        string   `json:"date"`
@@ -157,8 +158,8 @@ func (p plan) trip(key string) (int, bool) {
 func TestDemoPlanMatchesHandCalculation(t *testing.T) {
 	ta := newTestApp(t, "")
 	p := ta.plan()
-	if p.SoC.Percent == nil || *p.SoC.Percent != 38 || p.SoC.Live {
-		t.Fatalf("demo SoC should be a last-known 38%%: %+v", p.SoC)
+	if p.SoC.Percent == nil || *p.SoC.Percent != 38 || p.SoC.Live || p.SoC.RangeKm == nil || *p.SoC.RangeKm != 122 {
+		t.Fatalf("demo SoC should be a last-known 38%% with its range: %+v", p.SoC)
 	}
 	if len(p.Days) != 7 || p.Days[0].Date != "2026-11-09" || p.Days[0].Status != "completed" {
 		t.Fatalf("days = %+v", p.Days)
@@ -339,8 +340,8 @@ func TestSendPlanToEVCC(t *testing.T) {
 	if !prev.Available || len(prev.Slots) == 0 {
 		t.Fatalf("plugged-in preview = %+v", prev)
 	}
-	if p := ta.plan(); !p.SoC.Live {
-		t.Error("plugged-in SoC should be live")
+	if p := ta.plan(); !p.SoC.Live || p.SoC.RangeKm == nil || *p.SoC.RangeKm != 122 {
+		t.Errorf("plugged-in SoC should be live, with EVCC's range: %+v", p.SoC)
 	}
 
 	body := map[string]any{"soc": 42, "time": "2026-11-10T06:48:00Z", "tripKey": "recurring:1:2026-11-10"}

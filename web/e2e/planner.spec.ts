@@ -16,6 +16,7 @@ async function shot(page: Page, name: string) {
 test('overview shows status, the next departure, and seven days', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByTestId('soc')).toHaveText('38%')
+  await expect(page.getByTestId('soc-range')).toHaveText('122 km range')
   await expect(page.getByTestId('soc-stale')).toContainText('Last known, Mon 9 Nov, 16:45')
   await expect(page.getByTestId('next-departure')).toHaveText('Tomorrow, leave 07:48')
   await expect(page.getByTestId('next-target')).toHaveText('42%')

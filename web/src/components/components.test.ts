@@ -25,6 +25,7 @@ const soc = (over: Partial<SoCView>): SoCView => ({
   observedAt: '2026-11-09T17:42:00Z',
   estimated: false,
   projected: 38,
+  rangeKm: 122,
   ...over,
 })
 
@@ -59,6 +60,7 @@ describe('VehicleCard', () => {
   it('marks an unplugged SoC as last known with its time', () => {
     const w = mount(VehicleCard, { props: { soc: soc({}), status, now: '2026-11-09T18:00:00Z' } })
     expect(w.get('[data-testid=soc]').text()).toBe('38%')
+    expect(w.get('[data-testid=soc-range]').text()).toBe('122 km range')
     const tip = w.get('[data-testid=soc-stale]').text()
     expect(tip).toContain('Last known, Mon 9 Nov, 18:42')
     expect(tip).toContain('only reads the SoC while the car is plugged in')
@@ -68,20 +70,22 @@ describe('VehicleCard', () => {
   it('shows live readings without the stale tip', () => {
     const w = mount(VehicleCard, {
       props: {
-        soc: soc({ live: true }),
+        soc: soc({ live: true, rangeKm: null }),
         status: { ...status, connected: true },
         now: '2026-11-09T17:42:00Z',
       },
     })
     expect(w.find('[data-testid=soc-stale]').exists()).toBe(false)
     expect(w.text()).toContain('Live from EVCC')
+    // Not reported yet (e.g. a reading saved before EVCC gave the range).
+    expect(w.get('[data-testid=soc-range]').text()).toBe('Range: read when plugged in')
     expect(w.text()).toContain('Plugged in')
   })
 
   it('asks to plug in when the SoC was never read', () => {
     const w = mount(VehicleCard, {
       props: {
-        soc: soc({ known: false, percent: null, observedAt: null }),
+        soc: soc({ known: false, percent: null, observedAt: null, rangeKm: null }),
         status,
         now: '2026-11-09T18:00:00Z',
       },

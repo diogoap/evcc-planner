@@ -90,14 +90,15 @@ func (s *Service) PollEVCC(ctx context.Context) error {
 		return err
 	}
 	if lp, ok := st.Loadpoint(s.Cfg.EVCC.Loadpoint); ok && lp.Connected && lp.VehicleSoc > 0 {
-		return s.recordSoC(lp.VehicleSoc, now)
+		return s.recordSoC(lp.VehicleSoc, positive(lp.VehicleRange), now)
 	}
 	return nil
 }
 
-// recordSoC persists the reading; unchanged values are written at most every
-// five minutes to keep the timestamp meaningful without constant writes.
-func (s *Service) recordSoC(soc float64, at time.Time) error {
+// recordSoC persists the reading (with EVCC's range, if known); unchanged
+// values are written at most every five minutes to keep the timestamp
+// meaningful without constant writes.
+func (s *Service) recordSoC(soc float64, rangeKm *float64, at time.Time) error {
 	last, err := s.Store.LastSoC()
 	if err != nil {
 		return err
@@ -105,16 +106,31 @@ func (s *Service) recordSoC(soc float64, at time.Time) error {
 	s.mu.Lock()
 	recent := at.Sub(s.socSaved) < 5*time.Minute
 	s.mu.Unlock()
-	if last != nil && last.Percent == soc && recent {
+	if last != nil && last.Percent == soc && sameRange(last.RangeKm, rangeKm) && recent {
 		return nil
 	}
-	if err := s.Store.SaveSoC(model.SoCReading{Percent: soc, ObservedAt: at, Source: "evcc"}); err != nil {
+	if err := s.Store.SaveSoC(model.SoCReading{Percent: soc, RangeKm: rangeKm, ObservedAt: at, Source: "evcc"}); err != nil {
 		return err
 	}
 	s.mu.Lock()
 	s.socSaved = at
 	s.mu.Unlock()
 	return nil
+}
+
+// positive returns v, or nil for 0 (EVCC's "unknown").
+func positive(v float64) *float64 {
+	if v <= 0 {
+		return nil
+	}
+	return &v
+}
+
+func sameRange(a, b *float64) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return *a == *b
 }
 
 type evccSnapshot struct {
