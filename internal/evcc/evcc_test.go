@@ -153,3 +153,126 @@ func TestStubBehavesLikeEVCC(t *testing.T) {
 		t.Errorf("plan not stored: %+v", st.Vehicles[StubVehicle])
 	}
 }
+
+func TestHTTPClientPlanDeleteAndSmartCostLimit(t *testing.T) {
+	var calls []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls = append(calls, r.Method+" "+r.URL.EscapedPath())
+		w.Write([]byte(`{"result":null}`))
+	}))
+	defer srv.Close()
+	c := NewHTTPClient(srv.URL, time.Second)
+	ctx := context.Background()
+	if err := c.DeleteSocPlan(ctx, "db:3"); err != nil {
+		t.Fatal(err)
+	}
+	limit := 0.2
+	if err := c.SetSmartCostLimit(ctx, 1, &limit); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.SetSmartCostLimit(ctx, 1, nil); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"DELETE /api/vehicles/db:3/plan/soc",
+		"POST /api/loadpoints/1/smartcostlimit/0.2",
+		"DELETE /api/loadpoints/1/smartcostlimit",
+	}
+	if strings.Join(calls, "\n") != strings.Join(want, "\n") {
+		t.Errorf("calls = %q, want %q", calls, want)
+	}
+}
+
+func TestParseSmartCostLimit(t *testing.T) {
+	st, err := ParseState([]byte(`{"loadpoints":[{"smartCostLimit":0.2},{"smartCostLimit":null}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lp, _ := st.Loadpoint(1); lp.SmartCostLimit == nil || *lp.SmartCostLimit != 0.2 {
+		t.Errorf("limit = %v", lp.SmartCostLimit)
+	}
+	if lp, _ := st.Loadpoint(2); lp.SmartCostLimit != nil {
+		t.Errorf("null limit = %v", *lp.SmartCostLimit)
+	}
+}
+
+func TestStubPlanDeleteAndSmartCostLimit(t *testing.T) {
+	ams, _ := time.LoadLocation("Europe/Amsterdam")
+	now := time.Date(2026, 11, 9, 19, 0, 0, 0, ams)
+	s := NewStub(clock.Fixed{T: now}, ams)
+	ctx := context.Background()
+	st, _ := s.State(ctx)
+	if lp, _ := st.Loadpoint(1); lp.SmartCostLimit == nil || *lp.SmartCostLimit != 0.2 {
+		t.Fatalf("demo limit = %v", lp.SmartCostLimit)
+	}
+	s.SetSmartCostLimit(ctx, 1, nil)
+	s.SetSocPlan(ctx, StubVehicle, 60, now.Add(time.Hour))
+	s.DeleteSocPlan(ctx, StubVehicle)
+	st, _ = s.State(ctx)
+	if lp, _ := st.Loadpoint(1); lp.SmartCostLimit != nil || st.Vehicles[StubVehicle].Plan != nil {
+		t.Errorf("limit %v and plan %v should be removed", lp.SmartCostLimit, st.Vehicles[StubVehicle].Plan)
+	}
+	// Weekday levels: the demo Tuesday is cheaper than Thursday.
+	tue := stubPrice(time.Date(2026, 11, 10, 12, 0, 0, 0, ams))
+	thu := stubPrice(time.Date(2026, 11, 12, 12, 0, 0, 0, ams))
+	if tue >= thu {
+		t.Errorf("Tuesday %.4f should be cheaper than Thursday %.4f", tue, thu)
+	}
+}
+
+func TestParseSolarForecast(t *testing.T) {
+	body := `{"forecast":{"solar":{"scale":1,"today":{"energy":4000,"complete":true},
+		"timeseries":[[1794222000,0],[1794225600,2000],[1794229200,2000],[1794232800,0]]}}}`
+	st, err := ParseState([]byte(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := st.Solar
+	if f == nil || len(f.Points) != 4 || f.Points[1].PowerW != 2000 {
+		t.Fatalf("solar = %+v", f)
+	}
+	start := f.Points[0].Time
+	// Ramp up 1 h (1 kWh), flat 1 h (2 kWh), ramp down 1 h (1 kWh).
+	if e := f.EnergyKWh(start, start.Add(3*time.Hour)); e < 3.999 || e > 4.001 {
+		t.Errorf("energy = %.3f kWh, want 4", e)
+	}
+	if e := f.EnergyKWh(start.Add(30*time.Minute), start.Add(90*time.Minute)); e < 1.749 || e > 1.751 {
+		t.Errorf("partial energy = %.3f kWh, want 1.75", e)
+	}
+	if e := f.EnergyKWh(start.Add(4*time.Hour), start.Add(8*time.Hour)); e != 0 {
+		t.Errorf("beyond the forecast = %.3f", e)
+	}
+	if !f.Covers(start.Add(3*time.Hour)) || f.Covers(start.Add(4*time.Hour)) {
+		t.Error("coverage wrong")
+	}
+	obj, _ := ParseState([]byte(`{"forecast":{"solar":{"timeseries":[{"ts":"2026-11-10T10:00:00Z","val":100},{"ts":"2026-11-10T11:00:00Z","val":100}]}}}`))
+	if obj.Solar == nil || obj.Solar.EnergyKWh(obj.Solar.Points[0].Time, obj.Solar.Points[1].Time) != 0.1 {
+		t.Errorf("object form = %+v", obj.Solar)
+	}
+	if none, _ := ParseState([]byte(`{"forecast":{"grid":[]}}`)); none.Solar != nil {
+		t.Error("no solar forecast should stay nil")
+	}
+	// EVCC's correction applies only when "solar adjusted" is on there.
+	adjusted, _ := ParseState([]byte(`{"solarAdjusted":true,` + body[1:]))
+	if e := adjusted.Solar.EnergyKWh(start, start.Add(3*time.Hour)); e < 3.999 || e > 4.001 {
+		t.Errorf("scale 1 = %.3f", e)
+	}
+	scaled, _ := ParseState([]byte(`{"solarAdjusted":true,"forecast":{"solar":{"scale":0.5,"timeseries":[[1794222000,1000],[1794225600,1000]]}}}`))
+	if e := scaled.Solar.EnergyKWh(scaled.Solar.Points[0].Time, scaled.Solar.Points[1].Time); e != 0.5 {
+		t.Errorf("adjusted energy = %.3f, want 0.5", e)
+	}
+}
+
+func TestStubSolarForecast(t *testing.T) {
+	ams, _ := time.LoadLocation("Europe/Amsterdam")
+	now := time.Date(2026, 11, 9, 19, 0, 0, 0, ams)
+	st, _ := NewStub(clock.Fixed{T: now}, ams).State(context.Background())
+	tue := time.Date(2026, 11, 10, 0, 0, 0, 0, ams)
+	wed := tue.AddDate(0, 0, 1)
+	if !st.Solar.Covers(wed) || st.Solar.Covers(wed.Add(time.Minute)) {
+		t.Errorf("the demo forecast covers today and tomorrow")
+	}
+	if e := st.Solar.EnergyKWh(tue, wed); e < 5 || e > 10 {
+		t.Errorf("Tuesday %.1f kWh", e)
+	}
+}

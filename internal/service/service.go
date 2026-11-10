@@ -47,6 +47,10 @@ type Service struct {
 
 	// RoutesNote explains a stub fallback (e.g. missing API key).
 	RoutesNote string
+	Forecasts  Forecasts
+
+	forecastMu sync.Mutex
+	adjustMu   sync.Mutex
 
 	mu        sync.RWMutex
 	evccState *evcc.State

@@ -74,6 +74,15 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/connections", s.connections)
 	mux.HandleFunc("POST /api/calendar/sync", s.syncCalendar)
 
+	mux.HandleFunc("GET /api/forecasts", s.forecasts)
+	mux.HandleFunc("POST /api/forecasts/refresh", s.refreshForecasts)
+	mux.HandleFunc("GET /api/settings/advice", s.getAdviceSettings)
+	mux.HandleFunc("PUT /api/settings/advice", s.putAdviceSettings)
+	mux.HandleFunc("GET /api/advice/{date}/proposal", s.proposal)
+	mux.HandleFunc("POST /api/advice/{date}/dismiss", s.dismiss)
+	mux.HandleFunc("POST /api/adjustments", s.applyAdjustment)
+	mux.HandleFunc("POST /api/adjustments/{id}/cancel", s.cancelAdjustment)
+
 	if s.Demo != nil {
 		mux.HandleFunc("POST /api/demo/vehicle", s.demoVehicle)
 	}
@@ -481,6 +490,97 @@ func (s *Server) syncCalendar(w http.ResponseWriter, r *http.Request) {
 		s.Log.Warn("calendar sync failed", "err", err)
 	}
 	s.connections(w, r)
+}
+
+func (s *Server) forecasts(w http.ResponseWriter, r *http.Request) {
+	v, err := s.Svc.ForecastDetail()
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, v)
+}
+
+func (s *Server) refreshForecasts(w http.ResponseWriter, r *http.Request) {
+	if err := s.Svc.RefreshForecasts(r.Context(), true); err != nil {
+		s.Log.Warn("forecast refresh failed", "err", err)
+	}
+	s.connections(w, r)
+}
+
+func (s *Server) getAdviceSettings(w http.ResponseWriter, r *http.Request) {
+	v, err := s.Svc.AdviceSettings()
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, v)
+}
+
+func (s *Server) putAdviceSettings(w http.ResponseWriter, r *http.Request) {
+	var v model.AdviceSettings
+	if err := decode(r, &v); err != nil {
+		s.fail(w, err)
+		return
+	}
+	saved, err := s.Svc.SaveAdviceSettings(v)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, saved)
+}
+
+func (s *Server) proposal(w http.ResponseWriter, r *http.Request) {
+	p, err := s.Svc.Proposal(r.Context(), r.URL.Query().Get("kind"), r.PathValue("date"))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, p)
+}
+
+func (s *Server) dismiss(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Undo bool `json:"undo"`
+	}
+	if err := decode(r, &in); err != nil {
+		s.fail(w, err)
+		return
+	}
+	if err := s.Svc.Dismiss(r.Context(), r.PathValue("date"), in.Undo); err != nil {
+		s.fail(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) applyAdjustment(w http.ResponseWriter, r *http.Request) {
+	var in service.AdjustInput
+	if err := decode(r, &in); err != nil {
+		s.fail(w, err)
+		return
+	}
+	a, err := s.Svc.ApplyAdjustment(r.Context(), in)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, a)
+}
+
+func (s *Server) cancelAdjustment(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	a, err := s.Svc.CancelAdjustment(r.Context(), id)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, a)
 }
 
 func (s *Server) demoVehicle(w http.ResponseWriter, r *http.Request) {

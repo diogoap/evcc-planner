@@ -1,7 +1,7 @@
 # Agent guide
 
 Instructions for AI coding agents working in this repository. Read
-[PLAN.md](PLAN.md) for scope (V1 is implemented; later versions are not) and
+[PLAN.md](PLAN.md) for scope (V1 and V2 are implemented; later versions are not) and
 [README.md](README.md) for configuration and deployment.
 
 ## Commands
@@ -25,10 +25,12 @@ automatically. It needs no credentials or live services.
   variables (`.env` locally, ignored by Git). Personal data lives in the UI/SQLite.
 - **Never write to the real EVCC from tests.** Live tests are read-only; plan
   writes are only exercised against the stub.
+- Forecast text is structured by a model, but numbers are never computed by it:
+  keep quote verification and conversions in `internal/forecast`.
 - Add tests with every change: Go `testing` + `httptest` (fixed clocks, temp
   databases), Vitest + Vue Test Utils for components, Playwright for user flows
   (`web/e2e`, run against demo mode with a fixed clock and `/api/demo/reset`).
-- Planning logic stays pure in `internal/planner`; time handling goes through
+- Planning and advice logic stay pure (`internal/planner`, `internal/advice`); time handling goes through
   `internal/localtime` (Europe/Amsterdam, DST-safe). Frontend formatting uses
   `web/src/lib/format.ts`, which always formats in the planner's timezone.
 - Prices are always EUR/kWh including VAT.

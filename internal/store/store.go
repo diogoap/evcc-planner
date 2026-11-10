@@ -106,6 +106,32 @@ var migrations = []string{
 	// from the feeds.
 	`ALTER TABLE calendar_events ADD COLUMN calendar_name TEXT NOT NULL DEFAULT '';
 	ALTER TABLE calendar_sync ADD COLUMN name TEXT NOT NULL DEFAULT '';`,
+	// V2: daily forecasts (latest valid payload per source), dismissed
+	// advice, and temporary EVCC adjustments made from advice.
+	`CREATE TABLE forecast_sources (
+		source TEXT PRIMARY KEY,
+		last_attempt_at TEXT,
+		last_success_at TEXT,
+		last_error TEXT NOT NULL DEFAULT '',
+		payload TEXT,
+		content_hash TEXT NOT NULL DEFAULT '',
+		detail TEXT NOT NULL DEFAULT ''
+	);
+	CREATE TABLE advice_dismissals (
+		date TEXT NOT NULL,
+		recommendation TEXT NOT NULL,
+		dismissed_at TEXT NOT NULL,
+		PRIMARY KEY (date, recommendation)
+	);
+	CREATE TABLE evcc_adjustments (
+		id INTEGER PRIMARY KEY,
+		kind TEXT NOT NULL,
+		advice_date TEXT NOT NULL,
+		status TEXT NOT NULL,
+		expires_at TEXT NOT NULL,
+		data TEXT NOT NULL
+	);
+	CREATE INDEX evcc_adjustments_status ON evcc_adjustments(status);`,
 }
 
 // Open opens (creating if needed) the database at path and migrates it.
@@ -740,12 +766,217 @@ func (s *Store) LastPlanWrite() (*model.PlanWrite, error) {
 	return &w, err
 }
 
+// ---- forecasts ----
+
+// ForecastRecord is the latest state of one forecast source.
+type ForecastRecord struct {
+	Source        string
+	LastAttemptAt *time.Time
+	LastSuccessAt *time.Time
+	LastError     string
+	Payload       []byte // latest valid payload; kept when later attempts fail
+	ContentHash   string
+	Detail        string
+}
+
+// Forecast returns a source's record, or nil if it was never fetched.
+func (s *Store) Forecast(source string) (*ForecastRecord, error) {
+	r := ForecastRecord{Source: source}
+	var attempt, success, payload sql.NullString
+	err := s.db.QueryRow(`SELECT last_attempt_at, last_success_at, last_error, payload, content_hash, detail
+		FROM forecast_sources WHERE source = ?`, source).Scan(&attempt, &success, &r.LastError, &payload, &r.ContentHash, &r.Detail)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	r.LastAttemptAt, r.LastSuccessAt = nullTime(attempt), nullTime(success)
+	if payload.Valid {
+		r.Payload = []byte(payload.String)
+	}
+	return &r, nil
+}
+
+// SaveForecastFailure records a failed attempt and keeps the last payload.
+func (s *Store) SaveForecastFailure(source string, at time.Time, msg string) error {
+	_, err := s.db.Exec(`INSERT INTO forecast_sources (source, last_attempt_at, last_error) VALUES (?, ?, ?)
+		ON CONFLICT(source) DO UPDATE SET last_attempt_at = excluded.last_attempt_at, last_error = excluded.last_error`,
+		source, fmtTime(at), msg)
+	return err
+}
+
+// SaveForecast stores a new valid payload.
+func (s *Store) SaveForecast(source string, at time.Time, payload []byte, hash, detail string) error {
+	_, err := s.db.Exec(`INSERT INTO forecast_sources (source, last_attempt_at, last_success_at, last_error, payload, content_hash, detail)
+		VALUES (?, ?, ?, '', ?, ?, ?) ON CONFLICT(source) DO UPDATE SET last_attempt_at = excluded.last_attempt_at,
+		last_success_at = excluded.last_success_at, last_error = '', payload = excluded.payload,
+		content_hash = excluded.content_hash, detail = excluded.detail`,
+		source, fmtTime(at), fmtTime(at), string(payload), hash, detail)
+	return err
+}
+
+// TouchForecast records a successful check that found unchanged content.
+func (s *Store) TouchForecast(source string, at time.Time) error {
+	_, err := s.db.Exec(`UPDATE forecast_sources SET last_attempt_at = ?, last_success_at = ?, last_error = '' WHERE source = ?`,
+		fmtTime(at), fmtTime(at), source)
+	return err
+}
+
+func nullTime(v sql.NullString) *time.Time {
+	if !v.Valid {
+		return nil
+	}
+	t, err := parseTime(v.String)
+	if err != nil {
+		return nil
+	}
+	return &t
+}
+
+// ---- advice ----
+
+const adviceKey = "advice"
+
+// AdviceSettings returns saved advice settings merged onto defaults.
+func (s *Store) AdviceSettings(defaults model.AdviceSettings) (model.AdviceSettings, error) {
+	var raw string
+	err := s.db.QueryRow(`SELECT value FROM settings WHERE key = ?`, adviceKey).Scan(&raw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return defaults, nil
+	}
+	if err != nil {
+		return defaults, err
+	}
+	merged := defaults
+	if err := json.Unmarshal([]byte(raw), &merged); err != nil {
+		return defaults, fmt.Errorf("decode advice settings: %w", err)
+	}
+	return merged, nil
+}
+
+// SaveAdviceSettings stores the advice settings.
+func (s *Store) SaveAdviceSettings(v model.AdviceSettings) error {
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+		ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+		adviceKey, string(raw), fmtTime(time.Now()))
+	return err
+}
+
+// Dismissals returns dismissed advice as date -> recommendation.
+func (s *Store) Dismissals() (map[string]string, error) {
+	rows, err := s.db.Query(`SELECT date, recommendation FROM advice_dismissals`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]string{}
+	for rows.Next() {
+		var date, rec string
+		if err := rows.Scan(&date, &rec); err != nil {
+			return nil, err
+		}
+		out[date] = rec
+	}
+	return out, rows.Err()
+}
+
+// Dismiss records that the user dismissed a day's advice.
+func (s *Store) Dismiss(date, recommendation string, at time.Time) error {
+	_, err := s.db.Exec(`INSERT OR REPLACE INTO advice_dismissals (date, recommendation, dismissed_at) VALUES (?, ?, ?)`,
+		date, recommendation, fmtTime(at))
+	return err
+}
+
+// Undismiss removes a dismissal.
+func (s *Store) Undismiss(date string) error {
+	_, err := s.db.Exec(`DELETE FROM advice_dismissals WHERE date = ?`, date)
+	return err
+}
+
+// ---- EVCC adjustments ----
+
+// AddAdjustment records a temporary EVCC change.
+func (s *Store) AddAdjustment(a model.Adjustment) (model.Adjustment, error) {
+	raw, err := json.Marshal(a)
+	if err != nil {
+		return a, err
+	}
+	res, err := s.db.Exec(`INSERT INTO evcc_adjustments (kind, advice_date, status, expires_at, data) VALUES (?, ?, ?, ?, ?)`,
+		a.Kind, a.AdviceDate, a.Status, fmtTime(a.ExpiresAt), string(raw))
+	if err != nil {
+		return a, err
+	}
+	a.ID, err = res.LastInsertId()
+	return a, err
+}
+
+// UpdateAdjustment replaces a stored adjustment.
+func (s *Store) UpdateAdjustment(a model.Adjustment) error {
+	raw, err := json.Marshal(a)
+	if err != nil {
+		return err
+	}
+	res, err := s.db.Exec(`UPDATE evcc_adjustments SET status = ?, expires_at = ?, data = ? WHERE id = ?`,
+		a.Status, fmtTime(a.ExpiresAt), string(raw), a.ID)
+	if err != nil {
+		return err
+	}
+	return expectRow(res)
+}
+
+// Adjustment returns one adjustment.
+func (s *Store) Adjustment(id int64) (model.Adjustment, error) {
+	list, err := s.adjustments(`WHERE id = ?`, id)
+	if err != nil {
+		return model.Adjustment{}, err
+	}
+	if len(list) == 0 {
+		return model.Adjustment{}, ErrNotFound
+	}
+	return list[0], nil
+}
+
+// Adjustments lists active adjustments and those for advice dates from
+// `since` on, newest first.
+func (s *Store) Adjustments(since string) ([]model.Adjustment, error) {
+	return s.adjustments(`WHERE status = ? OR advice_date >= ? ORDER BY id DESC`, model.AdjustActive, since)
+}
+
+func (s *Store) adjustments(where string, args ...any) ([]model.Adjustment, error) {
+	rows, err := s.db.Query(`SELECT id, data FROM evcc_adjustments `+where, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	list := []model.Adjustment{}
+	for rows.Next() {
+		var id int64
+		var data string
+		if err := rows.Scan(&id, &data); err != nil {
+			return nil, err
+		}
+		var a model.Adjustment
+		if err := json.Unmarshal([]byte(data), &a); err != nil {
+			return nil, fmt.Errorf("decode adjustment %d: %w", id, err)
+		}
+		a.ID = id
+		list = append(list, a)
+	}
+	return list, rows.Err()
+}
+
 // ---- helpers ----
 
 // Reset deletes all personal data (demo mode only). The route cache is kept.
 func (s *Store) Reset() error {
 	for _, table := range []string{"settings", "places", "recurring_templates", "manual_trips", "trip_overrides",
-		"calendar_events", "calendar_sync", "vehicle_soc", "plan_writes"} {
+		"calendar_events", "calendar_sync", "vehicle_soc", "plan_writes", "forecast_sources", "advice_dismissals",
+		"evcc_adjustments"} {
 		if _, err := s.db.Exec("DELETE FROM " + table); err != nil {
 			return err
 		}

@@ -1,4 +1,5 @@
 # Private configuration, secrets, and runtime data (supplied at runtime)
+testdata/private/
 config.local.yaml
 .env
 .env.*

@@ -1,0 +1,279 @@
+import { flushPromises, mount } from '@vue/test-utils'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { AdviceSource, Day, DayAdvice, Proposal } from '../api/types'
+import AdviceBadges from './AdviceBadges.vue'
+import AdviceCard from './AdviceCard.vue'
+import DaysTable from './DaysTable.vue'
+
+const api = vi.hoisted(() => ({
+  proposal: vi.fn(),
+  preview: vi.fn(),
+  applyAdjustment: vi.fn(),
+}))
+vi.mock('../api/client', () => ({ api }))
+// Chart.js needs a canvas; the dialog's chart is not under test.
+vi.mock('./PriceChart.vue', () => ({ default: { template: '<div />' } }))
+
+const { default: ProposalDialog } = await import('./ProposalDialog.vue')
+
+const advice = (over: Partial<DayAdvice>): DayAdvice => ({
+  date: '2026-11-10',
+  recommendation: 'charge_ahead',
+  noSuggestion: false,
+  confidence: 2,
+  indicator: 'high',
+  summary: 'Published Tue prices are cheaper than the rest of the window.',
+  rationale: ['Tue: €0.218/kWh average incl. VAT (published day-ahead prices).'],
+  laterChargePct: 30,
+  price: { value: 0.218, basis: 'published', detail: 'published day-ahead prices', stale: false },
+  weather: null,
+  solarKWh: 7.6,
+  solarHomeKWh: 2.1,
+  sunSource: 'evcc',
+  dismissed: false,
+  action: 'extra_plan',
+  ...over,
+})
+
+const sources: AdviceSource[] = [
+  { name: 'EVCC prices', kind: 'published', status: 'ok', detail: 'Published through Tue 10 Nov' },
+  { name: 'Tibber outlook', kind: 'estimate', status: 'stale', detail: 'Report 2026-11-02 to 2026-11-08' },
+]
+
+const dates = ['2026-11-09', '2026-11-10', '2026-11-11']
+
+function card(a: DayAdvice) {
+  return mount(AdviceCard, { props: { advice: a, sources, now: '2026-11-09T18:00:00Z', dates } })
+}
+
+describe('AdviceCard', () => {
+  it('shows the recommendation, confidence, indicator, and plan action', async () => {
+    const w = card(advice({}))
+    expect(w.text()).toContain("Tuesday's advice")
+    expect(w.get('[data-testid=advice-label]').text()).toBe('Charge ahead')
+    expect(w.get('[data-testid=advice-confidence]').text()).toBe('Confidence: 2/3 — Medium')
+    expect(w.get('[data-testid=advice-indicator]').text()).toContain('High (more)')
+    expect(w.get('[data-testid=advice-basis]').text()).toBe('Published')
+    expect(w.get('[data-testid=advice-sun]').text()).toBe(
+      '7.6 kWh · 2.1 kWh while home (EVCC solar forecast, local)',
+    )
+    await w.get('button.primary').trigger('click')
+    expect(w.emitted('propose')).toEqual([['extra_plan']])
+    const dismiss = w.findAll('button').find((b) => b.text() === 'Dismiss')!
+    await dismiss.trigger('click')
+    expect(w.emitted('dismiss')).toEqual([[false]])
+    expect(w.get('[data-testid=advice-sources]').text()).toContain('stale')
+  })
+
+  it('offers no action for missing or weak evidence', () => {
+    const none = card(
+      advice({ noSuggestion: true, confidence: 0, recommendation: 'none', action: undefined }),
+    )
+    expect(none.get('[data-testid=advice-label]').text()).toBe('No data / no suggestion')
+    expect(none.find('button.primary').exists()).toBe(false)
+    expect(none.find('[data-testid=advice-indicator]').exists()).toBe(false)
+
+    const weak = card(advice({ confidence: 1, action: undefined }))
+    expect(weak.text()).toContain('Low confidence: no plan action')
+    expect(weak.find('button.primary').exists()).toBe(false)
+  })
+
+  it('labels estimates and shows an active change with a way to end it', async () => {
+    const w = card(
+      advice({
+        action: undefined,
+        price: { value: 0.298, basis: 'estimate', detail: 'Tibber outlook estimate', stale: true },
+        adjustment: {
+          id: 7,
+          kind: 'extra_plan',
+          source: 'ui',
+          adviceDate: '2026-11-10',
+          vehicle: 'leaf',
+          loadpoint: 1,
+          plan: { soc: 70, time: '2026-11-10T06:48:00Z' },
+          expiresAt: '2026-11-10T06:48:00Z',
+          status: 'active',
+          note: '',
+          createdAt: '2026-11-09T18:00:00Z',
+        },
+      }),
+    )
+    expect(w.get('[data-testid=advice-basis]').text()).toBe('Estimate · stale')
+    expect(w.get('[data-testid=advice-adjustment]').text()).toContain(
+      'Extra plan active: 70% by Tue 10 Nov, 07:48',
+    )
+    await w.get('[data-testid=advice-adjustment] button').trigger('click')
+    expect(w.emitted('cancel')).toEqual([[7]])
+  })
+
+  it('steps between days', async () => {
+    const w = card(advice({}))
+    await w.get('[aria-label="Next day"]').trigger('click')
+    expect(w.emitted('select')).toEqual([['2026-11-11']])
+  })
+})
+
+const weather = {
+  date: '2026-11-12',
+  sunshinePct: 70,
+  precipChancePct: 10,
+  precipMinMm: 0,
+  precipMaxMm: 0,
+  tempMinLowC: 1,
+  tempMinHighC: 1,
+  tempMaxLowC: 8,
+  tempMaxHighC: 8,
+  windDir: 'N',
+  windBft: 2,
+}
+
+describe('AdviceBadges', () => {
+  it('shows the key figures as badges', () => {
+    const w = mount(AdviceBadges, { props: { advice: advice({ weather: { ...weather, windBft: 5 } }) } })
+    expect(w.get('[data-testid=badge-advice]').text()).toBe('Charge ahead')
+    expect(w.get('[data-testid=badge-confidence]').text()).toBe('2/3')
+    expect(w.findAll('[data-testid=badge-confidence] .dot.on')).toHaveLength(2)
+    expect(w.get('[data-testid=badge-indicator]').attributes('aria-label')).toBe(
+      'Charge indicator: High (more)',
+    )
+    expect(w.findAll('[data-testid=badge-indicator] .bar-step.on')).toHaveLength(3)
+    expect(w.get('[data-testid=badge-price]').text()).toBe('€0.22')
+    expect(w.get('[data-testid=badge-price]').classes()).toContain('basis-published')
+    expect(w.get('[data-testid=badge-sun]').text()).toBe('7.6 kWh')
+    expect(w.get('[data-testid=badge-sun]').attributes('title')).toContain('EVCC solar forecast, local')
+    expect(w.get('[data-testid=badge-wind]').text()).toBe('5 Bft')
+  })
+
+  it('marks estimates and KNMI sunshine, and drops what is unknown', () => {
+    const w = mount(AdviceBadges, {
+      props: {
+        advice: advice({
+          recommendation: 'defer',
+          indicator: undefined,
+          confidence: 1,
+          price: { value: 0.298, basis: 'estimate', detail: 'Tibber outlook estimate', stale: false },
+          solarKWh: null,
+          solarHomeKWh: null,
+          sunSource: 'knmi',
+          weather,
+        }),
+      },
+    })
+    expect(w.get('[data-testid=badge-advice]').text()).toBe('Defer')
+    expect(w.find('[data-testid=badge-indicator]').exists()).toBe(false)
+    expect(w.get('[data-testid=badge-price]').text()).toBe('~€0.30')
+    expect(w.get('[data-testid=badge-price]').classes()).toContain('basis-estimate')
+    expect(w.get('[data-testid=badge-sun]').text()).toBe('70%')
+    expect(w.get('[data-testid=badge-sun]').attributes('title')).toContain('KNMI outlook, national')
+
+    const none = mount(AdviceBadges, {
+      props: {
+        advice: advice({
+          noSuggestion: true,
+          confidence: 0,
+          recommendation: 'none',
+          price: null,
+          sunSource: '',
+        }),
+      },
+    })
+    expect(none.get('[data-testid=badge-advice]').text()).toBe('No data')
+    expect(none.find('[data-testid=badge-confidence]').exists()).toBe(false)
+    expect(none.find('[data-testid=badge-sun]').exists()).toBe(false)
+  })
+})
+
+describe('DaysTable advice column', () => {
+  it('shows each day’s advice and selects it without leaving the page', async () => {
+    const days: Day[] = [
+      {
+        date: '2026-11-10',
+        distanceKm: 100,
+        energyKWh: 18,
+        tripCount: 3,
+        disabledCount: 0,
+        doneCount: 0,
+        reviewCount: 0,
+        status: 'charge',
+        chargePct: 4,
+      },
+    ]
+    const w = mount(DaysTable, { props: { days, advice: [advice({})], selected: '2026-11-10' } })
+    const cell = w.get('[data-testid="advice-2026-11-10"]')
+    expect(cell.text()).toContain('Charge ahead')
+    expect(cell.text()).toContain('2/3')
+    expect(cell.attributes('aria-pressed')).toBe('true')
+    await cell.trigger('click')
+    expect(w.emitted('advice')).toEqual([['2026-11-10']])
+    expect(w.emitted('select')).toBeUndefined()
+  })
+})
+
+describe('ProposalDialog', () => {
+  const proposal: Proposal = {
+    kind: 'extra_plan',
+    date: '2026-11-10',
+    available: true,
+    advice: advice({}),
+    soc: 80,
+    minSoc: 42,
+    startSoc: 38,
+    capacityKWh: 59,
+    readyBy: '2026-11-10T06:48:00Z',
+    latestReadyBy: '2026-11-10T06:48:00Z',
+    protected: { title: 'School drop-off', departAt: '2026-11-10T06:48:00Z', targetSoc: 42 },
+    currentPlan: null,
+    smartCostLimit: 0.2,
+    expiresAt: '2026-11-10T06:48:00Z',
+    maxExpiresAt: '2026-11-12T06:48:00Z',
+    notes: ['EVCC has no plan now; this one is removed when it expires.'],
+  }
+
+  beforeEach(() => {
+    api.proposal.mockReset().mockResolvedValue(proposal)
+    api.preview
+      .mockReset()
+      .mockResolvedValue({ available: false, reason: 'Plug in first', slots: [], priceSlots: [] })
+    api.applyAdjustment.mockReset().mockResolvedValue({
+      kind: 'extra_plan',
+      plan: { soc: 60, time: '2026-11-10T06:48:00Z' },
+      expiresAt: '2026-11-10T06:48:00Z',
+    })
+  })
+
+  it('writes nothing until confirmed, then sends the edited proposal', async () => {
+    const w = mount(ProposalDialog, { props: { date: '2026-11-10', kind: 'extra_plan' } })
+    await flushPromises()
+    expect(w.get('[data-testid=proposal-soc]').element).toHaveProperty('value', '80')
+    expect(w.get('[data-testid=proposal-protected]').text()).toContain('needs 42%')
+    expect(api.applyAdjustment).not.toHaveBeenCalled()
+
+    await w.get('[data-testid=proposal-soc]').setValue('60')
+    await w.get('form').trigger('submit')
+    await flushPromises()
+    expect(api.applyAdjustment).toHaveBeenCalledWith({
+      kind: 'extra_plan',
+      date: '2026-11-10',
+      soc: 60,
+      readyBy: '2026-11-10T06:48:00Z',
+      expiresAt: '2026-11-10T06:48:00Z',
+    })
+    expect(w.emitted('applied')?.[0]?.[0]).toBe('Extra plan sent to EVCC: 60% by Tue 10 Nov, 07:48')
+  })
+
+  it('converts a kWh target to SoC with the usable capacity', async () => {
+    const w = mount(ProposalDialog, { props: { date: '2026-11-10', kind: 'extra_plan' } })
+    await flushPromises()
+    await w.get('select[aria-label="Target unit"]').setValue('kWh')
+    await w.get('[data-testid=proposal-kwh]').setValue('11.8')
+    expect(w.text()).toContain('≈ 58% SoC') // 38% + 11.8 / 59 kWh
+  })
+
+  it('explains why a proposal is not available', async () => {
+    api.proposal.mockResolvedValue({ ...proposal, available: false, reason: 'This advice was dismissed.' })
+    const w = mount(ProposalDialog, { props: { date: '2026-11-10', kind: 'extra_plan' } })
+    await flushPromises()
+    expect(w.get('[data-testid=proposal-unavailable]').text()).toBe('This advice was dismissed.')
+    expect(w.find('form').exists()).toBe(false)
+  })
+})

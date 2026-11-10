@@ -25,18 +25,26 @@ type Stub struct {
 	soc      float64
 	plan     *SocPlan
 	capacity float64
+	smart    *float64
 }
+
+// stubSmartCostLimit is the demo cheap-grid charging limit.
+const stubSmartCostLimit = 0.2
 
 // NewStub returns an unplugged demo car.
 func NewStub(c clock.Clock, loc *time.Location) *Stub {
-	return &Stub{clock: c, loc: loc, powerKW: 3.68, capacity: 62, soc: 38}
+	s := &Stub{clock: c, loc: loc, powerKW: 3.68, capacity: 62}
+	s.Reset()
+	return s
 }
 
-// Reset restores the unplugged demo car without a plan.
+// Reset restores the unplugged demo car without a plan and with the demo
+// cheap-grid charging limit.
 func (s *Stub) Reset() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.conn, s.soc, s.plan = false, 38, nil
+	limit := stubSmartCostLimit
+	s.conn, s.soc, s.plan, s.smart = false, 38, nil, &limit
 }
 
 // SetVehicle changes the simulated connection and SoC (demo controls).
@@ -72,6 +80,10 @@ func (s *Stub) State(ctx context.Context) (*State, error) {
 		Title: "Demo charger", Mode: "smart", Connected: s.conn, VehicleName: StubVehicle,
 		VehicleTitle: "Nissan Leaf", VehicleSoc: soc, EffectiveLimitSoc: 80,
 	}
+	if s.smart != nil {
+		v := *s.smart
+		lp.SmartCostLimit = &v
+	}
 	if s.plan != nil {
 		lp.EffectivePlanSoc = s.plan.Soc
 		t := s.plan.Time
@@ -85,6 +97,7 @@ func (s *Stub) State(ctx context.Context) (*State, error) {
 			Name: StubVehicle, Title: "Nissan Leaf", CapacityKWh: s.capacity, MinSoc: 10, LimitSoc: 80, Plan: s.plan,
 		}},
 		PriceSlots:  slots,
+		Solar:       s.solarForecast(now),
 		RetrievedAt: now,
 	}, nil
 }
@@ -146,6 +159,33 @@ func (s *Stub) SetSocPlan(ctx context.Context, vehicle string, soc int, at time.
 	return s.plan, nil
 }
 
+// DeleteSocPlan removes the plan.
+func (s *Stub) DeleteSocPlan(ctx context.Context, vehicle string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if vehicle != StubVehicle {
+		return &APIError{Status: 400, Message: fmt.Sprintf("vehicle %q not found", vehicle)}
+	}
+	s.plan = nil
+	return nil
+}
+
+// SetSmartCostLimit stores or removes the cheap-grid charging limit.
+func (s *Stub) SetSmartCostLimit(ctx context.Context, loadpoint int, limit *float64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if loadpoint != 1 {
+		return &APIError{Status: 400, Message: "loadpoint not found"}
+	}
+	if limit == nil {
+		s.smart = nil
+		return nil
+	}
+	v := *limit
+	s.smart = &v
+	return nil
+}
+
 func (s *Stub) priceSlots(now time.Time) []Rate {
 	local := now.In(s.loc)
 	day := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, s.loc)
@@ -159,6 +199,13 @@ func (s *Stub) priceSlots(now time.Time) []Rate {
 		slots = append(slots, Rate{Start: t, End: t.Add(15 * time.Minute), Value: stubPrice(t.In(s.loc))})
 	}
 	return slots
+}
+
+// stubDayLevel shifts each weekday's prices, so the demo week has cheaper and
+// dearer days (windy Tuesday, calm Thursday) that match the demo outlook.
+var stubDayLevel = map[time.Weekday]float64{
+	time.Monday: 0.02, time.Tuesday: -0.035, time.Wednesday: 0, time.Thursday: 0.045,
+	time.Friday: -0.005, time.Saturday: -0.02, time.Sunday: -0.025,
 }
 
 // stubPrice returns a retail price incl. VAT in EUR/kWh: cheap at night and
@@ -177,7 +224,14 @@ func stubPrice(t time.Time) float64 {
 		base = 0.37
 	}
 	wobble := 0.015 * math.Sin(float64(t.YearDay())+h/3)
-	return math.Round((base+wobble)*10000) / 10000
+	return math.Round((base+stubDayLevel[t.Weekday()]+wobble)*10000) / 10000
+}
+
+// stubSolarPeakW varies the demo PV peak by weekday (a cloudy Monday, a
+// sunny Wednesday).
+var stubSolarPeakW = map[time.Weekday]float64{
+	time.Monday: 900, time.Tuesday: 1500, time.Wednesday: 2600, time.Thursday: 2800,
+	time.Friday: 2000, time.Saturday: 1400, time.Sunday: 1000,
 }
 
 func (s *Stub) pvPower(now time.Time) float64 {
@@ -186,5 +240,17 @@ func (s *Stub) pvPower(now time.Time) float64 {
 	if h < 8.5 || h > 16.5 {
 		return 0
 	}
-	return math.Round(1500 * math.Sin((h-8.5)/8*math.Pi))
+	return math.Round(stubSolarPeakW[local.Weekday()] * math.Sin((h-8.5)/8*math.Pi))
+}
+
+// solarForecast covers today and tomorrow, like the real EVCC setup.
+func (s *Stub) solarForecast(now time.Time) *SolarForecast {
+	local := now.In(s.loc)
+	day := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, s.loc)
+	end := time.Date(local.Year(), local.Month(), local.Day()+2, 0, 0, 0, 0, s.loc)
+	f := &SolarForecast{}
+	for t := day; !t.After(end); t = t.Add(15 * time.Minute) {
+		f.Points = append(f.Points, SolarPoint{Time: t, PowerW: s.pvPower(t)})
+	}
+	return f
 }

@@ -2,17 +2,19 @@
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../api/client'
-import type { Place } from '../api/types'
+import type { AdjustmentKind, Place } from '../api/types'
+import AdviceCard from '../components/AdviceCard.vue'
 import DaysTable from '../components/DaysTable.vue'
 import EnergyCard from '../components/EnergyCard.vue'
 import NextDepartureCard from '../components/NextDepartureCard.vue'
 import PriceChart from '../components/PriceChart.vue'
+import ProposalDialog from '../components/ProposalDialog.vue'
 import SendPlanDialog from '../components/SendPlanDialog.vue'
 import SocChart from '../components/SocChart.vue'
 import TripEditor from '../components/TripEditor.vue'
 import VehicleCard from '../components/VehicleCard.vue'
 import { dateTime } from '../lib/format'
-import { notify, refresh, state } from '../store'
+import { mutate, notify, refresh, state } from '../store'
 
 const router = useRouter()
 const plan = computed(() => state.plan)
@@ -24,6 +26,21 @@ const places = ref<Place[]>([])
 // Sending works without a SoC reading: EVCC applies the plan once the car is plugged in.
 const canSend = computed(() => !!plan.value?.next && !!status.value?.reachable)
 
+const adviceDays = computed(() => (plan.value?.advice.enabled ? plan.value.advice.days : []))
+const selected = ref<string | null>(null)
+// The selected day, else the first day with an action or a suggestion.
+const advice = computed(
+  () =>
+    adviceDays.value.find((d) => d.date === selected.value) ??
+    adviceDays.value.find((d) => d.action || d.adjustment) ??
+    adviceDays.value.find((d) => !d.noSuggestion) ??
+    adviceDays.value[0],
+)
+const activeAdjustments = computed(
+  () => plan.value?.advice.adjustments.filter((a) => a.status === 'active') ?? [],
+)
+const proposing = ref<AdjustmentKind | null>(null)
+
 async function openAdd() {
   places.value = await api.places().catch(() => [])
   adding.value = true
@@ -32,8 +49,19 @@ async function openAdd() {
 function onSaved(message: string) {
   adding.value = false
   sending.value = false
+  proposing.value = null
   notify(message)
   refresh()
+}
+
+function dismiss(undo: boolean) {
+  const a = advice.value
+  if (!a) return
+  mutate(() => api.dismiss(a.date, undo), undo ? 'Advice restored' : 'Advice dismissed; nothing was changed')
+}
+
+function cancelAdjustment(id: number) {
+  mutate(() => api.cancelAdjustment(id), 'Ended; the previous EVCC setting is restored')
 }
 </script>
 
@@ -63,7 +91,20 @@ function onSaved(message: string) {
               <template v-else>None</template>
             </dd>
             <dt>Advice auto-apply</dt>
-            <dd>Off <span class="muted small">(V2)</span></dd>
+            <dd data-testid="auto-apply">{{ plan.advice.autoApply ? 'On' : 'Off' }}</dd>
+            <template v-for="a in activeAdjustments" :key="a.id">
+              <dt>{{ a.kind === 'extra_plan' ? 'Extra plan' : 'Postponed' }}</dt>
+              <dd data-testid="active-adjustment">
+                <template v-if="a.kind === 'extra_plan' && a.plan"
+                  >{{ a.plan.soc }}% by {{ dateTime(a.plan.time) }}</template
+                >
+                <template v-else>Cheap charging paused</template>
+                <div class="small muted">
+                  Restores {{ dateTime(a.expiresAt) }}
+                  <button class="btn sm ghost" type="button" @click="cancelAdjustment(a.id)">End now</button>
+                </div>
+              </dd>
+            </template>
           </dl>
           <div class="row" style="margin-top: 12px">
             <RouterLink class="btn" to="/settings">Settings</RouterLink>
@@ -76,12 +117,35 @@ function onSaved(message: string) {
           Next seven days
           <button class="btn sm" type="button" @click="openAdd">+ Add trip</button>
         </div>
-        <DaysTable :days="plan.days" @select="(d) => router.push({ path: '/trips', hash: `#day-${d}` })" />
+        <DaysTable
+          :days="plan.days"
+          :advice="adviceDays"
+          :selected="advice?.date"
+          @select="(d) => router.push({ path: '/trips', hash: `#day-${d}` })"
+          @advice="(d) => (selected = d)"
+        />
         <p class="small muted" style="margin: 10px 0 0">
-          Charge is the SoC the day's departures need added, if each leaves with just its target; then the
-          first departure and the SoC it needs. Daily charging advice arrives in V2.
+          Plan is the SoC the day's departures need added, if each leaves with just its target; then the first
+          departure and the SoC it needs.
+          <template v-if="adviceDays.length">
+            Daily advice compares the day's prices with later days; select it for details.
+          </template>
         </p>
       </section>
+
+      <AdviceCard
+        v-if="advice"
+        style="margin-top: 16px"
+        :advice="advice"
+        :day="plan.days.find((d) => d.date === advice!.date)"
+        :sources="plan.advice.sources"
+        :now="plan.now"
+        :dates="adviceDays.map((d) => d.date)"
+        @select="(d) => (selected = d)"
+        @propose="(k) => (proposing = k)"
+        @dismiss="dismiss"
+        @cancel="cancelAdjustment"
+      />
 
       <div class="grid-2" style="margin-top: 16px">
         <section class="card" aria-labelledby="soc-title">
@@ -103,9 +167,7 @@ function onSaved(message: string) {
           <div id="price-title" class="card-title">Published prices <span>incl. VAT</span></div>
           <PriceChart v-if="status?.priceSlots.length" :slots="status.priceSlots" />
           <p v-else class="muted small">No published prices from EVCC.</p>
-          <p class="small muted" style="margin: 8px 0 0">
-            From EVCC; tomorrow's prices appear around 14:00. Estimates for later days arrive in V2.
-          </p>
+          <p class="small muted" style="margin: 8px 0 0">From EVCC; tomorrow's prices appear around 14:00.</p>
         </section>
       </div>
     </template>
@@ -116,6 +178,13 @@ function onSaved(message: string) {
       :settings="plan.settings"
       @close="sending = false"
       @sent="onSaved"
+    />
+    <ProposalDialog
+      v-if="proposing && advice"
+      :date="advice.date"
+      :kind="proposing"
+      @close="proposing = null"
+      @applied="onSaved"
     />
     <TripEditor
       v-if="adding && plan"

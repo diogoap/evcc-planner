@@ -2,10 +2,12 @@
 import { onMounted, reactive, ref } from 'vue'
 import { api } from '../api/client'
 import type { Connection, Place, Settings } from '../api/types'
+import AdviceSettingsForm from '../components/AdviceSettingsForm.vue'
+import ForecastDetails from '../components/ForecastDetails.vue'
 import { ago } from '../lib/format'
 import { mutate, notify, refresh, state } from '../store'
 
-type Tab = 'home' | 'places' | 'connections'
+type Tab = 'home' | 'places' | 'advice' | 'connections'
 const tab = ref<Tab>('home')
 const settings = ref<Settings | null>(null)
 const places = ref<Place[]>([])
@@ -15,6 +17,8 @@ const editingPlace = ref<Place | null>(null)
 const saving = ref(false)
 const error = ref('')
 const demo = reactive({ connected: false, soc: 45 })
+const refreshing = ref(false)
+const forecastDetails = ref<InstanceType<typeof ForecastDetails> | null>(null)
 
 const fields: { key: keyof Settings; label: string; unit: string; step: string; hint: string }[] = [
   {
@@ -150,6 +154,20 @@ async function syncCalendar() {
   }
 }
 
+async function refreshForecasts() {
+  refreshing.value = true
+  try {
+    connections.value = await api.refreshForecasts()
+    notify('Forecasts refreshed')
+    forecastDetails.value?.load()
+    refresh()
+  } catch (e) {
+    notify((e as Error).message, 'error')
+  } finally {
+    refreshing.value = false
+  }
+}
+
 async function checkEVCC() {
   await mutate(() => api.refreshEVCC(), 'EVCC checked')
   connections.value = await api.connections()
@@ -172,6 +190,9 @@ async function applyDemo() {
       >
       <a href="#" :class="{ 'router-link-exact-active': tab === 'places' }" @click.prevent="tab = 'places'"
         >Places</a
+      >
+      <a href="#" :class="{ 'router-link-exact-active': tab === 'advice' }" @click.prevent="tab = 'advice'"
+        >Advice</a
       >
       <a
         href="#"
@@ -222,7 +243,7 @@ async function applyDemo() {
         <div><button class="btn primary" type="submit" :disabled="saving">Save settings</button></div>
       </form>
       <p class="small muted" style="margin: 16px 0 0">
-        Advice (V2), automatic trip plans and notifications (V5) arrive in later versions.
+        Automatic trip plans and notifications arrive in a later version (V5).
       </p>
     </section>
 
@@ -271,12 +292,17 @@ async function applyDemo() {
       </form>
     </section>
 
+    <AdviceSettingsForm v-if="tab === 'advice'" />
+
     <section v-if="tab === 'connections'" class="card">
       <div class="card-title">
         Connections — configured on the server
         <span class="row">
           <button class="btn sm" type="button" @click="checkEVCC">Check EVCC</button>
           <button class="btn sm" type="button" @click="syncCalendar">Sync calendar now</button>
+          <button class="btn sm" type="button" :disabled="refreshing" @click="refreshForecasts">
+            Refresh forecasts
+          </button>
         </span>
       </div>
       <table class="table">
@@ -299,8 +325,9 @@ async function applyDemo() {
       </table>
       <p class="small muted" style="margin: 12px 0 0">
         URLs, calendars, and API keys live in config files and environment variables; secrets are never shown
-        here.
+        here. Forecasts are fetched once a day.
       </p>
+      <div style="margin-top: 20px"><ForecastDetails ref="forecastDetails" /></div>
 
       <div v-if="state.meta?.demo" style="margin-top: 20px">
         <div class="card-title">Demo car</div>

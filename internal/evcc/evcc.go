@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -20,6 +21,10 @@ type Client interface {
 	State(ctx context.Context) (*State, error)
 	PreviewSocPlan(ctx context.Context, loadpoint int, soc int, at time.Time) (*Preview, error)
 	SetSocPlan(ctx context.Context, vehicle string, soc int, at time.Time) (*SocPlan, error)
+	DeleteSocPlan(ctx context.Context, vehicle string) error
+	// SetSmartCostLimit sets the loadpoint's cheap-grid charging limit
+	// (EUR/kWh incl. VAT); nil removes it.
+	SetSmartCostLimit(ctx context.Context, loadpoint int, limit *float64) error
 }
 
 // State is the subset of /api/state the planner uses.
@@ -33,7 +38,85 @@ type State struct {
 	Loadpoints  []Loadpoint
 	Vehicles    map[string]Vehicle
 	PriceSlots  []Rate // published grid prices incl. VAT
+	Solar       *SolarForecast
 	RetrievedAt time.Time
+}
+
+// SolarForecast is EVCC's PV forecast for this site: power at instants,
+// linear in between (as EVCC integrates it).
+type SolarForecast struct {
+	Points []SolarPoint
+	// Scale is EVCC's forecast correction when "solar adjusted" is enabled
+	// there, else 1.
+	Scale float64
+}
+
+// SolarPoint is the forecast PV power at an instant.
+type SolarPoint struct {
+	Time   time.Time
+	PowerW float64
+}
+
+// UnmarshalJSON accepts the compact [unixSeconds, watts] form EVCC publishes
+// and the {"ts","val"} object form.
+func (p *SolarPoint) UnmarshalJSON(b []byte) error {
+	b = bytes.TrimSpace(b)
+	if len(b) > 0 && b[0] == '[' {
+		var arr []float64
+		if err := json.Unmarshal(b, &arr); err != nil {
+			return err
+		}
+		if len(arr) < 2 {
+			return fmt.Errorf("solar point has %d elements, want 2", len(arr))
+		}
+		p.Time, p.PowerW = time.Unix(int64(arr[0]), 0), arr[1]
+		return nil
+	}
+	var obj struct {
+		TS  time.Time `json:"ts"`
+		Val float64   `json:"val"`
+	}
+	if err := json.Unmarshal(b, &obj); err != nil {
+		return err
+	}
+	p.Time, p.PowerW = obj.TS, obj.Val
+	return nil
+}
+
+// Covers reports whether the forecast reaches t.
+func (f *SolarForecast) Covers(t time.Time) bool {
+	return f != nil && len(f.Points) > 1 && !f.Points[len(f.Points)-1].Time.Before(t)
+}
+
+// EnergyKWh integrates the forecast power over [from, to). Time outside the
+// forecast counts as zero.
+func (f *SolarForecast) EnergyKWh(from, to time.Time) float64 {
+	if f == nil || !to.After(from) {
+		return 0
+	}
+	wh := 0.0
+	for i := 0; i+1 < len(f.Points); i++ {
+		a, b := f.Points[i], f.Points[i+1]
+		start, end := a.Time, b.Time
+		if start.Before(from) {
+			start = from
+		}
+		if end.After(to) {
+			end = to
+		}
+		if !end.After(start) || !b.Time.After(a.Time) {
+			continue
+		}
+		at := func(t time.Time) float64 {
+			return a.PowerW + float64(t.Sub(a.Time))/float64(b.Time.Sub(a.Time))*(b.PowerW-a.PowerW)
+		}
+		wh += (at(start) + at(end)) / 2 * end.Sub(start).Hours()
+	}
+	scale := f.Scale
+	if scale <= 0 {
+		scale = 1
+	}
+	return wh * scale / 1000
 }
 
 // Loadpoint is one charge point.
@@ -52,6 +135,9 @@ type Loadpoint struct {
 	EffectivePlanTime  *time.Time
 	PlanProjectedStart *time.Time
 	PlanProjectedEnd   *time.Time
+	// SmartCostLimit makes EVCC charge whenever the price is at or below it
+	// (cheap-grid charging); nil when not set.
+	SmartCostLimit *float64
 }
 
 // Vehicle is a configured vehicle.
@@ -158,15 +244,22 @@ func NewHTTPClient(baseURL string, timeout time.Duration) *HTTPClient {
 }
 
 type rawState struct {
-	Version    string                 `json:"version"`
-	SiteTitle  string                 `json:"siteTitle"`
-	Currency   string                 `json:"currency"`
-	TariffGrid *float64               `json:"tariffGrid"`
-	PVPower    float64                `json:"pvPower"`
-	HomePower  float64                `json:"homePower"`
-	Loadpoints []rawLoadpoint         `json:"loadpoints"`
-	Vehicles   map[string]rawVeh      `json:"vehicles"`
-	Forecast   *struct{ Grid []Rate } `json:"forecast"`
+	SolarAdjusted bool              `json:"solarAdjusted"`
+	Version       string            `json:"version"`
+	SiteTitle     string            `json:"siteTitle"`
+	Currency      string            `json:"currency"`
+	TariffGrid    *float64          `json:"tariffGrid"`
+	PVPower       float64           `json:"pvPower"`
+	HomePower     float64           `json:"homePower"`
+	Loadpoints    []rawLoadpoint    `json:"loadpoints"`
+	Vehicles      map[string]rawVeh `json:"vehicles"`
+	Forecast      *struct {
+		Grid  []Rate `json:"grid"`
+		Solar *struct {
+			Scale      float64      `json:"scale"`
+			Timeseries []SolarPoint `json:"timeseries"`
+		} `json:"solar"`
+	} `json:"forecast"`
 }
 
 type rawLoadpoint struct {
@@ -184,6 +277,7 @@ type rawLoadpoint struct {
 	EffectivePlanTime  *time.Time `json:"effectivePlanTime"`
 	PlanProjectedStart *time.Time `json:"planProjectedStart"`
 	PlanProjectedEnd   *time.Time `json:"planProjectedEnd"`
+	SmartCostLimit     *float64   `json:"smartCostLimit"`
 }
 
 type rawVeh struct {
@@ -219,6 +313,7 @@ func ParseState(body []byte) (*State, error) {
 			VehicleSoc: lp.VehicleSoc, EffectiveLimitSoc: lp.EffectiveLimitSoc, PlanActive: lp.PlanActive,
 			EffectivePlanSoc: lp.EffectivePlanSoc, EffectivePlanTime: nonZero(lp.EffectivePlanTime),
 			PlanProjectedStart: nonZero(lp.PlanProjectedStart), PlanProjectedEnd: nonZero(lp.PlanProjectedEnd),
+			SmartCostLimit: lp.SmartCostLimit,
 		})
 	}
 	for name, v := range raw.Vehicles {
@@ -234,6 +329,14 @@ func ParseState(body []byte) (*State, error) {
 	if raw.Forecast != nil {
 		st.PriceSlots = raw.Forecast.Grid
 		sort.Slice(st.PriceSlots, func(i, j int) bool { return st.PriceSlots[i].Start.Before(st.PriceSlots[j].Start) })
+		if sol := raw.Forecast.Solar; sol != nil && len(sol.Timeseries) > 1 {
+			pts := sol.Timeseries
+			sort.Slice(pts, func(i, j int) bool { return pts[i].Time.Before(pts[j].Time) })
+			st.Solar = &SolarForecast{Points: pts, Scale: 1}
+			if raw.SolarAdjusted && sol.Scale > 0 {
+				st.Solar.Scale = sol.Scale
+			}
+		}
 	}
 	return st, nil
 }
@@ -285,6 +388,24 @@ func (c *HTTPClient) SetSocPlan(ctx context.Context, vehicle string, soc int, at
 		return nil, fmt.Errorf("decode plan response: %w", err)
 	}
 	return &p, nil
+}
+
+// DeleteSocPlan removes the vehicle's one-off SoC plan.
+func (c *HTTPClient) DeleteSocPlan(ctx context.Context, vehicle string) error {
+	_, err := c.do(ctx, http.MethodDelete, fmt.Sprintf("/api/vehicles/%s/plan/soc", url.PathEscape(vehicle)))
+	return err
+}
+
+// SetSmartCostLimit sets or (with nil) removes the loadpoint's cheap-grid
+// charging limit.
+func (c *HTTPClient) SetSmartCostLimit(ctx context.Context, loadpoint int, limit *float64) error {
+	path := fmt.Sprintf("/api/loadpoints/%d/smartcostlimit", loadpoint)
+	if limit == nil {
+		_, err := c.do(ctx, http.MethodDelete, path)
+		return err
+	}
+	_, err := c.do(ctx, http.MethodPost, path+"/"+strconv.FormatFloat(*limit, 'f', -1, 64))
+	return err
 }
 
 func unwrap(body []byte) []byte {

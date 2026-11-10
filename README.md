@@ -7,9 +7,15 @@ departure; and sends a charging plan to [EVCC](https://evcc.io), which does the
 charging. See [PLAN.md](PLAN.md) for the roadmap and [UI-MOCKUP.md](UI-MOCKUP.md)
 for the UI direction.
 
-**V1 (this version):** trip UI, recurring schedules, calendar and EVCC
-connections, route-based energy and SoC targets, feasibility, plan previews,
-and a confirmed, manual **Send plan to EVCC**.
+**V1:** trip UI, recurring schedules, calendar and EVCC connections,
+route-based energy and SoC targets, feasibility, plan previews, and a
+confirmed, manual **Send plan to EVCC**.
+
+**V2 (this version):** daily forecast ingestion (Tibber's weekly price
+outlook structured with OpenRouter, KNMI's weather outlook) and one advisory
+recommendation per day (charge ahead, defer, or nothing), with confirmed
+**Create extra plan** and **Review postponement** actions that are undone
+when they expire. Optional auto-apply, off by default.
 
 ## Quick start
 
@@ -35,7 +41,7 @@ deletes it.
 | `make verify` | Go format/vet/tests, web format/lint/types/tests, production build, browser tests. Must pass before pushing. |
 | `make test` | Fast Go and web unit tests only. |
 | `make e2e` | Build, then run the Playwright browser tests (desktop and phone). |
-| `make test-live` | Read-only checks against your real EVCC (state and, when plugged in, a plan preview). |
+| `make test-live` | Read-only checks against your real EVCC (state and, when plugged in, a plan preview) and the forecast sources (Tibber page; KNMI with a key; OpenRouter only with `LIVE_OPENROUTER=1`). |
 | `make docker-smoke` | Build the production image, start it, check health/UI/API, report image size and idle memory. |
 | `make run` | Production build, run locally with your real config. |
 | `make fmt` / `make lint` / `make clean` | Format, lint, remove build output. |
@@ -44,8 +50,8 @@ deletes it.
 
 | Location | Contents | In Git |
 | --- | --- | --- |
-| `config.yaml` | System settings: port, timezone, EVCC URL (loopback default), routing, planning defaults. | Yes |
-| `.env` | Deployment values and secrets: `EVCC_URL`, `GOOGLE_CALENDAR_ICAL_URL`, `GOOGLE_MAPS_API_KEY`. Copy `.env.example`. Real environment variables win. | No |
+| `config.yaml` | System settings: port, timezone, EVCC URL (loopback default), routing, forecast sources and model, planning defaults. | Yes |
+| `.env` | Deployment values and secrets: `EVCC_URL`, `GOOGLE_CALENDAR_ICAL_URL`, `GOOGLE_MAPS_API_KEY`, and optionally `OPENROUTER_API_KEY`, `KNMI_API_KEY`. Copy `.env.example`. Real environment variables win. | No |
 | `config.local.yaml` | Optional overrides of `config.yaml` values, and saved places to seed. Copy `config.local.example.yaml`. | No |
 | `data/` | SQLite database with everything edited in the UI. | No |
 
@@ -83,6 +89,27 @@ calls per month) and caches each route per weekday and half hour for a week, so
 recurring trips reuse their result. Expect a few hundred calls per month. Without
 a key it falls back to labelled stub distances.
 
+### Daily advice: OpenRouter and KNMI (optional)
+
+- **OpenRouter** structures Tibber's weekly outlook article. Create a key at
+  openrouter.ai and set `OPENROUTER_API_KEY`. The model (`openrouter.model`)
+  must support structured outputs. The planner downloads the page itself and
+  sends only the article text (about 2,000 characters; no link, tools, or web
+  access). The article changes weekly and an unchanged one is not sent again,
+  so cost is a fraction of a cent a week.
+  Without a key a labelled pattern-based stub reads only the article's summary
+  lines (report period, weekly average, dearest and cheapest day).
+- **KNMI**: register at the KNMI Data Platform, request an **Open Data API**
+  key in the API Catalogue, and set `KNMI_API_KEY`. KNMI's seven-day outlook is
+  national (no location): it gives wind, and sunshine for the days after
+  EVCC's solar forecast. Without it the advice still works on prices.
+- **Local sun** comes from the solar forecast configured in EVCC (today and
+  tomorrow), read from EVCC's state; nothing to set up here.
+
+Both are fetched once a day at `forecast.daily_at` (and with **Refresh
+forecasts** under Settings → Connections); failures retry hourly and keep the
+last valid forecast.
+
 ## Install on your phone
 
 The UI can be installed as an app (PWA). It needs HTTPS, e.g. through your
@@ -102,8 +129,9 @@ from one design: `cd web && pnpm icons`.
    (uid 65532), which cannot take ownership of a root-owned folder itself:
    `sudo install -d -o 65532 -g 65532 /opt/evcc-planner/data`
    (same as `sudo mkdir -p … && sudo chown 65532:65532 …`).
-2. Provide `EVCC_URL`, `GOOGLE_CALENDAR_ICAL_URL`, and `GOOGLE_MAPS_API_KEY` as
-   environment variables, then `docker compose up -d --build`.
+2. Provide `EVCC_URL`, `GOOGLE_CALENDAR_ICAL_URL`, and `GOOGLE_MAPS_API_KEY`
+   (optionally `OPENROUTER_API_KEY` and `KNMI_API_KEY`) as environment
+   variables, then `docker compose up -d --build`.
 3. Point a reverse proxy at port 7201. To put the container on the proxy's
    existing Docker network instead, also set `EVCC_PLANNER_NETWORK` to that
    network's name and `EVCC_PLANNER_NETWORK_EXTERNAL=true`; the proxy then
@@ -138,14 +166,54 @@ to `main` deploy automatically, run `make verify` before pushing.
   per vehicle) after you confirm. It never changes limits or repeating plans;
   EVCC's planner charges past the charge limit during planned slots. EVCC can
   only preview a plan while the car is plugged in.
-- All prices are EVCC's published prices, including VAT.
+- All prices are in EUR/kWh including VAT.
+
+## How daily advice works
+
+- **Prices, strongest first:** EVCC's published prices (today and, after
+  ~14:00, tomorrow), then a dated estimate from the Tibber outlook, then only
+  its weekly average. The model reports only values the article states, each
+  with its exact quote; the server checks every quote against the article and
+  converts market prices excl. VAT itself, using the article's own weekly
+  excl./incl. pair: retail = weekly incl. + (day − weekly excl.) × 1.21. Each
+  price shows how it was obtained (Settings → Connections).
+- **One recommendation per day**, comparing the day's average price with the
+  later days the car is home: **Charge ahead** when it is at least 8% cheaper
+  than every later day and later trips will need charge; **Defer optional
+  charging** when a later day is at least 8% cheaper and the projected SoC
+  covers every departure until then; otherwise nothing (keep the plan). Days
+  with only a weekly average, or nothing to compare with, show **No data / no
+  suggestion**.
+- **Sun:** EVCC's local solar forecast for today and tomorrow, in kWh for the
+  day and while the car is home (before household use); later days show KNMI's
+  national sunshine (% of possible). It is shown and explained, but does not
+  change the recommendation.
+- **Confidence** 1 low / 2 medium / 3 high follows the weaker of the two
+  compared prices (published 3, estimate 2, weekly average 1), lowered for
+  stale sources or KNMI wind that contradicts an estimate. The **charge
+  indicator** (little / medium / high) reflects the price gap and later need;
+  it never prescribes an amount. Low-confidence and no-data advice offer no
+  plan action.
+- **Create extra plan** opens an editable proposal (target in % or kWh,
+  ready-by, expiry) with an EVCC preview. It replaces EVCC's one plan until it
+  expires: the target is at least the next departure's and ready before it
+  leaves. **Review postponement** (today only) pauses EVCC's cheap-grid
+  charging (its smart cost limit) until the cheaper day; trip plans keep
+  charging. Nothing is written before **Confirm**; **Dismiss** changes nothing.
+- At expiry (or **End now**) the previous plan or limit is restored, unless it
+  was changed in EVCC in the meantime; then your change is kept.
+- **Automatically create plans from daily advice** (Settings → Advice) is off by
+  default and needs a SoC target per indicator, a ready-by time, and an expiry.
+  It acts once a day on today's advice with enough confidence, keeps trip
+  targets, and skips plans you set in EVCC.
 
 ## Diagnostics
 
 - Logs go to stdout (request, sync, and EVCC poll lines): `docker logs evcc-planner`.
 - The image has no shell. For one beside the app (same network, data at `/data`):
   `docker run --rm -it --network container:evcc-planner -v /opt/evcc-planner/data:/data busybox sh`
-- `GET /healthz`, `GET /readyz`, `GET /api/connections` (integration status, no secrets).
+- `GET /healthz`, `GET /readyz`, `GET /api/connections` (integration status, no secrets),
+  `GET /api/forecasts` (the stored outlook and weather payloads).
 - Browser test failures: screenshots and traces in `web/test-results/`, HTML
   report in `web/playwright-report/`, server log path printed at the start.
 - On TLS-inspecting networks, `make setup` and `make docker-smoke` retry
@@ -159,6 +227,8 @@ cmd/evcc-planner   server entry point (and `healthcheck` subcommand)
 cmd/devrun         `make dev` process manager
 internal/app       wiring shared by the server and API tests
 internal/planner   pure SoC/energy/feasibility planning
+internal/advice    pure daily charging advice
+internal/forecast  Tibber outlook extraction (OpenRouter or pattern stub), validation, KNMI outlook
 internal/trips     merges manual, recurring, and calendar trips with local edits
 internal/calendar  iCal parsing, trip classification, sync, demo feed
 internal/routes    Google Routes client, stub, cache

@@ -15,6 +15,7 @@ import (
 	"github.com/diogoap/evcc-planner/internal/config"
 	"github.com/diogoap/evcc-planner/internal/demo"
 	"github.com/diogoap/evcc-planner/internal/evcc"
+	"github.com/diogoap/evcc-planner/internal/forecast"
 	"github.com/diogoap/evcc-planner/internal/routes"
 	"github.com/diogoap/evcc-planner/internal/server"
 	"github.com/diogoap/evcc-planner/internal/service"
@@ -85,7 +86,7 @@ func New(cfg *config.Config, log *slog.Logger) (*App, error) {
 
 	svc := &service.Service{
 		Cfg: cfg, Store: st, Clock: clk, EVCC: evccClient, Routes: resolver, Calendar: syncer,
-		Log: log, RoutesNote: routesNote,
+		Log: log, RoutesNote: routesNote, Forecasts: forecasts(cfg, clk, log),
 	}
 	if cfg.Demo {
 		if err := demo.Seed(st, clk.Now(), cfg.Location, cfg.Defaults.Settings()); err != nil {
@@ -112,7 +113,10 @@ func New(cfg *config.Config, log *slog.Logger) (*App, error) {
 			if err := syncer.SyncAll(ctx); err != nil {
 				return err
 			}
-			return svc.PollEVCC(ctx)
+			if err := svc.PollEVCC(ctx); err != nil {
+				return err
+			}
+			return svc.RefreshForecasts(ctx, true)
 		}
 	}
 	return &App{
@@ -120,13 +124,67 @@ func New(cfg *config.Config, log *slog.Logger) (*App, error) {
 	}, nil
 }
 
-// StartJobs runs EVCC polling and calendar sync until ctx ends; wait blocks
-// until they have stopped.
+// forecasts builds the forecast sources for the configured modes. Without an
+// OpenRouter key the labelled pattern-based stub structures the article;
+// without a KNMI key there is no weather outlook.
+func forecasts(cfg *config.Config, clk clock.Clock, log *slog.Logger) service.Forecasts {
+	f := service.Forecasts{
+		Article:   forecast.HTTPArticle{PageURL: cfg.Tibber.URL, HTTP: &http.Client{Timeout: 30 * time.Second}},
+		Extractor: forecast.Pattern{},
+	}
+	if cfg.Tibber.Mode == config.ModeStub {
+		f.Article = forecast.StubArticle{Clock: clk, Location: cfg.Location}
+	}
+	if cfg.OpenRouter.Mode == config.ModeLive {
+		if cfg.OpenRouter.APIKey == "" {
+			f.ExtractorNote = "No API key (" + cfg.OpenRouter.APIKeyEnv + "); using the pattern-based stub"
+			log.Warn("openrouter api key missing; using the pattern-based outlook extraction", "env", cfg.OpenRouter.APIKeyEnv)
+		} else {
+			f.Extractor = &forecast.OpenRouter{
+				BaseURL: cfg.OpenRouter.BaseURL, APIKey: cfg.OpenRouter.APIKey, Model: cfg.OpenRouter.Model,
+				HTTP: &http.Client{Timeout: cfg.OpenRouter.Timeout},
+			}
+		}
+	}
+	switch {
+	case cfg.KNMI.Mode == config.ModeStub:
+		f.Weather = forecast.StubKNMI{Clock: clk, Location: cfg.Location}
+	case cfg.KNMI.APIKey == "":
+		f.WeatherNote = "Set " + cfg.KNMI.APIKeyEnv + " to a KNMI Open Data API key"
+		log.Warn("knmi api key missing; no weather outlook", "env", cfg.KNMI.APIKeyEnv)
+	default:
+		f.Weather = &forecast.KNMI{
+			BaseURL: cfg.KNMI.BaseURL, APIKey: cfg.KNMI.APIKey, Dataset: cfg.KNMI.Dataset, Version: cfg.KNMI.Version,
+			HTTP: &http.Client{Timeout: 30 * time.Second}, Location: cfg.Location,
+		}
+	}
+	return f
+}
+
+// forecastCheck is how often the daily forecast schedule and advice
+// auto-apply are checked.
+const forecastCheck = 15 * time.Minute
+
+// StartJobs runs EVCC polling (with restoring temporary EVCC changes),
+// calendar sync, and the daily forecasts until ctx ends; wait blocks until
+// they have stopped.
 func (a *App) StartJobs(ctx context.Context) (wait func()) {
 	var wg sync.WaitGroup
 	every(ctx, &wg, a.Cfg.EVCC.PollInterval, func() {
 		if err := a.Service.PollEVCC(ctx); err != nil && ctx.Err() == nil {
 			a.Log.Warn("evcc poll failed", "err", err)
+			return
+		}
+		if err := a.Service.CheckAdjustments(ctx); err != nil && ctx.Err() == nil {
+			a.Log.Warn("checking temporary evcc changes failed", "err", err)
+		}
+	})
+	every(ctx, &wg, forecastCheck, func() {
+		if err := a.Service.RefreshForecasts(ctx, false); err != nil && ctx.Err() == nil {
+			a.Log.Warn("forecast refresh incomplete", "err", err)
+		}
+		if err := a.Service.AutoApply(ctx); err != nil && ctx.Err() == nil {
+			a.Log.Warn("advice auto-apply failed", "err", err)
 		}
 	})
 	every(ctx, &wg, a.Cfg.Calendar.SyncInterval, func() {

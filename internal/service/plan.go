@@ -29,6 +29,7 @@ type PlanView struct {
 	Next        *BlockView      `json:"next"`
 	Timeline    []planner.Point `json:"timeline"`
 	Warnings    []string        `json:"warnings"`
+	Advice      *AdviceView     `json:"advice"`
 }
 
 // SoCView describes the SoC used for planning and how fresh it is.
@@ -293,6 +294,9 @@ func (s *Service) Plan(ctx context.Context) (*PlanView, error) {
 	view.Trips = upcoming
 	if view.HomeMissing {
 		view.Warnings = append(view.Warnings, "Set your home address in Settings to calculate routes.")
+	}
+	if view.Advice, err = s.buildAdvice(view, result, socIn.Known); err != nil {
+		return nil, err
 	}
 	return view, nil
 }

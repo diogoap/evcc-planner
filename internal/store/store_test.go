@@ -199,3 +199,81 @@ func TestSoCAndPlanWrites(t *testing.T) {
 		t.Error("meta flags must not count as personal data")
 	}
 }
+
+func TestForecastKeepsLastPayloadOnFailure(t *testing.T) {
+	s := open(t)
+	if r, err := s.Forecast("tibber"); err != nil || r != nil {
+		t.Fatalf("unknown source = %+v %v", r, err)
+	}
+	t1 := time.Date(2026, 11, 9, 18, 0, 0, 0, time.UTC)
+	if err := s.SaveForecast("tibber", t1, []byte(`{"v":1}`), "h1", "pattern"); err != nil {
+		t.Fatal(err)
+	}
+	t2 := t1.Add(24 * time.Hour)
+	if err := s.SaveForecastFailure("tibber", t2, "page unreachable"); err != nil {
+		t.Fatal(err)
+	}
+	r, _ := s.Forecast("tibber")
+	if string(r.Payload) != `{"v":1}` || r.ContentHash != "h1" || r.LastError != "page unreachable" ||
+		!r.LastSuccessAt.Equal(t1) || !r.LastAttemptAt.Equal(t2) {
+		t.Fatalf("after failure = %+v", r)
+	}
+	t3 := t2.Add(time.Hour)
+	s.TouchForecast("tibber", t3)
+	r, _ = s.Forecast("tibber")
+	if r.LastError != "" || !r.LastSuccessAt.Equal(t3) || string(r.Payload) != `{"v":1}` {
+		t.Fatalf("after unchanged check = %+v", r)
+	}
+	// A first attempt that fails has no payload.
+	s.SaveForecastFailure("knmi", t1, "no key")
+	if r, _ := s.Forecast("knmi"); r.Payload != nil || r.LastSuccessAt != nil {
+		t.Fatalf("failed first attempt = %+v", r)
+	}
+}
+
+func TestAdviceSettingsDismissalsAndAdjustments(t *testing.T) {
+	s := open(t)
+	got, err := s.AdviceSettings(model.DefaultAdviceSettings())
+	if err != nil || !got.Enabled || got.AutoApply || got.AutoMinConfidence != 3 {
+		t.Fatalf("defaults = %+v %v", got, err)
+	}
+	target := 70
+	got.TargetHigh = &target
+	got.Enabled = false
+	if err := s.SaveAdviceSettings(got); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = s.AdviceSettings(model.DefaultAdviceSettings())
+	if got.Enabled || got.TargetHigh == nil || *got.TargetHigh != 70 {
+		t.Fatalf("saved = %+v", got)
+	}
+
+	s.Dismiss("2026-11-10", "charge_ahead", time.Now())
+	s.Dismiss("2026-11-12", "defer", time.Now())
+	s.Undismiss("2026-11-12")
+	if d, _ := s.Dismissals(); len(d) != 1 || d["2026-11-10"] != "charge_ahead" {
+		t.Fatalf("dismissals = %v", d)
+	}
+
+	expires := time.Date(2026, 11, 10, 16, 0, 0, 0, time.UTC)
+	a, err := s.AddAdjustment(model.Adjustment{
+		Kind: model.AdjustExtraPlan, AdviceDate: "2026-11-10", Status: model.AdjustActive, ExpiresAt: expires,
+		Plan: &model.PlanValue{SoC: 70, Time: expires}, PrevPlan: &model.PlanValue{SoC: 42, Time: expires.Add(15 * time.Hour)},
+	})
+	if err != nil || a.ID == 0 {
+		t.Fatal(a, err)
+	}
+	old, _ := s.AddAdjustment(model.Adjustment{Kind: model.AdjustPostpone, AdviceDate: "2026-11-01", Status: model.AdjustRestored, ExpiresAt: expires})
+	list, _ := s.Adjustments("2026-11-09")
+	if len(list) != 1 || list[0].ID != a.ID || list[0].PrevPlan.SoC != 42 {
+		t.Fatalf("recent adjustments = %+v", list)
+	}
+	old.Status = model.AdjustActive
+	s.UpdateAdjustment(old)
+	if list, _ := s.Adjustments("2026-11-09"); len(list) != 2 {
+		t.Fatalf("active adjustments are always listed: %+v", list)
+	}
+	if _, err := s.Adjustment(99); !errors.Is(err, ErrNotFound) {
+		t.Errorf("missing adjustment: %v", err)
+	}
+}

@@ -101,6 +101,14 @@ Example: 100 km total at 18 kWh/100 km, 59 kWh usable capacity, and a configurab
 - By default, **Create extra plan** opens an editable charge-ahead proposal with the SoC/energy target, deadline, and expiry; **Review postponement** does the same for deferral. Require confirmation before EVCC writes. Track and restore app-owned temporary settings when these plans end, preserving intervening manual changes. **Dismiss** makes no change; weak/no-data advice has no plan action.
 - Settings expose optional **Automatically create plans from daily advice**, off by default and independent of V5 trip automation. Auto-apply requires user-configured concrete target/expiry policies, honours trip requirements/manual pauses, and takes no action on weak/no-data advice. Its availability does not delay the manual V2 flow.
 
+As implemented (2026-11-10):
+
+- KNMI: the Open Data API dataset `outlook_weather_forecast` (the meteorologist's national seven-day outlook from today, no location: sunshine %, rain, temperature ranges, wind direction/Beaufort), parsed directly from its XML; no AI needed. Missing days show as gaps.
+- Local sun: EVCC's own solar forecast (`forecast.solar` in its state; today and tomorrow), integrated per day and over the hours the car is home. Later days fall back to KNMI's national sunshine, labelled as such.
+- Tibber: the article is cut out of the page deterministically and only that text is sent (no link or web tools); the model returns only stated values with exact quotes (strict JSON Schema), and the server rejects quotes not in the article. Excl. market prices are converted with the article's own weekly excl./incl. pair: retail = weekly incl. + (day − weekly excl.) × (1 + VAT). Unchanged articles are not sent to the model again. Without an OpenRouter key a labelled pattern-based stub reads the fixed summary lines.
+- Daily price level: published day average, else the day's estimate, else the weekly average (only usable as a comparison, never as a day's own basis). Recommendations need an 8% gap; confidence follows the weaker compared basis, lowered for stale or contradicting inputs; confidence 1 offers no plan action.
+- **Create extra plan** writes a one-off SoC plan (at least the next departure's target, ready before it leaves) and **Review postponement** (today only) removes EVCC's loadpoint smart cost limit (cheap-grid charging) until the cheaper day. Both record the value they replaced and restore it at expiry unless it changed in EVCC meanwhile.
+
 **V3 — Audit trail.**
 
 - Record every action as an append-only audit event: time, source (UI, scheduled job, calendar sync, automation), action, subject (trip, schedule, place, setting, plan), before/after values, and outcome (success or failure with the error). Write the event in the same transaction as the change where possible.

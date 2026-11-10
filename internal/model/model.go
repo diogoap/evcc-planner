@@ -185,3 +185,116 @@ type CalendarSyncStatus struct {
 	LastError     string     `json:"lastError,omitempty"`
 	EventCount    int        `json:"eventCount"`
 }
+
+// AdviceSettings control daily charging advice. Advice is advisory: plans are
+// only created automatically when AutoApply is on and the user has set a
+// concrete target for each charge indicator, a ready-by time, and an expiry.
+type AdviceSettings struct {
+	Enabled           bool   `json:"enabled"`
+	AutoApply         bool   `json:"autoApply"`
+	AutoMinConfidence int    `json:"autoMinConfidence"` // 2 medium or 3 high
+	TargetLittle      *int   `json:"targetLittle"`      // SoC % per charge indicator
+	TargetMedium      *int   `json:"targetMedium"`
+	TargetHigh        *int   `json:"targetHigh"`
+	ReadyBy           string `json:"readyBy"`     // local HH:MM on the advice day
+	ExpiryHours       *int   `json:"expiryHours"` // after the ready-by time
+	AutoPostpone      bool   `json:"autoPostpone"`
+}
+
+// DefaultAdviceSettings shows advice and never acts on it.
+func DefaultAdviceSettings() AdviceSettings {
+	return AdviceSettings{Enabled: true, AutoMinConfidence: 3}
+}
+
+// Validate reports the first invalid field.
+func (a AdviceSettings) Validate() error {
+	if a.AutoMinConfidence != 2 && a.AutoMinConfidence != 3 {
+		return fmt.Errorf("minimum confidence must be 2 (medium) or 3 (high)")
+	}
+	prev := 0
+	for _, t := range []struct {
+		name string
+		v    *int
+	}{{"little", a.TargetLittle}, {"medium", a.TargetMedium}, {"high", a.TargetHigh}} {
+		if t.v == nil {
+			continue
+		}
+		if *t.v < 10 || *t.v > 100 {
+			return fmt.Errorf("the %s target must be between 10 and 100%%", t.name)
+		}
+		if *t.v < prev {
+			return fmt.Errorf("targets must not decrease from little to high")
+		}
+		prev = *t.v
+	}
+	if a.ReadyBy != "" {
+		if _, err := time.Parse("15:04", a.ReadyBy); err != nil {
+			return fmt.Errorf("ready-by time must be HH:MM")
+		}
+	}
+	if a.ExpiryHours != nil && (*a.ExpiryHours < 0 || *a.ExpiryHours > 48) {
+		return fmt.Errorf("expiry must be 0 to 48 hours after the ready-by time")
+	}
+	if a.AutoApply && (a.TargetLittle == nil || a.TargetMedium == nil || a.TargetHigh == nil || a.ReadyBy == "" || a.ExpiryHours == nil) {
+		return fmt.Errorf("automatic plans need a target for each charge indicator, a ready-by time, and an expiry")
+	}
+	return nil
+}
+
+// Target returns the configured SoC for a charge indicator.
+func (a AdviceSettings) Target(indicator string) (int, bool) {
+	var v *int
+	switch indicator {
+	case "little":
+		v = a.TargetLittle
+	case "medium":
+		v = a.TargetMedium
+	case "high":
+		v = a.TargetHigh
+	}
+	if v == nil {
+		return 0, false
+	}
+	return *v, true
+}
+
+// Adjustment kinds and statuses.
+const (
+	AdjustExtraPlan = "extra_plan" // a temporary one-off SoC plan (charge ahead)
+	AdjustPostpone  = "postpone"   // cheap-grid charging paused (defer)
+
+	AdjustActive    = "active"
+	AdjustRestored  = "restored"  // previous value written back
+	AdjustKept      = "kept"      // changed in EVCC meanwhile; left as is
+	AdjustCancelled = "cancelled" // ended early by the user; previous value restored
+	AdjustFailed    = "failed"
+)
+
+// PlanValue is an EVCC one-off SoC plan.
+type PlanValue struct {
+	SoC  float64   `json:"soc"`
+	Time time.Time `json:"time"`
+}
+
+// Adjustment is a temporary EVCC change the app made from daily advice. When
+// it expires (or is cancelled) the previous value is restored, unless it was
+// changed in EVCC in the meantime.
+type Adjustment struct {
+	ID         int64      `json:"id"`
+	Kind       string     `json:"kind"`
+	Source     string     `json:"source"` // ui or auto
+	AdviceDate string     `json:"adviceDate"`
+	Vehicle    string     `json:"vehicle"`
+	Loadpoint  int        `json:"loadpoint"`
+	Plan       *PlanValue `json:"plan,omitempty"`     // extra plan: what the app set
+	PrevPlan   *PlanValue `json:"prevPlan,omitempty"` // extra plan: what it replaced
+	// Postpone: the cheap-grid charging limit set (nil = removed) and the
+	// one it replaced.
+	SmartCostLimit     *float64   `json:"smartCostLimit,omitempty"`
+	PrevSmartCostLimit *float64   `json:"prevSmartCostLimit,omitempty"`
+	ExpiresAt          time.Time  `json:"expiresAt"`
+	Status             string     `json:"status"`
+	Note               string     `json:"note"`
+	CreatedAt          time.Time  `json:"createdAt"`
+	EndedAt            *time.Time `json:"endedAt,omitempty"`
+}

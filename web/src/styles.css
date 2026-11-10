@@ -259,6 +259,44 @@ select:focus-visible,
   color: var(--muted);
 }
 
+/* Compact outlined badges with key figures (advice grid) */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 7px;
+  font-size: 0.74rem;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.badge .icon,
+.pill .icon {
+  width: 12px;
+  height: 12px;
+  flex: none;
+}
+
+/* Published prices are solid; estimates dashed; weekly averages dotted. */
+.badge.basis-published {
+  border-color: var(--accent-strong);
+}
+
+.badge.basis-estimate {
+  border-style: dashed;
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+.badge.basis-weekly {
+  border-style: dotted;
+  color: var(--muted);
+}
+
 .tone-ok {
   background: var(--accent-soft);
   color: var(--accent-strong);

@@ -38,6 +38,7 @@ places:
 	envFile := write(t, dir, ".env", "# secrets\nGOOGLE_MAPS_API_KEY=\"from-file\"\nexport EVCC_URL=http://192.0.2.10:7070\n")
 	cfg, err := Load(Options{Path: base, LocalPath: local, EnvFile: envFile, Getenv: env(map[string]string{
 		"GOOGLE_CALENDAR_ICAL_URL": "https://cal.example/ical/a/private-s1/basic.ics",
+		"OPENROUTER_API_KEY":       " or-key ", "KNMI_API_KEY": "knmi-key",
 	})})
 	if err != nil {
 		t.Fatal(err)
@@ -56,6 +57,12 @@ places:
 	}
 	if cfg.Routes.APIKey != "from-file" {
 		t.Errorf("api key from .env = %q", cfg.Routes.APIKey)
+	}
+	if cfg.OpenRouter.APIKey != "or-key" || cfg.KNMI.APIKey != "knmi-key" {
+		t.Errorf("forecast keys = %q %q", cfg.OpenRouter.APIKey, cfg.KNMI.APIKey)
+	}
+	if cfg.Forecast.DailyAt != "18:00" || cfg.Forecast.VATPct != 21 || cfg.OpenRouter.Model == "" {
+		t.Errorf("forecast defaults = %+v, model %q", cfg.Forecast, cfg.OpenRouter.Model)
 	}
 	if len(cfg.Calendar.Sources) != 1 || cfg.Calendar.Sources[0].Label != "Calendar" {
 		t.Errorf("calendar sources = %+v", cfg.Calendar.Sources)
@@ -107,6 +114,9 @@ func TestEnvOverridesAndDemo(t *testing.T) {
 	if cfg.EVCC.Mode != ModeStub || cfg.Calendar.Mode != ModeStub || cfg.Routes.Mode != ModeStub {
 		t.Errorf("demo must force stubs: %s %s %s", cfg.EVCC.Mode, cfg.Calendar.Mode, cfg.Routes.Mode)
 	}
+	if cfg.Tibber.Mode != ModeStub || cfg.OpenRouter.Mode != ModeStub || cfg.KNMI.Mode != ModeStub {
+		t.Errorf("demo must stub forecasts: %s %s %s", cfg.Tibber.Mode, cfg.OpenRouter.Mode, cfg.KNMI.Mode)
+	}
 	if cfg.Fixed == nil || cfg.DBPath() != filepath.Join("/data", "demo.db") {
 		t.Errorf("fixed time %v, db %s", cfg.Fixed, cfg.DBPath())
 	}
@@ -119,6 +129,9 @@ func TestValidation(t *testing.T) {
 		"bad loadpoint": "evcc:\n  loadpoint: 0\n",
 		"bad default":   "defaults:\n  charging_efficiency_pct: 120\n",
 		"bad yaml":      "evcc: [\n",
+		"bad daily_at":  "forecast:\n  daily_at: noon\n",
+		"bad vat":       "forecast:\n  vat_pct: 90\n",
+		"bad knmi mode": "knmi:\n  mode: magic\n",
 	}
 	for name, content := range cases {
 		t.Run(name, func(t *testing.T) {

@@ -30,16 +30,20 @@ const (
 )
 
 type Config struct {
-	Server    ServerConfig   `yaml:"server"`
-	Timezone  string         `yaml:"timezone"`
-	DataDir   string         `yaml:"data_dir"`
-	Demo      bool           `yaml:"demo"`
-	FixedTime string         `yaml:"fixed_time"`
-	EVCC      EVCCConfig     `yaml:"evcc"`
-	Calendar  CalendarConfig `yaml:"calendar"`
-	Routes    RoutesConfig   `yaml:"routes"`
-	Defaults  Defaults       `yaml:"defaults"`
-	Places    []PlaceSeed    `yaml:"places"`
+	Server     ServerConfig     `yaml:"server"`
+	Timezone   string           `yaml:"timezone"`
+	DataDir    string           `yaml:"data_dir"`
+	Demo       bool             `yaml:"demo"`
+	FixedTime  string           `yaml:"fixed_time"`
+	EVCC       EVCCConfig       `yaml:"evcc"`
+	Calendar   CalendarConfig   `yaml:"calendar"`
+	Routes     RoutesConfig     `yaml:"routes"`
+	Tibber     TibberConfig     `yaml:"tibber"`
+	OpenRouter OpenRouterConfig `yaml:"openrouter"`
+	KNMI       KNMIConfig       `yaml:"knmi"`
+	Forecast   ForecastConfig   `yaml:"forecast"`
+	Defaults   Defaults         `yaml:"defaults"`
+	Places     []PlaceSeed      `yaml:"places"`
 
 	Location *time.Location `yaml:"-"`
 	Fixed    *time.Time     `yaml:"-"`
@@ -84,6 +88,40 @@ type RoutesConfig struct {
 	TrafficAware bool          `yaml:"traffic_aware"`
 	CacheTTL     time.Duration `yaml:"cache_ttl"`
 	APIKey       string        `yaml:"-"`
+}
+
+// TibberConfig locates the weekly price outlook article.
+type TibberConfig struct {
+	Mode string `yaml:"mode"`
+	URL  string `yaml:"url"`
+}
+
+// OpenRouterConfig selects the model that structures forecast text. The
+// model must support strict JSON Schema output.
+type OpenRouterConfig struct {
+	Mode      string        `yaml:"mode"`
+	BaseURL   string        `yaml:"base_url"`
+	Model     string        `yaml:"model"`
+	APIKeyEnv string        `yaml:"api_key_env"`
+	Timeout   time.Duration `yaml:"timeout"`
+	APIKey    string        `yaml:"-"`
+}
+
+// KNMIConfig reads KNMI's multi-day outlook from the Open Data API.
+type KNMIConfig struct {
+	Mode      string `yaml:"mode"`
+	BaseURL   string `yaml:"base_url"`
+	Dataset   string `yaml:"dataset"`
+	Version   string `yaml:"version"`
+	APIKeyEnv string `yaml:"api_key_env"`
+	APIKey    string `yaml:"-"`
+}
+
+// ForecastConfig schedules the daily forecast ingestion.
+type ForecastConfig struct {
+	DailyAt       string        `yaml:"daily_at"` // local HH:MM
+	RetryInterval time.Duration `yaml:"retry_interval"`
+	VATPct        float64       `yaml:"vat_pct"`
 }
 
 // Defaults are bootstrap planning settings; UI-saved values take precedence.
@@ -134,6 +172,16 @@ func Default() Config {
 			Mode: ModeGoogle, APIKeyEnv: "GOOGLE_MAPS_API_KEY",
 			BaseURL: "https://routes.googleapis.com", TrafficAware: true, CacheTTL: 7 * 24 * time.Hour,
 		},
+		Tibber: TibberConfig{Mode: ModeLive, URL: "https://tibber.com/nl/stroomprijsprognose"},
+		OpenRouter: OpenRouterConfig{
+			Mode: ModeLive, BaseURL: "https://openrouter.ai/api/v1", Model: "anthropic/claude-haiku-5.5",
+			APIKeyEnv: "OPENROUTER_API_KEY", Timeout: 60 * time.Second,
+		},
+		KNMI: KNMIConfig{
+			Mode: ModeLive, BaseURL: "https://api.dataplatform.knmi.nl/open-data/v1",
+			Dataset: "outlook_weather_forecast", Version: "1.0", APIKeyEnv: "KNMI_API_KEY",
+		},
+		Forecast: ForecastConfig{DailyAt: "18:00", RetryInterval: time.Hour, VATPct: 21},
 		Defaults: Defaults{
 			UsableCapacityKWh: 59, ChargePowerKW: 3.68, ConsumptionKWhPer100Km: 18,
 			ArrivalReservePct: 15, ChargingEfficiencyPct: 90,
@@ -226,6 +274,12 @@ func (c *Config) applyEnv(getenv func(string) string) error {
 	if c.Calendar.URLEnv != "" {
 		c.Calendar.Sources = CalendarSources(getenv(c.Calendar.URLEnv))
 	}
+	if c.OpenRouter.APIKeyEnv != "" {
+		c.OpenRouter.APIKey = strings.TrimSpace(getenv(c.OpenRouter.APIKeyEnv))
+	}
+	if c.KNMI.APIKeyEnv != "" {
+		c.KNMI.APIKey = strings.TrimSpace(getenv(c.KNMI.APIKeyEnv))
+	}
 	return nil
 }
 
@@ -271,6 +325,7 @@ func calendarID(raw string) string {
 func (c *Config) finish() error {
 	if c.Demo {
 		c.EVCC.Mode, c.Calendar.Mode, c.Routes.Mode = ModeStub, ModeStub, ModeStub
+		c.Tibber.Mode, c.OpenRouter.Mode, c.KNMI.Mode = ModeStub, ModeStub, ModeStub
 	}
 	loc, err := time.LoadLocation(c.Timezone)
 	if err != nil {
@@ -294,12 +349,25 @@ func (c *Config) finish() error {
 		return fmt.Errorf("calendar.mode must be %q or %q", ModeICal, ModeStub)
 	case c.Routes.Mode != ModeGoogle && c.Routes.Mode != ModeStub:
 		return fmt.Errorf("routes.mode must be %q or %q", ModeGoogle, ModeStub)
+	case c.Tibber.Mode != ModeLive && c.Tibber.Mode != ModeStub:
+		return fmt.Errorf("tibber.mode must be %q or %q", ModeLive, ModeStub)
+	case c.OpenRouter.Mode != ModeLive && c.OpenRouter.Mode != ModeStub:
+		return fmt.Errorf("openrouter.mode must be %q or %q", ModeLive, ModeStub)
+	case c.KNMI.Mode != ModeLive && c.KNMI.Mode != ModeStub:
+		return fmt.Errorf("knmi.mode must be %q or %q", ModeLive, ModeStub)
+	case c.Forecast.RetryInterval < time.Minute:
+		return errors.New("forecast.retry_interval must be at least 1m")
+	case c.Forecast.VATPct < 0 || c.Forecast.VATPct > 50:
+		return errors.New("forecast.vat_pct must be between 0 and 50")
 	case c.EVCC.Loadpoint < 1:
 		return errors.New("evcc.loadpoint starts at 1")
 	case c.EVCC.PollInterval < time.Second:
 		return errors.New("evcc.poll_interval must be at least 1s")
 	case c.Calendar.SyncInterval < time.Minute:
 		return errors.New("calendar.sync_interval must be at least 1m")
+	}
+	if _, err := time.Parse("15:04", c.Forecast.DailyAt); err != nil {
+		return fmt.Errorf("forecast.daily_at must be HH:MM: %w", err)
 	}
 	if err := c.Defaults.Settings().Validate(); err != nil {
 		return fmt.Errorf("defaults: %w", err)

@@ -93,8 +93,8 @@ fmt: ## Format Go and web sources
 	gofmt -w cmd internal
 	cd web && pnpm format
 
-test-live: ## Read-only checks against your real EVCC (EVCC_URL, e.g. in .env)
-	go test -tags live -count=1 -v -run Live ./internal/evcc/
+test-live: ## Read-only checks against your real EVCC and forecast sources (.env)
+	go test -tags live -count=1 -v -run Live ./internal/evcc/ ./internal/forecast/
 
 docker-smoke: ## Build the production image, start it, and check health, UI, size, and memory
 	./scripts/docker-smoke.sh

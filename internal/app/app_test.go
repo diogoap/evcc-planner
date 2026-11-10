@@ -52,6 +52,9 @@ func newTestApp(t *testing.T, dir string) *testApp {
 	if err := a.Syncer.SyncAll(ctx); err != nil {
 		t.Fatal(err)
 	}
+	if err := a.Service.RefreshForecasts(ctx, true); err != nil {
+		t.Fatal(err)
+	}
 	return &testApp{t: t, app: a, dir: dir}
 }
 

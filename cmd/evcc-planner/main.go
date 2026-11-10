@@ -1,5 +1,5 @@
 // Command evcc-planner serves the trip planner API and UI and runs its
-// periodic jobs (EVCC polling, hourly calendar sync).
+// periodic jobs (EVCC polling, hourly calendar sync, daily forecasts).
 package main
 
 import (
@@ -93,7 +93,7 @@ func run() error {
 	}
 	log.Info("evcc-planner listening", "addr", "http://"+ln.Addr().String(), "demo", cfg.Demo,
 		"evcc", cfg.EVCC.Mode, "calendar", cfg.Calendar.Mode, "routes", a.Service.Routes.Router.Name(),
-		"db", cfg.DBPath())
+		"outlook", a.Service.Forecasts.Article.Name()+"/"+a.Service.Forecasts.Extractor.Name(), "db", cfg.DBPath())
 
 	errc := make(chan error, 1)
 	go func() { errc <- httpServer.Serve(ln) }()

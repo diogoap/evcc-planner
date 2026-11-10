@@ -5,6 +5,8 @@
 #   EVCC_URL                  EVCC address, e.g. http://192.0.2.10:7070
 #   GOOGLE_CALENDAR_ICAL_URL  one or more secret iCal addresses, comma separated
 #   GOOGLE_MAPS_API_KEY       Google Routes API key
+#   OPENROUTER_API_KEY        optional: structures the weekly price outlook
+#   KNMI_API_KEY              optional: KNMI weather outlook for daily advice
 # Optional, to join an existing network (e.g. your reverse proxy's):
 #   EVCC_PLANNER_NETWORK            network name (default: evcc-planner, created)
 #   EVCC_PLANNER_NETWORK_EXTERNAL   true if that network already exists
@@ -31,6 +33,8 @@ services:
       - EVCC_URL
       - GOOGLE_CALENDAR_ICAL_URL
       - GOOGLE_MAPS_API_KEY
+      - OPENROUTER_API_KEY
+      - KNMI_API_KEY
     volumes:
       - /opt/evcc-planner/data:/opt/evcc-planner/data
 

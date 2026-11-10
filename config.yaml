@@ -2,7 +2,7 @@
 #
 # Deployment-specific values and secrets come from environment variables (or
 # an ignored .env file locally): EVCC_URL, GOOGLE_CALENDAR_ICAL_URL,
-# GOOGLE_MAPS_API_KEY. Also: EVCC_PLANNER_LISTEN, EVCC_PLANNER_DATA_DIR,
+# GOOGLE_MAPS_API_KEY, OPENROUTER_API_KEY, KNMI_API_KEY. Also: EVCC_PLANNER_LISTEN, EVCC_PLANNER_DATA_DIR,
 # EVCC_PLANNER_WEB_DIR, EVCC_PLANNER_DEMO. Optional overrides of this file go
 # in config.local.yaml (ignored). Personal data is edited in the UI.
 
@@ -34,6 +34,31 @@ routes:
   api_key_env: GOOGLE_MAPS_API_KEY
   traffic_aware: true      # Compute Routes Pro; results cached per weekly time slot
   cache_ttl: 168h
+
+# Daily advice inputs. Fetched once a day at forecast.daily_at (failures retry
+# hourly); the last valid forecast is kept when a fetch fails.
+tibber:
+  mode: live               # live | stub
+  url: https://tibber.com/nl/stroomprijsprognose   # weekly price outlook article
+
+openrouter:
+  mode: live               # live | stub (live without a key uses the pattern-based stub)
+  base_url: https://openrouter.ai/api/v1
+  model: anthropic/claude-haiku-5.5   # must support structured outputs (strict JSON Schema)
+  api_key_env: OPENROUTER_API_KEY
+  timeout: 60s
+
+knmi:
+  mode: live               # live | stub (live without a key: no weather outlook)
+  base_url: https://api.dataplatform.knmi.nl/open-data/v1
+  dataset: outlook_weather_forecast   # KNMI's 7-day outlook ("middellange termijn")
+  version: "1.0"
+  api_key_env: KNMI_API_KEY
+
+forecast:
+  daily_at: "18:00"        # local time; Tibber publishes its outlook on Mondays around 17:00
+  retry_interval: 1h
+  vat_pct: 21              # converts the outlook's excl. market prices to incl. VAT
 
 # Bootstrap planning defaults. Values saved in Settings take precedence; the
 # home address is only set in Settings.

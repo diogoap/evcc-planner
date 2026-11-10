@@ -51,6 +51,15 @@ func TestLiveEVCC(t *testing.T) {
 			first.Start.Format(time.RFC3339), last.End.Format(time.RFC3339))
 	}
 
+	if st.Solar == nil {
+		t.Log("no solar forecast in EVCC state: advice uses KNMI sunshine only")
+	} else {
+		first, last := st.Solar.Points[0].Time, st.Solar.Points[len(st.Solar.Points)-1].Time
+		t.Logf("solar forecast: %d points from %s to %s, %.1f kWh", len(st.Solar.Points),
+			first.Format(time.RFC3339), last.Format(time.RFC3339), st.Solar.EnergyKWh(first, last))
+	}
+	t.Logf("smart cost limit (cheap-grid charging): %v", lp.SmartCostLimit)
+
 	if !lp.Connected || lp.VehicleSoc <= 0 {
 		t.Log("car unplugged: EVCC does not know the SoC, so the plan preview is skipped")
 		return

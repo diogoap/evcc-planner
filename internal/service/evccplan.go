@@ -192,6 +192,7 @@ func (s *Service) SendPlan(ctx context.Context, in SendPlanInput) (*EVCCPlanView
 	}); err != nil {
 		return nil, err
 	}
+	s.keepAfterPlanWrite()
 	s.Log.Info("plan sent to evcc", "vehicle", veh.Name, "soc", in.SoC, "time", at)
 	if err := s.PollEVCC(ctx); err != nil {
 		s.Log.Warn("evcc refresh after plan write failed", "err", err)
@@ -283,9 +284,12 @@ func (s *Service) Connections() ([]ConnectionView, error) {
 	}
 	out = append(out, rt)
 
+	fc, err := s.forecastConnections()
+	if err != nil {
+		return nil, err
+	}
+	out = append(out, fc...)
 	out = append(out,
-		ConnectionView{Name: "OpenRouter", Status: "planned", Detail: "Daily forecast extraction (V2)"},
-		ConnectionView{Name: "KNMI", Status: "planned", Detail: "Weather forecasts (V2)"},
 		ConnectionView{Name: "Home Assistant", Status: "planned", Detail: "Notifications (V5), always-on SoC (V8)"},
 	)
 	return out, nil

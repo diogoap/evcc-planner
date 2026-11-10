@@ -1,10 +1,15 @@
 import type {
+  AdjustInput,
+  Adjustment,
+  AdjustmentKind,
+  AdviceSettings,
   Connection,
   EVCCPlan,
   Meta,
   Place,
   Plan,
   Preview,
+  Proposal,
   Settings,
   Status,
   Template,
@@ -83,6 +88,18 @@ export const api = {
 
   connections: () => request<Connection[]>('GET', '/api/connections'),
   syncCalendar: () => request<Connection[]>('POST', '/api/calendar/sync', {}),
+  refreshForecasts: () => request<Connection[]>('POST', '/api/forecasts/refresh', {}),
+  forecasts: () => request<unknown>('GET', '/api/forecasts'),
+
+  adviceSettings: () => request<AdviceSettings>('GET', '/api/settings/advice'),
+  saveAdviceSettings: (s: AdviceSettings) => request<AdviceSettings>('PUT', '/api/settings/advice', s),
+  proposal: (date: string, kind: AdjustmentKind) =>
+    request<Proposal>('GET', `/api/advice/${enc(date)}/proposal?kind=${kind}`),
+  dismiss: (date: string, undo = false) =>
+    request<void>('POST', `/api/advice/${enc(date)}/dismiss`, { undo }),
+  applyAdjustment: (a: AdjustInput) =>
+    request<Adjustment>('POST', '/api/adjustments', { ...a, confirm: true }),
+  cancelAdjustment: (id: number) => request<Adjustment>('POST', `/api/adjustments/${id}/cancel`, {}),
   demoVehicle: (connected: boolean, soc: number) =>
     request<Status>('POST', '/api/demo/vehicle', { connected, soc }),
 }

@@ -145,6 +145,144 @@ export interface Plan {
   next: Block | null
   timeline: TimelinePoint[]
   warnings: string[]
+  advice: AdviceView
+}
+
+export type Recommendation = 'none' | 'charge_ahead' | 'defer'
+export type Indicator = 'little' | 'medium' | 'high'
+export type PriceBasis = 'published' | 'estimate' | 'weekly'
+export type AdjustmentKind = 'extra_plan' | 'postpone'
+
+export interface DayPrice {
+  /** EUR/kWh including VAT (daily average). */
+  value: number
+  basis: PriceBasis
+  detail: string
+  stale: boolean
+}
+
+export interface WeatherDay {
+  date: string
+  sunshinePct: number | null
+  precipChancePct: number | null
+  precipMinMm: number | null
+  precipMaxMm: number | null
+  tempMinLowC: number | null
+  tempMinHighC: number | null
+  tempMaxLowC: number | null
+  tempMaxHighC: number | null
+  windDir: string
+  windBft: number | null
+}
+
+export interface PlanValue {
+  soc: number
+  time: string
+}
+
+export interface Adjustment {
+  id: number
+  kind: AdjustmentKind
+  source: 'ui' | 'auto'
+  adviceDate: string
+  vehicle: string
+  loadpoint: number
+  plan?: PlanValue
+  prevPlan?: PlanValue
+  smartCostLimit?: number
+  prevSmartCostLimit?: number
+  expiresAt: string
+  status: 'active' | 'restored' | 'kept' | 'cancelled' | 'failed'
+  note: string
+  createdAt: string
+  endedAt?: string
+}
+
+export interface DayAdvice {
+  date: string
+  recommendation: Recommendation
+  /** Weak or missing evidence: "No data / no suggestion". */
+  noSuggestion: boolean
+  reason?: string
+  /** 1 low, 2 medium, 3 high; 0 without a suggestion. */
+  confidence: number
+  indicator?: Indicator
+  summary: string
+  rationale: string[]
+  compareDate?: string
+  deferUntil?: string
+  laterChargePct: number
+  price: DayPrice | null
+  /** KNMI's national outlook (wind, temperature). */
+  weather: WeatherDay | null
+  /** Local PV from EVCC's solar forecast, kWh before household use; null beyond the forecast. */
+  solarKWh: number | null
+  solarHomeKWh: number | null
+  /** Where the day's sun figure comes from: EVCC (local, kWh) or KNMI (national, %). */
+  sunSource: 'evcc' | 'knmi' | ''
+  marketWind?: string
+  marketWindGW?: number
+  outlookNote?: string
+  dismissed: boolean
+  /** Plan action offered; absent for weak, no-data, dismissed, or "none" advice. */
+  action?: AdjustmentKind
+  adjustment?: Adjustment
+}
+
+export interface AdviceSource {
+  name: string
+  kind: 'published' | 'solar' | 'estimate' | 'weather'
+  status: 'ok' | 'stale' | 'missing' | 'error' | 'stub'
+  detail: string
+  updatedAt?: string
+}
+
+export interface AdviceView {
+  enabled: boolean
+  autoApply: boolean
+  days: DayAdvice[]
+  sources: AdviceSource[]
+  adjustments: Adjustment[]
+}
+
+export interface AdviceSettings {
+  enabled: boolean
+  autoApply: boolean
+  autoMinConfidence: 2 | 3
+  targetLittle: number | null
+  targetMedium: number | null
+  targetHigh: number | null
+  readyBy: string
+  expiryHours: number | null
+  autoPostpone: boolean
+}
+
+export interface Proposal {
+  kind: AdjustmentKind
+  date: string
+  available: boolean
+  reason?: string
+  advice: DayAdvice | null
+  soc?: number
+  minSoc?: number
+  startSoc: number | null
+  capacityKWh: number
+  readyBy?: string
+  latestReadyBy?: string
+  protected?: { title: string; departAt: string; targetSoc: number }
+  currentPlan: EVCCPlan | null
+  smartCostLimit: number | null
+  expiresAt?: string
+  maxExpiresAt?: string
+  notes: string[]
+}
+
+export interface AdjustInput {
+  kind: AdjustmentKind
+  date: string
+  soc?: number
+  readyBy?: string
+  expiresAt: string
 }
 
 export interface Rate {
