@@ -270,6 +270,7 @@ describe('SendPlanButton', () => {
     trips: number,
     km: number,
     targetSoc: number,
+    covered = false,
   ): SendOption => ({
     days,
     from: '2026-11-10',
@@ -282,9 +283,10 @@ describe('SendPlanButton', () => {
     distanceKm: km,
     energyKWh: 0,
     exceeds: false,
+    covered,
   })
   const options = [
-    option(1, '2026-11-10', 3, 100, 46),
+    option(1, '2026-11-10', 3, 100, 46, true),
     option(2, '2026-11-11', 3, 100, 46),
     option(3, '2026-11-12', 6, 132, 56),
   ]
@@ -302,6 +304,9 @@ describe('SendPlanButton', () => {
     expect(w.get('[data-testid=send-option-1]').text()).toContain('Trips tomorrow')
     expect(w.get('[data-testid=send-option-1]').text()).toContain('46%')
     expect(w.get('[data-testid=send-option-1]').text()).toContain('3 trips · 100 km')
+    // The current charge already reaches day 1's target, not day 3's.
+    expect(w.get('[data-testid=send-option-1] [data-testid=option-covered]').text()).toBe('Covered')
+    expect(w.find('[data-testid=send-option-3] [data-testid=option-covered]').exists()).toBe(false)
     // Wednesday adds no trips: nothing to choose.
     const wed = w.get('[data-testid=send-option-2]')
     expect(wed.attributes('disabled')).toBeDefined()

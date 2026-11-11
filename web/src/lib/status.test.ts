@@ -89,6 +89,7 @@ describe('send options', () => {
     distanceKm: 100,
     energyKWh: 18,
     exceeds: false,
+    covered: false,
   })
   const monday = '2026-11-09T18:00:00Z' // 19:00 in Amsterdam
 

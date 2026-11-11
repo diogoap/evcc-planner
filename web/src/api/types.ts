@@ -139,6 +139,8 @@ export interface SendOption {
   distanceKm: number
   energyKWh: number
   exceeds: boolean
+  /** The projected SoC at the next departure already reaches the target. */
+  covered: boolean
 }
 
 export interface TimelinePoint {

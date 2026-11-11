@@ -148,6 +148,9 @@ type SendOptionView struct {
 	DistanceKm  float64   `json:"distanceKm"`
 	EnergyKWh   float64   `json:"energyKWh"`
 	Exceeds     bool      `json:"exceeds"` // needs more than a full battery
+	// Covered: the projected SoC at the next departure already reaches the
+	// target without charging (unknown SoC: false).
+	Covered bool `json:"covered"`
 }
 
 // sendOptionDays is how many days ahead plans are offered.
@@ -161,6 +164,7 @@ func (s *Service) sendOptions(res planner.Result, p planner.Params, blocks []Blo
 		return out
 	}
 	next := blocks[res.Next]
+	start := res.Blocks[res.Next].StartSoC
 	first := localtime.StartOfDay(next.DepartAt, s.loc())
 	for d := 1; d <= sendOptionDays; d++ {
 		c, ok := planner.CoverUntil(res, p, localtime.AddDays(first, d))
@@ -171,6 +175,7 @@ func (s *Service) sendOptions(res planner.Result, p planner.Params, blocks []Blo
 			Days: d, From: localtime.Date(first, s.loc()), Through: localtime.Date(localtime.AddDays(first, d-1), s.loc()),
 			ReadyBy: next.DepartAt, RequiredSoC: round(c.RequiredSoC, 1),
 			TargetSoC: int(math.Min(100, math.Ceil(c.RequiredSoC-1e-6))), Exceeds: c.Exceeds,
+			Covered:  start != nil && !c.Exceeds && *start >= c.RequiredSoC-1e-6,
 			TripKeys: []string{}, Titles: []string{},
 		}
 		for _, i := range c.Blocks {

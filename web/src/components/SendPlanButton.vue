@@ -107,7 +107,10 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', outside))
         @click="choose(o)"
       >
         <span class="split-label">{{ sendOptionLabel(o, now) }}</span>
-        <strong class="num" :class="{ 'text-warn': o.exceeds }">{{ o.targetSoc }}%</strong>
+        <span class="split-target">
+          <span v-if="o.covered" class="pill tone-ok" data-testid="option-covered">Covered</span>
+          <strong class="num" :class="{ 'text-warn': o.exceeds }">{{ o.targetSoc }}%</strong>
+        </span>
         <span class="small muted split-detail">{{ detail(o, i) }}</span>
       </button>
     </div>
@@ -186,6 +189,12 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', outside))
 .split-option:disabled {
   cursor: default;
   opacity: 0.55;
+}
+
+.split-target {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .split-label {

@@ -163,7 +163,7 @@ test('send a plan to EVCC only after confirmation', async ({ page }) => {
   await expect(page.getByTestId('evcc-plan')).toContainText('Set by planner')
 })
 
-test('send a plan covering more days from the menu', async ({ page }) => {
+test('send a plan covering more days from the menu', async ({ page, request }) => {
   await page.goto('/')
   const more = page.getByRole('button', { name: 'More plans: cover more days' })
   await more.click()
@@ -175,6 +175,7 @@ test('send a plan covering more days from the menu', async ({ page }) => {
   await expect(page.getByTestId('send-option-2')).toContainText('Tomorrow and Wed 11 Nov')
   await expect(page.getByTestId('send-option-2')).toContainText('67%')
   await expect(page.getByTestId('send-option-3')).toContainText('Tomorrow to Thu 12 Nov')
+  await expect(page.getByTestId('option-covered')).toHaveCount(0) // 38% covers none of them
   const box = (await page.getByTestId('send-option-1').locator('..').boundingBox())!
   expect(box.x).toBeGreaterThanOrEqual(15)
   expect(box.x + box.width).toBeLessThanOrEqual(page.viewportSize()!.width - 15)
@@ -198,6 +199,17 @@ test('send a plan covering more days from the menu', async ({ page }) => {
   await expect(page.locator('li.activity').first()).toContainText(
     'Sent plan 67% by Tue 10 Nov, 07:48 to EVCC, covering trips through Wed 11 Nov',
   )
+
+  // At 70% the first two options are already covered, as in the days table.
+  await request.post('/api/demo/vehicle', { data: { connected: true, soc: 70 } })
+  await page.goto('/')
+  await more.click()
+  await expect(page.getByTestId('send-option-1').getByTestId('option-covered')).toHaveText('Covered')
+  await expect(page.getByTestId('send-option-2').getByTestId('option-covered')).toHaveText('Covered')
+  await expect(page.getByTestId('send-option-3').getByTestId('option-covered')).toHaveCount(0)
+  await shot(page, 'send-plan-menu-covered')
+  await page.getByTestId('send-option-1').click()
+  await expect(page.getByRole('dialog')).toContainText('The current charge already covers these trips')
 })
 
 test('installable as an app: manifest and icons', async ({ page, request }) => {

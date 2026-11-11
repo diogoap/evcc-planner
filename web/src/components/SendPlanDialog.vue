@@ -121,6 +121,9 @@ async function send() {
           {{ settings.arrivalReservePct }}% reserve. Planner target: {{ option.targetSoc }}%; the next
           departure alone needs {{ block.targetSoc }}% if the car charges between trips.
         </p>
+        <p v-if="option.covered" class="small text-ok" style="margin: 0">
+          The current charge already covers these trips, so EVCC needs no extra charging for them.
+        </p>
         <p v-if="option.exceeds" class="small text-warn" style="margin: 0">
           These trips need more than a full battery, so the target stops at 100%: the car still has to charge
           between them.

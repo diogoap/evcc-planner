@@ -534,6 +534,7 @@ func TestSendOptionsCoverMoreDays(t *testing.T) {
 			TripKeys   []string `json:"tripKeys"`
 			DistanceKm float64  `json:"distanceKm"`
 			Exceeds    bool     `json:"exceeds"`
+			Covered    bool     `json:"covered"`
 		} `json:"sendOptions"`
 	}
 	ta.json("GET", "/api/plan", nil, http.StatusOK, &p)
@@ -554,8 +555,16 @@ func TestSendOptionsCoverMoreDays(t *testing.T) {
 			t.Errorf("option %d = %+v, want through %s, %d%%, %d trips", i+1, o, w.through, w.soc, w.trips)
 		}
 	}
-	if p.Next.TargetSoC != 42 || p.SendOptions[0].DistanceKm != 100 {
-		t.Errorf("next = %+v, option 1 = %+v", p.Next, p.SendOptions[0])
+	if p.Next.TargetSoC != 42 || p.SendOptions[0].DistanceKm != 100 || p.SendOptions[0].Covered {
+		t.Errorf("next = %+v, option 1 = %+v (38%% does not cover 46%%)", p.Next, p.SendOptions[0])
+	}
+
+	// At 70% the first two days are already covered without charging.
+	ta.json("POST", "/api/demo/vehicle", map[string]any{"connected": true, "soc": 70}, http.StatusOK, nil)
+	ta.json("GET", "/api/plan", nil, http.StatusOK, &p)
+	if covered := []bool{p.SendOptions[0].Covered, p.SendOptions[1].Covered, p.SendOptions[2].Covered}; covered[0] != true ||
+		covered[1] != true || covered[2] != false {
+		t.Errorf("covered at 70%% = %v, want 46%% and 67%% covered, 76%% not", covered)
 	}
 
 	ta.json("POST", "/api/evcc/plan", map[string]any{"soc": 67, "time": p.Next.DepartAt, "tripKey": "recurring:1:2026-11-10",
