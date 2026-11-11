@@ -197,7 +197,7 @@ func (o *OpenRouter) Extract(ctx context.Context, req ExtractRequest) (Extractio
 		}
 		msg = clip(msg, 300)
 		if strings.Contains(strings.ToLower(msg), "no endpoints found") {
-			msg += " (" + o.Model + " has no provider with strict structured outputs: choose another openrouter.model)"
+			msg += " (" + o.Model + " has no provider with strict structured outputs: choose another OpenRouter model under Settings → Connections)"
 		}
 		return Extraction{}, Usage{}, fmt.Errorf("openrouter: %s", msg)
 	}

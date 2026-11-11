@@ -7,7 +7,10 @@ import type {
   AdjustmentKind,
   AdviceSettings,
   Connection,
+  ConnectionSettings,
+  ConnectionSettingsView,
   EVCCPlan,
+  HASensor,
   Meta,
   Place,
   Plan,
@@ -103,6 +106,11 @@ export const api = {
   syncCalendar: () => request<Connection[]>('POST', '/api/calendar/sync', {}),
   refreshForecasts: () => request<Connection[]>('POST', '/api/forecasts/refresh', {}),
   forecasts: () => request<unknown>('GET', '/api/forecasts'),
+
+  connectionSettings: () => request<ConnectionSettingsView>('GET', '/api/settings/connections'),
+  saveConnectionSettings: (s: ConnectionSettings) =>
+    request<ConnectionSettingsView>('PUT', '/api/settings/connections', s),
+  homeAssistantSensors: () => request<HASensor[]>('GET', '/api/homeassistant/sensors'),
 
   adviceSettings: () => request<AdviceSettings>('GET', '/api/settings/advice'),
   saveAdviceSettings: (s: AdviceSettings) => request<AdviceSettings>('PUT', '/api/settings/advice', s),

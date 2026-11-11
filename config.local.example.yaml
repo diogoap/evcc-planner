@@ -1,6 +1,7 @@
 # Optional: copy to config.local.yaml (ignored by Git) to override any value
 # in config.yaml without committing it. Lists replace the whole list.
-# Deployment addresses and secrets belong in environment variables (.env).
+# Deployment addresses and secrets belong in environment variables (.env);
+# integration settings without secrets are edited in Settings → Connections.
 
 defaults:
   consumption_kwh_per_100km: 20   # e.g. a winter estimate

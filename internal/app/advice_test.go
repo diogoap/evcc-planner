@@ -474,7 +474,7 @@ func TestForecastScheduleAndFailures(t *testing.T) {
 	}
 
 	// A failing source keeps the last valid outlook and reports the error.
-	svc.Forecasts.Article = failingArticle{}
+	svc.UseIntegrations(func(i *service.Integrations) { i.Forecasts.Article = failingArticle{} })
 	if err := svc.RefreshForecasts(ctx, true); err == nil {
 		t.Fatal("want an error")
 	}

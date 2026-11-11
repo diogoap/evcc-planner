@@ -226,6 +226,17 @@ var settingLabels = map[string]string{
 	"enabled":          "daily advice", "autoApply": "automatic plans", "autoMinConfidence": "minimum confidence",
 	"targetLittle": "target for little", "targetMedium": "target for medium", "targetHigh": "target for high",
 	"readyBy": "ready-by time", "expiryHours": "expiry", "autoPostpone": "automatic postponement",
+	// Connection settings.
+	"evccUrl": "EVCC address", "evccLoadpoint": "EVCC loadpoint", "evccVehicle": "EVCC vehicle",
+	"evccPollIntervalSec": "EVCC poll interval", "evccTimeoutSec": "EVCC timeout",
+	"haUrl": "Home Assistant address", "haSocEntity": "Home Assistant SoC sensor", "haRangeEntity": "Home Assistant range sensor",
+	"haObservedAttribute": "reading-time attribute", "haPollIntervalMin": "Home Assistant poll interval",
+	"haTimeoutSec": "Home Assistant timeout", "calendarSyncIntervalMin": "calendar sync interval",
+	"routesTrafficAware": "traffic-aware routes", "routesCacheTtlHours": "route cache",
+	"routesMonthlyFreeCalls": "free route calls", "tibberUrl": "Tibber outlook page",
+	"openRouterModel": "OpenRouter model", "openRouterTimeoutSec": "OpenRouter timeout",
+	"knmiDataset": "KNMI dataset", "knmiVersion": "KNMI version", "forecastDailyAt": "daily forecast time",
+	"forecastRetryIntervalMin": "forecast retry interval", "forecastVatPct": "VAT", "retentionDays": "history retention",
 }
 
 // planText describes an EVCC one-off plan, or "none".
@@ -323,7 +334,7 @@ func (s *Service) Activity(q ActivityQuery) (*ActivityView, error) {
 	if err != nil {
 		return nil, err
 	}
-	v := &ActivityView{Events: list, RetentionDays: s.Cfg.Retention.Days}
+	v := &ActivityView{Events: list, RetentionDays: s.Conn().RetentionDays}
 	if len(list) == f.Limit {
 		v.Events = list[:len(list)-1]
 		next := v.Events[len(v.Events)-1].ID
@@ -423,10 +434,10 @@ func (s *Service) APIUsage(month string) (*UsageView, error) {
 	if err != nil {
 		return nil, err
 	}
-	f := s.Forecasts
+	f := s.Clients().Forecasts
 	weatherLive := f.Weather != nil && f.Weather.Name() == "live"
 	services := []ServiceUsage{
-		{Service: APIGoogleRoutes, Name: "Google Routes", Live: s.Routes.Router.Name() != "stub", FreeCalls: s.Cfg.Routes.MonthlyFreeCalls},
+		{Service: APIGoogleRoutes, Name: "Google Routes", Live: s.Clients().Routes.Router.Name() != "stub", FreeCalls: s.Conn().RoutesMonthlyFreeCalls},
 		{Service: APICalendar, Name: "Google Calendar feeds", Live: s.Cfg.Calendar.Mode != config.ModeStub && len(s.Calendar.Calendars) > 0},
 		{Service: APITibber, Name: "Tibber outlook page", Live: f.Article.Name() == "live"},
 		{Service: APIOpenRouter, Name: "OpenRouter", Live: f.Extractor.Name() == "openrouter"},
@@ -460,7 +471,7 @@ var cleanupLabels = map[string][2]string{
 // Cleanup deletes history older than the retention period (whole local
 // days) and records what it removed. It runs daily.
 func (s *Service) Cleanup(ctx context.Context) error {
-	days := s.Cfg.Retention.Days
+	days := s.Conn().RetentionDays
 	cutoff := localtime.AddDays(localtime.StartOfDay(s.now(), s.loc()), -days)
 	return s.Store.InTx(func(tx *store.Store) error {
 		counts, err := tx.Cleanup(cutoff, s.loc())

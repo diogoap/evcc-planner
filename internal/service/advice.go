@@ -63,7 +63,16 @@ type SourceView struct {
 
 // AdviceSettings returns the effective advice settings.
 func (s *Service) AdviceSettings() (model.AdviceSettings, error) {
-	return s.Store.AdviceSettings(model.DefaultAdviceSettings())
+	s.cacheMu.Lock()
+	defer s.cacheMu.Unlock()
+	if s.advice == nil {
+		v, err := s.Store.AdviceSettings(model.DefaultAdviceSettings())
+		if err != nil {
+			return v, err
+		}
+		s.advice = &v
+	}
+	return *s.advice, nil
 }
 
 // SaveAdviceSettings validates and stores advice settings.
@@ -72,7 +81,7 @@ func (s *Service) SaveAdviceSettings(ctx context.Context, v model.AdviceSettings
 		return v, ValidationError{Msg: err.Error()}
 	}
 	ev := model.AuditEvent{Action: "settings.update", SubjectType: "settings", SubjectID: "advice"}
-	return v, s.change(ctx, ev, func(tx *store.Store, e *model.AuditEvent) error {
+	err := s.change(ctx, ev, func(tx *store.Store, e *model.AuditEvent) error {
 		before, err := tx.AdviceSettings(model.DefaultAdviceSettings())
 		if err != nil {
 			return err
@@ -84,6 +93,12 @@ func (s *Service) SaveAdviceSettings(ctx context.Context, v model.AdviceSettings
 		e.Summary = settingsSummary("advice settings", e.After)
 		return nil
 	})
+	if err == nil {
+		s.cacheMu.Lock()
+		s.advice = &v
+		s.cacheMu.Unlock()
+	}
+	return v, err
 }
 
 // Dismiss hides a day's advice actions without changing anything in EVCC;
@@ -393,7 +408,7 @@ func (s *Service) adviceSources(now time.Time, slots []evcc.Rate, solar *evcc.So
 			tib.Status, tib.Detail = "error", orec.LastError+" (showing the last valid outlook: "+o.ValidFrom+" to "+o.ValidTo+")"
 		case now.Sub(o.FetchedAt) > outlookMaxAge || o.ValidTo < today:
 			tib.Status = "stale"
-		case s.Forecasts.Article.Name() == "stub" || s.Forecasts.Extractor.Name() == "pattern":
+		case s.Clients().Forecasts.Article.Name() == "stub" || s.Clients().Forecasts.Extractor.Name() == "pattern":
 			tib.Status = "stub"
 		}
 	}
@@ -401,8 +416,8 @@ func (s *Service) adviceSources(now time.Time, slots []evcc.Rate, solar *evcc.So
 
 	kn := SourceView{Name: "KNMI weather", Kind: "weather"}
 	switch {
-	case s.Forecasts.Weather == nil:
-		kn.Status, kn.Detail = "missing", s.Forecasts.WeatherNote
+	case s.Clients().Forecasts.Weather == nil:
+		kn.Status, kn.Detail = "missing", s.Clients().Forecasts.WeatherNote
 	case w == nil:
 		kn.Status, kn.Detail = "missing", "No weather outlook yet"
 		if wrec != nil && wrec.LastError != "" {
@@ -431,7 +446,7 @@ func (s *Service) adviceSources(now time.Time, slots []evcc.Rate, solar *evcc.So
 			kn.Status, kn.Detail = "error", wrec.LastError+" (showing the last valid outlook)"
 		case w.IssuedAt != nil && now.Sub(*w.IssuedAt) > weatherMaxAge:
 			kn.Status = "stale"
-		case s.Forecasts.Weather.Name() == "stub":
+		case s.Clients().Forecasts.Weather.Name() == "stub":
 			kn.Status = "stub"
 		}
 	}

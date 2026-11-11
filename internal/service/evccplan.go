@@ -60,11 +60,11 @@ func (s *Service) Status() StatusView {
 	v.Reachable = snap.err == nil
 	v.UpdatedAt = &snap.okAt
 	v.Version, v.GridPrice, v.PVPowerW, v.Currency = st.Version, st.GridPrice, st.PVPowerW, st.Currency
-	if lp, ok := st.Loadpoint(s.Cfg.EVCC.Loadpoint); ok {
+	if lp, ok := s.loadpoint(st); ok {
 		v.Charger, v.Connected, v.Charging = lp.Title, lp.Connected, lp.Charging
 		v.ChargePowerW, v.ChargeMode, v.LimitSoC = lp.ChargePowerW, lp.Mode, lp.EffectiveLimitSoc
 	}
-	if veh, ok := st.ResolveVehicle(s.Cfg.EVCC.Vehicle, s.Cfg.EVCC.Loadpoint); ok {
+	if veh, ok := s.resolveVehicle(st); ok {
 		v.Vehicle, v.VehicleTitle = veh.Name, veh.Title
 		v.Plan = s.planView(veh)
 	}
@@ -123,7 +123,7 @@ func (s *Service) Preview(ctx context.Context, soc int, at time.Time) (*PreviewV
 		v.Reason = "EVCC is not reachable."
 		return v, nil
 	}
-	if veh, ok := snap.state.ResolveVehicle(s.Cfg.EVCC.Vehicle, s.Cfg.EVCC.Loadpoint); ok {
+	if veh, ok := s.resolveVehicle(snap.state); ok {
 		v.Vehicle = veh.Name
 		v.CurrentPlan = s.planView(veh)
 	}
@@ -133,7 +133,7 @@ func (s *Service) Preview(ctx context.Context, soc int, at time.Time) (*PreviewV
 			v.PriceSlots = append(v.PriceSlots, r)
 		}
 	}
-	lp, ok := snap.state.Loadpoint(s.Cfg.EVCC.Loadpoint)
+	lp, ok := s.loadpoint(snap.state)
 	switch {
 	case !ok:
 		v.Reason = "The configured EVCC loadpoint was not found."
@@ -145,7 +145,7 @@ func (s *Service) Preview(ctx context.Context, soc int, at time.Time) (*PreviewV
 		v.Reason = "The departure time has passed."
 		return v, nil
 	}
-	p, err := s.EVCC.PreviewSocPlan(ctx, s.Cfg.EVCC.Loadpoint, soc, at)
+	p, err := s.Clients().EVCC.PreviewSocPlan(ctx, s.Conn().EVCCLoadpoint, soc, at)
 	if err != nil {
 		v.Reason = "EVCC preview failed: " + err.Error()
 		return v, nil
@@ -190,13 +190,15 @@ func (s *Service) SendPlan(ctx context.Context, in SendPlanInput) (*EVCCPlanView
 	if !in.Time.After(now) {
 		return nil, invalid("the ready-by time must be in the future")
 	}
+	// The vehicle and the client come from the same settings.
+	cs := s.state()
 	snap := s.snapshot()
 	if snap.state == nil {
 		return nil, errors.New("EVCC is not reachable")
 	}
-	veh, ok := snap.state.ResolveVehicle(s.Cfg.EVCC.Vehicle, s.Cfg.EVCC.Loadpoint)
+	veh, ok := snap.state.ResolveVehicle(cs.settings.EVCCVehicle, cs.settings.EVCCLoadpoint)
 	if !ok {
-		return nil, invalid("no EVCC vehicle found; set evcc.vehicle in the config")
+		return nil, invalid("no EVCC vehicle found; choose it under Settings → Connections")
 	}
 	at := in.Time.Truncate(time.Minute)
 	ev := model.AuditEvent{
@@ -218,7 +220,7 @@ func (s *Service) SendPlan(ctx context.Context, in SendPlanInput) (*EVCCPlanView
 	}
 	ev.Before = audit.Marshal(map[string]string{"evccPlan": prev})
 	ev.After = audit.Marshal(map[string]string{"evccPlan": s.planText(float64(in.SoC), at, true)})
-	resp, err := s.EVCC.SetSocPlan(ctx, veh.Name, in.SoC, at)
+	resp, err := cs.EVCC.SetSocPlan(ctx, veh.Name, in.SoC, at)
 	if err != nil {
 		ev.Outcome, ev.Error = model.OutcomeFailure, err.Error()
 		s.record(ctx, ev)
@@ -319,10 +321,10 @@ func (s *Service) Connections() ([]ConnectionView, error) {
 
 	rt := ConnectionView{Name: "Google Routes", Mode: s.Cfg.Routes.Mode}
 	switch {
-	case s.Routes.Router.Name() == "stub":
+	case s.Clients().Routes.Router.Name() == "stub":
 		rt.Status, rt.Detail = "stub", "Stub distances"
-		if s.RoutesNote != "" {
-			rt.Detail = s.RoutesNote
+		if s.Clients().RoutesNote != "" {
+			rt.Detail = s.Clients().RoutesNote
 		}
 	default:
 		rt.Status, rt.Detail = "ok", "API key configured; traffic-aware, cached routes"
@@ -334,10 +336,35 @@ func (s *Service) Connections() ([]ConnectionView, error) {
 		return nil, err
 	}
 	out = append(out, fc...)
-	out = append(out,
-		ConnectionView{Name: "Home Assistant", Status: "planned", Detail: "Always-on SoC (V4), notifications (V5)"},
-	)
+	out = append(out, s.homeAssistantConnection())
 	return out, nil
+}
+
+// homeAssistantConnection reports the always-on SoC source.
+func (s *Service) homeAssistantConnection() ConnectionView {
+	s.mu.RLock()
+	r, err, okAt := s.haReading, s.haErr, s.haOKAt
+	s.mu.RUnlock()
+	c := ConnectionView{Name: "Home Assistant", Mode: s.Cfg.HomeAssistant.Mode}
+	if !okAt.IsZero() {
+		c.LastSuccessAt = &okAt
+	}
+	switch {
+	case s.Clients().HA == nil:
+		c.Status, c.Detail = "not_configured", s.Clients().HANote
+	case err != nil:
+		c.Status, c.Detail = "error", err.Error()
+	case r == nil:
+		c.Status, c.Detail = "error", "Not checked yet"
+	default:
+		c.Status = "ok"
+		if s.Cfg.HomeAssistant.Mode == config.ModeStub {
+			c.Status = "stub"
+		}
+		c.Detail = fmt.Sprintf("SoC %.0f%% from %s, reported %s", r.Percent, r.Entity,
+			r.ObservedAt.In(s.loc()).Format("Mon 2 Jan 15:04"))
+	}
+	return c
 }
 
 func plural(n int, word string) string {

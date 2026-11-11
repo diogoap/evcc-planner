@@ -3,10 +3,12 @@
 package config
 
 import (
+	"bytes"
 	"crypto/sha1"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -30,24 +32,26 @@ const (
 )
 
 type Config struct {
-	Server     ServerConfig     `yaml:"server"`
-	Timezone   string           `yaml:"timezone"`
-	DataDir    string           `yaml:"data_dir"`
-	Demo       bool             `yaml:"demo"`
-	FixedTime  string           `yaml:"fixed_time"`
-	EVCC       EVCCConfig       `yaml:"evcc"`
-	Calendar   CalendarConfig   `yaml:"calendar"`
-	Routes     RoutesConfig     `yaml:"routes"`
-	Tibber     TibberConfig     `yaml:"tibber"`
-	OpenRouter OpenRouterConfig `yaml:"openrouter"`
-	KNMI       KNMIConfig       `yaml:"knmi"`
-	Forecast   ForecastConfig   `yaml:"forecast"`
-	Retention  RetentionConfig  `yaml:"retention"`
-	Defaults   Defaults         `yaml:"defaults"`
-	Places     []PlaceSeed      `yaml:"places"`
+	Server        ServerConfig        `yaml:"server"`
+	Timezone      string              `yaml:"timezone"`
+	DataDir       string              `yaml:"data_dir"`
+	Demo          bool                `yaml:"demo"`
+	FixedTime     string              `yaml:"fixed_time"`
+	EVCC          EVCCConfig          `yaml:"evcc"`
+	Calendar      CalendarConfig      `yaml:"calendar"`
+	Routes        RoutesConfig        `yaml:"routes"`
+	Tibber        TibberConfig        `yaml:"tibber"`
+	OpenRouter    OpenRouterConfig    `yaml:"openrouter"`
+	KNMI          KNMIConfig          `yaml:"knmi"`
+	HomeAssistant HomeAssistantConfig `yaml:"homeassistant"`
+	Defaults      Defaults            `yaml:"defaults"`
+	Places        []PlaceSeed         `yaml:"places"`
 
 	Location *time.Location `yaml:"-"`
 	Fixed    *time.Time     `yaml:"-"`
+	// Warnings are ignored config keys, e.g. settings that moved to
+	// Settings → Connections; logged at startup.
+	Warnings []string `yaml:"-"`
 }
 
 type ServerConfig struct {
@@ -55,22 +59,19 @@ type ServerConfig struct {
 	WebDir string `yaml:"web_dir"`
 }
 
+// EVCCConfig selects live or stub EVCC. Its address and polling are edited
+// in Settings → Connections; EVCC_URL seeds the address.
 type EVCCConfig struct {
-	Mode         string        `yaml:"mode"`
-	URL          string        `yaml:"url"`
-	Loadpoint    int           `yaml:"loadpoint"`
-	Vehicle      string        `yaml:"vehicle"`
-	PollInterval time.Duration `yaml:"poll_interval"`
-	Timeout      time.Duration `yaml:"timeout"`
+	Mode string `yaml:"mode"`
+	URL  string `yaml:"-"` // EVCC_URL
 }
 
 // CalendarConfig names the environment variable holding one or more secret
 // iCal addresses (comma or space separated). Calendar names come from the
 // feeds themselves.
 type CalendarConfig struct {
-	Mode         string        `yaml:"mode"`
-	SyncInterval time.Duration `yaml:"sync_interval"`
-	URLEnv       string        `yaml:"url_env"`
+	Mode   string `yaml:"mode"`
+	URLEnv string `yaml:"url_env"`
 
 	Sources []CalendarSource `yaml:"-"`
 }
@@ -82,57 +83,47 @@ type CalendarSource struct {
 	URL   string
 }
 
+// RoutesConfig: the base URL receives the API key, so it stays in config.
 type RoutesConfig struct {
-	Mode         string        `yaml:"mode"`
-	APIKeyEnv    string        `yaml:"api_key_env"`
-	BaseURL      string        `yaml:"base_url"`
-	TrafficAware bool          `yaml:"traffic_aware"`
-	CacheTTL     time.Duration `yaml:"cache_ttl"`
-	// MonthlyFreeCalls is the provider's free monthly allowance, shown next
-	// to the calls made (0 hides it).
-	MonthlyFreeCalls int    `yaml:"monthly_free_calls"`
-	APIKey           string `yaml:"-"`
+	Mode      string `yaml:"mode"`
+	APIKeyEnv string `yaml:"api_key_env"`
+	BaseURL   string `yaml:"base_url"`
+	APIKey    string `yaml:"-"`
 }
 
-// TibberConfig locates the weekly price outlook article.
+// TibberConfig selects the live or stub outlook article; its address is
+// edited in Settings → Connections.
 type TibberConfig struct {
 	Mode string `yaml:"mode"`
-	URL  string `yaml:"url"`
 }
 
-// OpenRouterConfig selects the model that structures forecast text. The
-// model must support strict JSON Schema output.
+// OpenRouterConfig: the base URL receives the API key, so it stays in
+// config; the model is edited in Settings → Connections.
 type OpenRouterConfig struct {
-	Mode      string        `yaml:"mode"`
-	BaseURL   string        `yaml:"base_url"`
-	Model     string        `yaml:"model"`
-	APIKeyEnv string        `yaml:"api_key_env"`
-	Timeout   time.Duration `yaml:"timeout"`
-	APIKey    string        `yaml:"-"`
-}
-
-// KNMIConfig reads KNMI's multi-day outlook from the Open Data API.
-type KNMIConfig struct {
 	Mode      string `yaml:"mode"`
 	BaseURL   string `yaml:"base_url"`
-	Dataset   string `yaml:"dataset"`
-	Version   string `yaml:"version"`
 	APIKeyEnv string `yaml:"api_key_env"`
 	APIKey    string `yaml:"-"`
 }
 
-// ForecastConfig schedules the daily forecast ingestion.
-type ForecastConfig struct {
-	DailyAt       string        `yaml:"daily_at"` // local HH:MM
-	RetryInterval time.Duration `yaml:"retry_interval"`
-	VATPct        float64       `yaml:"vat_pct"`
+// KNMIConfig reads KNMI's multi-day outlook from the Open Data API. The base
+// URL receives the API key, so it stays in config.
+type KNMIConfig struct {
+	Mode      string `yaml:"mode"`
+	BaseURL   string `yaml:"base_url"`
+	APIKeyEnv string `yaml:"api_key_env"`
+	APIKey    string `yaml:"-"`
 }
 
-// RetentionConfig sets how long history is kept: activity log entries and
-// past trips, per-date edits, plan records, and advice decisions older than
-// Days are deleted daily.
-type RetentionConfig struct {
-	Days int `yaml:"days"`
+// HomeAssistantConfig reads the car's SoC from Home Assistant, which has it
+// even while the car is unplugged. The token comes from the environment; the
+// address and sensors are edited in Settings → Connections, and HA_URL seeds
+// the address.
+type HomeAssistantConfig struct {
+	Mode     string `yaml:"mode"`
+	TokenEnv string `yaml:"token_env"`
+	URL      string `yaml:"-"` // HA_URL
+	Token    string `yaml:"-"`
 }
 
 // Defaults are bootstrap planning settings; UI-saved values take precedence.
@@ -176,27 +167,19 @@ func Default() Config {
 		Server:   ServerConfig{Listen: "127.0.0.1:7201", WebDir: "web/dist"},
 		Timezone: "Europe/Amsterdam",
 		DataDir:  "data",
-		EVCC: EVCCConfig{
-			Mode: ModeLive, URL: "http://127.0.0.1:7070", Loadpoint: 1,
-			PollInterval: 30 * time.Second, Timeout: 10 * time.Second,
-		},
-		Calendar: CalendarConfig{Mode: ModeICal, SyncInterval: time.Hour, URLEnv: "GOOGLE_CALENDAR_ICAL_URL"},
+		EVCC:     EVCCConfig{Mode: ModeLive},
+		Calendar: CalendarConfig{Mode: ModeICal, URLEnv: "GOOGLE_CALENDAR_ICAL_URL"},
 		Routes: RoutesConfig{
-			Mode: ModeGoogle, APIKeyEnv: "GOOGLE_MAPS_API_KEY",
-			BaseURL: "https://routes.googleapis.com", TrafficAware: true, CacheTTL: 7 * 24 * time.Hour,
-			MonthlyFreeCalls: 5000,
+			Mode: ModeGoogle, APIKeyEnv: "GOOGLE_MAPS_API_KEY", BaseURL: "https://routes.googleapis.com",
 		},
-		Tibber: TibberConfig{Mode: ModeLive, URL: "https://tibber.com/nl/stroomprijsprognose"},
+		Tibber: TibberConfig{Mode: ModeLive},
 		OpenRouter: OpenRouterConfig{
-			Mode: ModeLive, BaseURL: "https://openrouter.ai/api/v1", Model: "anthropic/claude-haiku-5.5",
-			APIKeyEnv: "OPENROUTER_API_KEY", Timeout: 60 * time.Second,
+			Mode: ModeLive, BaseURL: "https://openrouter.ai/api/v1", APIKeyEnv: "OPENROUTER_API_KEY",
 		},
 		KNMI: KNMIConfig{
-			Mode: ModeLive, BaseURL: "https://api.dataplatform.knmi.nl/open-data/v1",
-			Dataset: "outlook_weather_forecast", Version: "1.0", APIKeyEnv: "KNMI_API_KEY",
+			Mode: ModeLive, BaseURL: "https://api.dataplatform.knmi.nl/open-data/v1", APIKeyEnv: "KNMI_API_KEY",
 		},
-		Forecast:  ForecastConfig{DailyAt: "18:00", RetryInterval: time.Hour, VATPct: 21},
-		Retention: RetentionConfig{Days: 90},
+		HomeAssistant: HomeAssistantConfig{Mode: ModeLive, TokenEnv: "HA_TOKEN"},
 		Defaults: Defaults{
 			UsableCapacityKWh: 59, ChargePowerKW: 3.68, ConsumptionKWhPer100Km: 18,
 			ArrivalReservePct: 15, ChargingEfficiencyPct: 90,
@@ -211,6 +194,20 @@ type Options struct {
 	LocalPath string // config.local.yaml; optional
 	EnvFile   string // .env; optional, never overrides real environment variables
 	Getenv    func(string) string
+}
+
+// ConnectionDefaults are the Settings → Connections values used until
+// others are saved there: built-in values with deployment seeds (EVCC_URL,
+// HA_URL).
+func (c *Config) ConnectionDefaults() model.ConnectionSettings {
+	d := model.DefaultConnectionSettings()
+	if c.EVCC.URL != "" {
+		d.EVCCURL = c.EVCC.URL
+	}
+	if c.HomeAssistant.URL != "" {
+		d.HAURL = c.HomeAssistant.URL
+	}
+	return d
 }
 
 // Load reads and validates configuration.
@@ -234,11 +231,11 @@ func Load(opts Options) (*Config, error) {
 	}
 
 	cfg := Default()
-	if err := readYAML(opts.Path, &cfg, true); err != nil {
+	if err := cfg.readYAML(opts.Path, true); err != nil {
 		return nil, err
 	}
 	if opts.LocalPath != "" {
-		if err := readYAML(opts.LocalPath, &cfg, false); err != nil {
+		if err := cfg.readYAML(opts.LocalPath, false); err != nil {
 			return nil, err
 		}
 	}
@@ -251,7 +248,10 @@ func Load(opts Options) (*Config, error) {
 	return &cfg, nil
 }
 
-func readYAML(path string, cfg *Config, required bool) error {
+// readYAML applies a config file. Unknown keys, such as settings that moved
+// to Settings → Connections, are ignored with a warning rather than failing
+// the start.
+func (c *Config) readYAML(path string, required bool) error {
 	data, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) && !required {
 		return nil
@@ -259,8 +259,24 @@ func readYAML(path string, cfg *Config, required bool) error {
 	if err != nil {
 		return fmt.Errorf("read config: %w", err)
 	}
-	if err := yaml.Unmarshal(data, cfg); err != nil {
-		return fmt.Errorf("parse %s: %w", filepath.Base(path), err)
+	name := filepath.Base(path)
+	strict := *c
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	dec.KnownFields(true)
+	err = dec.Decode(&strict)
+	var typeErr *yaml.TypeError
+	switch {
+	case err == nil || errors.Is(err, io.EOF):
+		*c = strict
+		return nil
+	case !errors.As(err, &typeErr):
+		return fmt.Errorf("parse %s: %w", name, err)
+	}
+	if err := yaml.Unmarshal(data, c); err != nil {
+		return fmt.Errorf("parse %s: %w", name, err)
+	}
+	for _, e := range typeErr.Errors {
+		c.Warnings = append(c.Warnings, fmt.Sprintf("%s: %s: ignored (integration settings are edited in Settings → Connections)", name, e))
 	}
 	return nil
 }
@@ -276,6 +292,7 @@ func (c *Config) applyEnv(getenv func(string) string) error {
 	set("EVCC_PLANNER_DATA_DIR", &c.DataDir)
 	set("EVCC_PLANNER_FIXED_TIME", &c.FixedTime)
 	set("EVCC_URL", &c.EVCC.URL)
+	set("HA_URL", &c.HomeAssistant.URL)
 	if v := getenv("EVCC_PLANNER_DEMO"); v != "" {
 		demo, err := strconv.ParseBool(v)
 		if err != nil {
@@ -294,6 +311,9 @@ func (c *Config) applyEnv(getenv func(string) string) error {
 	}
 	if c.KNMI.APIKeyEnv != "" {
 		c.KNMI.APIKey = strings.TrimSpace(getenv(c.KNMI.APIKeyEnv))
+	}
+	if c.HomeAssistant.TokenEnv != "" {
+		c.HomeAssistant.Token = strings.TrimSpace(getenv(c.HomeAssistant.TokenEnv))
 	}
 	return nil
 }
@@ -341,6 +361,7 @@ func (c *Config) finish() error {
 	if c.Demo {
 		c.EVCC.Mode, c.Calendar.Mode, c.Routes.Mode = ModeStub, ModeStub, ModeStub
 		c.Tibber.Mode, c.OpenRouter.Mode, c.KNMI.Mode = ModeStub, ModeStub, ModeStub
+		c.HomeAssistant.Mode = ModeStub
 	}
 	loc, err := time.LoadLocation(c.Timezone)
 	if err != nil {
@@ -370,23 +391,11 @@ func (c *Config) finish() error {
 		return fmt.Errorf("openrouter.mode must be %q or %q", ModeLive, ModeStub)
 	case c.KNMI.Mode != ModeLive && c.KNMI.Mode != ModeStub:
 		return fmt.Errorf("knmi.mode must be %q or %q", ModeLive, ModeStub)
-	case c.Forecast.RetryInterval < time.Minute:
-		return errors.New("forecast.retry_interval must be at least 1m")
-	case c.Forecast.VATPct < 0 || c.Forecast.VATPct > 50:
-		return errors.New("forecast.vat_pct must be between 0 and 50")
-	case c.EVCC.Loadpoint < 1:
-		return errors.New("evcc.loadpoint starts at 1")
-	case c.EVCC.PollInterval < time.Second:
-		return errors.New("evcc.poll_interval must be at least 1s")
-	case c.Calendar.SyncInterval < time.Minute:
-		return errors.New("calendar.sync_interval must be at least 1m")
-	case c.Retention.Days < 7:
-		return errors.New("retention.days must be at least 7")
-	case c.Routes.MonthlyFreeCalls < 0:
-		return errors.New("routes.monthly_free_calls must not be negative")
+	case c.HomeAssistant.Mode != ModeLive && c.HomeAssistant.Mode != ModeStub:
+		return fmt.Errorf("homeassistant.mode must be %q or %q", ModeLive, ModeStub)
 	}
-	if _, err := time.Parse("15:04", c.Forecast.DailyAt); err != nil {
-		return fmt.Errorf("forecast.daily_at must be HH:MM: %w", err)
+	if err := c.ConnectionDefaults().Validate(); err != nil {
+		return fmt.Errorf("EVCC_URL or HA_URL: %w", err)
 	}
 	if err := c.Defaults.Settings().Validate(); err != nil {
 		return fmt.Errorf("defaults: %w", err)
@@ -395,9 +404,9 @@ func (c *Config) finish() error {
 }
 
 // Secrets lists configured values that must never be stored or shown: API
-// keys and secret calendar addresses.
+// keys, access tokens, and secret calendar addresses.
 func (c *Config) Secrets() []string {
-	out := []string{c.Routes.APIKey, c.OpenRouter.APIKey, c.KNMI.APIKey}
+	out := []string{c.Routes.APIKey, c.OpenRouter.APIKey, c.KNMI.APIKey, c.HomeAssistant.Token}
 	for _, src := range c.Calendar.Sources {
 		out = append(out, src.URL)
 		if rest, ok := strings.CutPrefix(src.URL, "webcal://"); ok {

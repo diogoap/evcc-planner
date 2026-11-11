@@ -172,6 +172,20 @@ var migrations = []string{
 	CREATE INDEX audit_events_service ON audit_events(service, at) WHERE service != '';
 	CREATE TRIGGER audit_events_append_only BEFORE UPDATE ON audit_events
 	BEGIN SELECT RAISE(ABORT, 'audit events are append-only'); END;`,
+	// V4: the last SoC reading of each source (EVCC, Home Assistant). The
+	// demo's seeded reading stands for EVCC's.
+	`CREATE TABLE soc_readings (
+		source TEXT PRIMARY KEY,
+		soc REAL NOT NULL,
+		range_km REAL,
+		observed_at TEXT NOT NULL
+	);
+	INSERT INTO soc_readings (source, soc, range_km, observed_at)
+		SELECT CASE source WHEN 'demo' THEN 'evcc' ELSE source END, soc, range_km, observed_at FROM vehicle_soc;
+	DROP TABLE vehicle_soc;`,
+	// When a reading's value last changed (Home Assistant), so a value that
+	// is reported again but predates EVCC's last reading does not replace it.
+	`ALTER TABLE soc_readings ADD COLUMN changed_at TEXT;`,
 }
 
 // Open opens (creating if needed) the database at path and migrates it.
@@ -260,36 +274,70 @@ func boolInt(b bool) int {
 
 // ---- settings ----
 
-const settingsKey = "planning"
+// Settings rows hold JSON objects, keyed by kind.
+const (
+	settingsKey    = "planning"
+	adviceKey      = "advice"
+	connectionsKey = "connections"
+)
 
-// Settings returns saved settings merged onto defaults, and whether the user
-// has saved settings at all. Fields added later keep their default value.
-func (s *Store) Settings(defaults model.Settings) (model.Settings, bool, error) {
+// setting decodes a saved settings row over v, which holds the defaults, and
+// reports whether the row exists. Fields added later keep their default.
+func (s *Store) setting(key string, v any) (bool, error) {
 	var raw string
-	err := s.q.QueryRow(`SELECT value FROM settings WHERE key = ?`, settingsKey).Scan(&raw)
+	err := s.q.QueryRow(`SELECT value FROM settings WHERE key = ?`, key).Scan(&raw)
 	if errors.Is(err, sql.ErrNoRows) {
-		return defaults, false, nil
+		return false, nil
 	}
 	if err != nil {
-		return defaults, false, err
+		return false, err
 	}
-	merged := defaults
-	if err := json.Unmarshal([]byte(raw), &merged); err != nil {
-		return defaults, false, fmt.Errorf("decode settings: %w", err)
+	if err := json.Unmarshal([]byte(raw), v); err != nil {
+		return true, fmt.Errorf("decode %s settings: %w", key, err)
 	}
-	return merged, true, nil
+	return true, nil
 }
 
-// SaveSettings stores the full settings object.
-func (s *Store) SaveSettings(v model.Settings) error {
+// putSetting stores a settings row.
+func (s *Store) putSetting(key string, v any) error {
 	raw, err := json.Marshal(v)
 	if err != nil {
 		return err
 	}
 	_, err = s.q.Exec(`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
 		ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-		settingsKey, string(raw), fmtTime(time.Now()))
+		key, string(raw), fmtTime(time.Now()))
 	return err
+}
+
+// Settings returns saved settings merged onto defaults, and whether the user
+// has saved settings at all.
+func (s *Store) Settings(defaults model.Settings) (model.Settings, bool, error) {
+	v := defaults
+	saved, err := s.setting(settingsKey, &v)
+	if err != nil {
+		return defaults, false, err
+	}
+	return v, saved, nil
+}
+
+// SaveSettings stores the full settings object.
+func (s *Store) SaveSettings(v model.Settings) error { return s.putSetting(settingsKey, v) }
+
+// ConnectionSettings returns the saved connection settings merged onto
+// defaults. Only fields that differ from the built-in values are saved, so
+// the others follow later default changes.
+func (s *Store) ConnectionSettings(defaults model.ConnectionSettings) (model.ConnectionSettings, error) {
+	v := defaults
+	if _, err := s.setting(connectionsKey, &v); err != nil {
+		return defaults, err
+	}
+	return v, nil
+}
+
+// SaveConnectionSettings stores the fields that differ from the built-in values.
+func (s *Store) SaveConnectionSettings(changed map[string]any) error {
+	return s.putSetting(connectionsKey, changed)
 }
 
 // ---- places ----
@@ -772,31 +820,63 @@ func (s *Store) PutRoute(origin, destination, slot string, r CachedRoute) error 
 
 // ---- vehicle SoC ----
 
-// LastSoC returns the last SoC read from EVCC, or nil if none was recorded.
-func (s *Store) LastSoC() (*model.SoCReading, error) {
-	var r model.SoCReading
-	var observed string
-	var rangeKm sql.NullFloat64
-	err := s.q.QueryRow(`SELECT soc, range_km, observed_at, source FROM vehicle_soc WHERE id = 1`).Scan(&r.Percent, &rangeKm, &observed, &r.Source)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil
-	}
+// SoCReadings returns each source's last reading, newest first.
+func (s *Store) SoCReadings() ([]model.SoCReading, error) {
+	rows, err := s.q.Query(`SELECT source, soc, range_km, observed_at, changed_at FROM soc_readings
+		ORDER BY observed_at DESC, source`)
 	if err != nil {
 		return nil, err
 	}
-	if rangeKm.Valid {
-		r.RangeKm = &rangeKm.Float64
+	defer rows.Close()
+	var out []model.SoCReading
+	for rows.Next() {
+		var r model.SoCReading
+		var observed string
+		var rangeKm sql.NullFloat64
+		var changed sql.NullString
+		if err := rows.Scan(&r.Source, &r.Percent, &rangeKm, &observed, &changed); err != nil {
+			return nil, err
+		}
+		if rangeKm.Valid {
+			r.RangeKm = &rangeKm.Float64
+		}
+		if r.ObservedAt, err = parseTime(observed); err != nil {
+			return nil, err
+		}
+		if changed.Valid {
+			if r.ChangedAt, err = parseTime(changed.String); err != nil {
+				return nil, err
+			}
+		}
+		out = append(out, r)
 	}
-	r.ObservedAt, err = parseTime(observed)
-	return &r, err
+	return out, rows.Err()
 }
 
-// SaveSoC records the latest SoC reading.
+// SoCReading returns a source's last reading, or nil if it has none.
+func (s *Store) SoCReading(source string) (*model.SoCReading, error) {
+	list, err := s.SoCReadings()
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range list {
+		if r.Source == source {
+			return &r, nil
+		}
+	}
+	return nil, nil
+}
+
+// SaveSoC records a source's latest reading, replacing its previous one.
 func (s *Store) SaveSoC(r model.SoCReading) error {
-	_, err := s.q.Exec(`INSERT INTO vehicle_soc (id, soc, range_km, observed_at, source) VALUES (1, ?, ?, ?, ?)
-		ON CONFLICT(id) DO UPDATE SET soc = excluded.soc, range_km = excluded.range_km,
-		observed_at = excluded.observed_at, source = excluded.source`,
-		r.Percent, r.RangeKm, fmtTime(r.ObservedAt), r.Source)
+	var changed any
+	if !r.ChangedAt.IsZero() {
+		changed = fmtTime(r.ChangedAt)
+	}
+	_, err := s.q.Exec(`INSERT INTO soc_readings (source, soc, range_km, observed_at, changed_at) VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT(source) DO UPDATE SET soc = excluded.soc, range_km = excluded.range_km,
+		observed_at = excluded.observed_at, changed_at = excluded.changed_at`,
+		r.Source, r.Percent, r.RangeKm, fmtTime(r.ObservedAt), changed)
 	return err
 }
 
@@ -902,36 +982,17 @@ func nullTime(v sql.NullString) *time.Time {
 
 // ---- advice ----
 
-const adviceKey = "advice"
-
 // AdviceSettings returns saved advice settings merged onto defaults.
 func (s *Store) AdviceSettings(defaults model.AdviceSettings) (model.AdviceSettings, error) {
-	var raw string
-	err := s.q.QueryRow(`SELECT value FROM settings WHERE key = ?`, adviceKey).Scan(&raw)
-	if errors.Is(err, sql.ErrNoRows) {
-		return defaults, nil
-	}
-	if err != nil {
+	v := defaults
+	if _, err := s.setting(adviceKey, &v); err != nil {
 		return defaults, err
 	}
-	merged := defaults
-	if err := json.Unmarshal([]byte(raw), &merged); err != nil {
-		return defaults, fmt.Errorf("decode advice settings: %w", err)
-	}
-	return merged, nil
+	return v, nil
 }
 
 // SaveAdviceSettings stores the advice settings.
-func (s *Store) SaveAdviceSettings(v model.AdviceSettings) error {
-	raw, err := json.Marshal(v)
-	if err != nil {
-		return err
-	}
-	_, err = s.q.Exec(`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
-		ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-		adviceKey, string(raw), fmtTime(time.Now()))
-	return err
-}
+func (s *Store) SaveAdviceSettings(v model.AdviceSettings) error { return s.putSetting(adviceKey, v) }
 
 // Dismissals returns dismissed advice as date -> recommendation.
 func (s *Store) Dismissals() (map[string]string, error) {
@@ -1082,7 +1143,7 @@ func (s *Store) Cleanup(cutoff time.Time, loc *time.Location) (map[string]int64,
 // Reset deletes all personal data (demo mode only). The route cache is kept.
 func (s *Store) Reset() error {
 	for _, table := range []string{"settings", "places", "recurring_templates", "manual_trips", "trip_overrides",
-		"calendar_events", "calendar_sync", "vehicle_soc", "plan_writes", "forecast_sources", "advice_dismissals",
+		"calendar_events", "calendar_sync", "soc_readings", "plan_writes", "forecast_sources", "advice_dismissals",
 		"evcc_adjustments", "audit_events"} {
 		if _, err := s.q.Exec("DELETE FROM " + table); err != nil {
 			return err

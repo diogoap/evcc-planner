@@ -56,8 +56,8 @@ run: build ## Run the production build locally with your real config
 verify: ## Formatting, lint, type checks, unit/API/component tests, production build, browser tests
 	@echo "==> Go formatting"
 	@unformatted=$$(gofmt -l cmd internal); if [ -n "$$unformatted" ]; then echo "$$unformatted"; echo "Run: gofmt -w cmd internal"; exit 1; fi
-	@echo "==> go vet"
-	@go vet ./...
+	@echo "==> go vet (including the live tests)"
+	@go vet ./... && go vet -tags live ./...
 	@echo "==> Go tests (unit and API)"
 	@go test ./...
 	@echo "==> Web formatting"
@@ -93,8 +93,8 @@ fmt: ## Format Go and web sources
 	gofmt -w cmd internal
 	cd web && pnpm format
 
-test-live: ## Read-only checks against your real EVCC and forecast sources (.env)
-	go test -tags live -count=1 -v -run Live ./internal/evcc/ ./internal/forecast/
+test-live: ## Read-only checks against your real EVCC, Home Assistant, and forecast sources (.env)
+	go test -tags live -count=1 -v -run Live ./internal/evcc/ ./internal/homeassistant/ ./internal/forecast/
 
 docker-smoke: ## Build the production image, start it, and check health, UI, size, and memory
 	./scripts/docker-smoke.sh

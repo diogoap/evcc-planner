@@ -60,6 +60,14 @@ func (s *Stub) SetVehicle(connected bool, soc float64) {
 	}
 }
 
+// Battery is the simulated car's SoC and range, also while it is unplugged
+// (Home Assistant's demo reading).
+func (s *Stub) Battery() (soc, rangeKm float64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.soc, math.Round(s.soc * stubKmPerPct)
+}
+
 // State reports the simulated EVCC state. Like EVCC, the SoC reads 0 while
 // the car is unplugged.
 func (s *Stub) State(ctx context.Context) (*State, error) {

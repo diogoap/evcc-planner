@@ -22,11 +22,13 @@ func TestLiveForecasts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The default connection settings (Settings → Connections is not read).
+	conn := cfg.ConnectionDefaults()
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	now := time.Now()
 
-	page, err := HTTPArticle{PageURL: cfg.Tibber.URL, HTTP: &http.Client{Timeout: 30 * time.Second}}.Fetch(ctx)
+	page, err := HTTPArticle{PageURL: conn.TibberURL, HTTP: &http.Client{Timeout: 30 * time.Second}}.Fetch(ctx)
 	if err != nil {
 		t.Fatalf("tibber page: %v", err)
 	}
@@ -37,17 +39,17 @@ func TestLiveForecasts(t *testing.T) {
 	extractors := []Extractor{Pattern{}}
 	if os.Getenv("LIVE_OPENROUTER") == "1" && cfg.OpenRouter.APIKey != "" {
 		extractors = append(extractors, &OpenRouter{
-			BaseURL: cfg.OpenRouter.BaseURL, APIKey: cfg.OpenRouter.APIKey, Model: cfg.OpenRouter.Model,
-			HTTP: &http.Client{Timeout: cfg.OpenRouter.Timeout},
+			BaseURL: cfg.OpenRouter.BaseURL, APIKey: cfg.OpenRouter.APIKey, Model: conn.OpenRouterModel,
+			HTTP: &http.Client{Timeout: conn.OpenRouterTimeout()},
 		})
 	}
 	for _, x := range extractors {
-		ex, usage, err := x.Extract(ctx, ExtractRequest{Text: text, URL: cfg.Tibber.URL, FetchedAt: now, Location: cfg.Location})
+		ex, usage, err := x.Extract(ctx, ExtractRequest{Text: text, URL: conn.TibberURL, FetchedAt: now, Location: cfg.Location})
 		if err != nil {
 			t.Fatalf("%s: %v", x.Label(), err)
 		}
-		o, err := Normalize(ex, NormalizeInput{Text: text, URL: cfg.Tibber.URL, FetchedAt: now, Location: cfg.Location,
-			VATPct: cfg.Forecast.VATPct, Extraction: x.Label()})
+		o, err := Normalize(ex, NormalizeInput{Text: text, URL: conn.TibberURL, FetchedAt: now, Location: cfg.Location,
+			VATPct: conn.ForecastVATPct, Extraction: x.Label()})
 		if err != nil {
 			t.Fatalf("%s: %v", x.Label(), err)
 		}
@@ -70,7 +72,7 @@ func TestLiveForecasts(t *testing.T) {
 		t.Log("KNMI_API_KEY not set: KNMI check skipped")
 		return
 	}
-	k := &KNMI{BaseURL: cfg.KNMI.BaseURL, APIKey: cfg.KNMI.APIKey, Dataset: cfg.KNMI.Dataset, Version: cfg.KNMI.Version,
+	k := &KNMI{BaseURL: cfg.KNMI.BaseURL, APIKey: cfg.KNMI.APIKey, Dataset: conn.KNMIDataset, Version: conn.KNMIVersion,
 		HTTP: &http.Client{Timeout: 30 * time.Second}, Location: cfg.Location}
 	w, err := k.Fetch(ctx)
 	if err != nil {

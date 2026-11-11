@@ -21,6 +21,7 @@ import (
 	"github.com/diogoap/evcc-planner/internal/config"
 	"github.com/diogoap/evcc-planner/internal/evcc"
 	"github.com/diogoap/evcc-planner/internal/model"
+	"github.com/diogoap/evcc-planner/internal/service"
 )
 
 type activityEvent struct {
@@ -328,7 +329,7 @@ func (failingEVCC) SetSocPlan(context.Context, string, int, time.Time) (*evcc.So
 func TestFailedEVCCWriteIsRecorded(t *testing.T) {
 	ta := newTestApp(t, "")
 	log := &eventLog{ta: ta}
-	ta.app.Service.EVCC = failingEVCC{ta.app.Service.EVCC}
+	ta.app.Service.UseIntegrations(func(i *service.Integrations) { i.EVCC = failingEVCC{i.EVCC} })
 	code, _ := ta.do("POST", "/api/evcc/plan", map[string]any{"soc": 42, "time": "2026-11-10T06:48:00Z", "confirm": true})
 	if code < 500 {
 		t.Fatalf("status = %d", code)

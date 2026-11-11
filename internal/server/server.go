@@ -79,6 +79,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/forecasts/refresh", s.refreshForecasts)
 	mux.HandleFunc("GET /api/settings/advice", s.getAdviceSettings)
 	mux.HandleFunc("PUT /api/settings/advice", s.putAdviceSettings)
+	mux.HandleFunc("GET /api/settings/connections", s.getConnectionSettings)
+	mux.HandleFunc("PUT /api/settings/connections", s.putConnectionSettings)
+	mux.HandleFunc("GET /api/homeassistant/sensors", s.homeAssistantSensors)
 	mux.HandleFunc("GET /api/advice/{date}/proposal", s.proposal)
 	mux.HandleFunc("POST /api/advice/{date}/dismiss", s.dismiss)
 	mux.HandleFunc("POST /api/adjustments", s.applyAdjustment)
@@ -244,7 +247,7 @@ func (s *Server) ready(w http.ResponseWriter, r *http.Request) {
 func (s *Server) meta(w http.ResponseWriter, r *http.Request) {
 	cfg := s.Svc.Cfg
 	stub := cfg.EVCC.Mode == config.ModeStub || cfg.Calendar.Mode == config.ModeStub ||
-		s.Svc.Routes.Router.Name() == "stub"
+		s.Svc.Clients().Routes.Router.Name() == "stub"
 	writeJSON(w, http.StatusOK, map[string]any{
 		"demo": cfg.Demo, "stubs": stub, "timezone": cfg.Timezone, "now": s.Svc.Clock.Now(),
 		"windowDays": service.WindowDays,
@@ -540,6 +543,33 @@ func (s *Server) putAdviceSettings(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, saved)
 }
 
+func (s *Server) getConnectionSettings(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, s.Svc.ConnectionSettings())
+}
+
+func (s *Server) putConnectionSettings(w http.ResponseWriter, r *http.Request) {
+	var v model.ConnectionSettings
+	if err := decode(r, &v); err != nil {
+		s.fail(w, err)
+		return
+	}
+	saved, err := s.Svc.SaveConnections(r.Context(), v)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, saved)
+}
+
+func (s *Server) homeAssistantSensors(w http.ResponseWriter, r *http.Request) {
+	list, err := s.Svc.HomeAssistantSensors(r.Context())
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
 func (s *Server) proposal(w http.ResponseWriter, r *http.Request) {
 	p, err := s.Svc.Proposal(r.Context(), r.URL.Query().Get("kind"), r.PathValue("date"))
 	if err != nil {
@@ -607,6 +637,11 @@ func (s *Server) demoVehicle(w http.ResponseWriter, r *http.Request) {
 	}
 	s.Demo.SetVehicle(in.Connected, in.SoC)
 	if err := s.Svc.PollEVCC(r.Context()); err != nil {
+		s.fail(w, err)
+		return
+	}
+	// Home Assistant follows the demo car, also while it is unplugged.
+	if err := s.Svc.PollHomeAssistant(r.Context()); err != nil {
 		s.fail(w, err)
 		return
 	}

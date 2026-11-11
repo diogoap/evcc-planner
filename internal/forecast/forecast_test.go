@@ -288,7 +288,7 @@ func TestOpenRouterErrorsHideTheKey(t *testing.T) {
 	}
 	o.APIKey = "routing"
 	if _, _, err := o.Extract(context.Background(), ExtractRequest{FetchedAt: fetched, Location: ams}); err == nil ||
-		!strings.Contains(err.Error(), "choose another openrouter.model") {
+		!strings.Contains(err.Error(), "choose another OpenRouter model") {
 		t.Errorf("routing error = %v", err)
 	}
 	o.APIKey = "long"

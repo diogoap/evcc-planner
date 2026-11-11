@@ -23,11 +23,14 @@ const status: Status = {
 const soc = (over: Partial<SoCView>): SoCView => ({
   percent: 38,
   known: true,
+  source: 'evcc',
   live: false,
   observedAt: '2026-11-09T17:42:00Z',
+  stale: false,
   estimated: false,
   projected: 38,
   rangeKm: 122,
+  other: [],
   ...over,
 })
 
@@ -59,14 +62,53 @@ const trip = (over: Partial<Trip>): Trip => ({
 })
 
 describe('VehicleCard', () => {
-  it('marks an unplugged SoC as last known with its time', () => {
-    const w = mount(VehicleCard, { props: { soc: soc({}), status, now: '2026-11-09T18:00:00Z' } })
+  it('marks a stale EVCC SoC as last known with its time', () => {
+    const w = mount(VehicleCard, {
+      props: { soc: soc({ stale: true }), status, now: '2026-11-09T22:00:00Z' },
+    })
     expect(w.get('[data-testid=soc]').text()).toBe('38%')
     expect(w.get('[data-testid=soc-range]').text()).toBe('122 km range')
     const tip = w.get('[data-testid=soc-stale]').text()
-    expect(tip).toContain('Last known, Mon 9 Nov, 18:42')
+    expect(tip).toContain('Last known, Mon 9 Nov, 18:42, from EVCC')
     expect(tip).toContain('only reads the SoC while the car is plugged in')
+    expect(w.find('.bar-fill.stale').exists()).toBe(true)
     expect(w.text()).toContain('Unplugged')
+  })
+
+  it('shows a recent EVCC reading from before unplugging as fresh', () => {
+    const w = mount(VehicleCard, { props: { soc: soc({}), status, now: '2026-11-09T18:00:00Z' } })
+    expect(w.find('[data-testid=soc-stale]').exists()).toBe(false)
+    expect(w.get('[data-testid=soc-source]').text()).toBe(
+      'From EVCC · 18 min ago, read before the car was unplugged',
+    )
+  })
+
+  it('shows a Home Assistant reading with its age and the other source', () => {
+    const w = mount(VehicleCard, {
+      props: {
+        soc: soc({
+          source: 'homeassistant',
+          percent: 61,
+          rangeKm: null,
+          other: [{ source: 'evcc', percent: 70, observedAt: '2026-11-08T21:10:00Z', rangeKm: 224 }],
+        }),
+        status,
+        now: '2026-11-09T18:00:00Z',
+      },
+    })
+    expect(w.get('[data-testid=soc]').text()).toBe('61%')
+    expect(w.get('[data-testid=soc-source]').text()).toBe('From Home Assistant · 18 min ago')
+    expect(w.get('[data-testid=soc-range]').text()).toBe('Range: not reported')
+    expect(w.get('[data-testid=soc-other]').text()).toBe('EVCC: 70% · 21 h ago')
+  })
+
+  it('flags a Home Assistant reading that stopped updating', () => {
+    const w = mount(VehicleCard, {
+      props: { soc: soc({ source: 'homeassistant', stale: true }), status, now: '2026-11-09T23:00:00Z' },
+    })
+    const tip = w.get('[data-testid=soc-stale]').text()
+    expect(tip).toContain('Last known, Mon 9 Nov, 18:42, from Home Assistant')
+    expect(tip).toContain('Home Assistant has not updated it since')
   })
 
   it('shows live readings without the stale tip', () => {

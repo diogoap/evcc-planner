@@ -23,21 +23,23 @@ func TestLiveEVCC(t *testing.T) {
 	if cfg.EVCC.Mode != config.ModeLive {
 		t.Skip("evcc.mode is not live")
 	}
+	// Settings saved in the UI are not read: EVCC_URL gives the address.
+	conn := cfg.ConnectionDefaults()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	c := NewHTTPClient(cfg.EVCC.URL, cfg.EVCC.Timeout)
+	c := NewHTTPClient(conn.EVCCURL, conn.EVCCTimeout())
 
 	st, err := c.State(ctx)
 	if err != nil {
-		t.Fatalf("read %s/api/state: %v (set EVCC_URL, e.g. in .env)", cfg.EVCC.URL, err)
+		t.Fatalf("read %s/api/state: %v (set EVCC_URL, e.g. in .env)", conn.EVCCURL, err)
 	}
-	lp, ok := st.Loadpoint(cfg.EVCC.Loadpoint)
+	lp, ok := st.Loadpoint(conn.EVCCLoadpoint)
 	if !ok {
-		t.Fatalf("loadpoint %d not found; EVCC has %d", cfg.EVCC.Loadpoint, len(st.Loadpoints))
+		t.Fatalf("loadpoint %d not found; EVCC has %d", conn.EVCCLoadpoint, len(st.Loadpoints))
 	}
-	veh, ok := st.ResolveVehicle(cfg.EVCC.Vehicle, cfg.EVCC.Loadpoint)
+	veh, ok := st.ResolveVehicle(conn.EVCCVehicle, conn.EVCCLoadpoint)
 	if !ok {
-		t.Fatalf("no vehicle resolved; set evcc.vehicle (vehicles: %d)", len(st.Vehicles))
+		t.Fatalf("no vehicle resolved; choose the vehicle under Settings → Connections (vehicles: %d)", len(st.Vehicles))
 	}
 	t.Logf("EVCC %s · loadpoint %q mode=%s connected=%v soc=%.0f%% power=%.0f W",
 		st.Version, lp.Title, lp.Mode, lp.Connected, lp.VehicleSoc, lp.ChargePowerW)
@@ -69,7 +71,7 @@ func TestLiveEVCC(t *testing.T) {
 		target = 100
 	}
 	at := time.Now().Add(12 * time.Hour).Truncate(time.Minute)
-	p, err := c.PreviewSocPlan(ctx, cfg.EVCC.Loadpoint, target, at)
+	p, err := c.PreviewSocPlan(ctx, conn.EVCCLoadpoint, target, at)
 	if err != nil {
 		t.Fatalf("preview: %v", err)
 	}

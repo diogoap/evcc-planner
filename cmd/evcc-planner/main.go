@@ -72,6 +72,9 @@ func run() error {
 	if cfg.Fixed != nil {
 		log.Warn("using a fixed clock", "time", cfg.Fixed.Format(time.RFC3339))
 	}
+	for _, w := range cfg.Warnings {
+		log.Warn("config", "warning", w)
+	}
 	a, err := app.New(cfg, log)
 	if err != nil {
 		return err
@@ -91,9 +94,10 @@ func run() error {
 		wait()
 		return err
 	}
+	clients := a.Service.Clients()
 	log.Info("evcc-planner listening", "addr", "http://"+ln.Addr().String(), "demo", cfg.Demo,
-		"evcc", cfg.EVCC.Mode, "calendar", cfg.Calendar.Mode, "routes", a.Service.Routes.Router.Name(),
-		"outlook", a.Service.Forecasts.Article.Name()+"/"+a.Service.Forecasts.Extractor.Name(), "db", cfg.DBPath())
+		"evcc", cfg.EVCC.Mode, "calendar", cfg.Calendar.Mode, "routes", clients.Routes.Router.Name(),
+		"outlook", clients.Forecasts.Article.Name()+"/"+clients.Forecasts.Extractor.Name(), "db", cfg.DBPath())
 
 	errc := make(chan error, 1)
 	go func() { errc <- httpServer.Serve(ln) }()

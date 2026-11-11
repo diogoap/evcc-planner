@@ -16,7 +16,7 @@ Have enough charge for upcoming trips by departure time, using the cheapest prac
 **Context (2026-11-09).** Local EVCC API (`/api/state`; LAN address kept in private config): SoC, connection, prices, solar forecast. EVCC 0.319.0; Alfen Eve Pro charger (6–16 A); Leaf configured with 62 kWh gross; 15-minute price slots; optimizer automatic control off; Home Assistant connected.
 
 - Defaults: **59 kWh usable** and **3.68 kW** (Leaf charges single-phase at 16 A; about 3.3 kW into the battery at 90% efficiency). Validate both live.
-- Vehicle SoC comes from EVCC's Leaf integration and is **only available while plugged in**; EVCC reports 0 when unplugged. Home Assistant always has it (see V4).
+- Vehicle SoC comes from EVCC's Leaf integration and is **only available while plugged in**; EVCC reports 0 when unplugged. Home Assistant always has it, and the planner reads it from there since V4.
 - EVCC plan endpoints need no login. Each vehicle holds **one one-off SoC plan** (`POST /api/vehicles/{name}/plan/soc/{soc}/{timestamp}`) plus optional repeating plans (none configured). Previews: `GET /api/loadpoints/{id}/plan/static/preview/soc/{soc}/{timestamp}`.
 
 Background EVCC preferences: cheap-grid charging and solar/export-price priority. Typical thresholds discussed: €0.15/€0.30 per kWh; snapshot: €0.20/€0.40. Trip requirements take priority.
@@ -27,16 +27,16 @@ Background EVCC preferences: cheap-grid charging and solar/export-price priority
 
 | Location | Contents / Git policy |
 | --- | --- |
-| `config.yaml` | Tracked system settings: port **7201**, service URLs, timezone, Google Routes/OpenRouter model, integration modes, notification provider/connection defaults. Service addresses use `127.0.0.1` with the real ports (EVCC `127.0.0.1:7070`); other non-sensitive values are allowed. |
+| `config.yaml` | Tracked system settings: port **7201**, timezone, integration modes, secret variable names, the API base URLs that receive keys, the Home Assistant address default, notification provider/connection defaults. Service addresses use `127.0.0.1` with the real ports; other non-sensitive values are allowed. Integration settings without secrets are edited in the UI (Settings → Connections) since 2026-11-11. |
 | `config.local.yaml` | Optional ignored overrides of `config.yaml` values and bootstrap trip defaults/places. Personal values saved through the UI take precedence. |
-| `.env` | Ignored deployment values and secrets, provided as environment variables in production: `EVCC_URL`, `GOOGLE_CALENDAR_ICAL_URL` (one or more secret iCal addresses; calendar names come from the feeds), Google Maps (Routes API) key, later OpenRouter key, KNMI key, HA token. Server-side only. |
-| `data/` | Ignored persistent SQLite database/cache: UI-managed home address, trip defaults, recurring templates/occurrences, overrides, advice/automation choices, and notification preferences. Example config/ENV files contain safe placeholders for private values. |
+| `.env` | Ignored deployment values and secrets, provided as environment variables in production: `EVCC_URL` (optional starting EVCC address, not needed once saved in the UI), `GOOGLE_CALENDAR_ICAL_URL` (one or more secret iCal addresses; calendar names come from the feeds), Google Maps (Routes API) key, OpenRouter key, KNMI key, Home Assistant token (`HA_TOKEN`; `HA_URL` only as the starting address). Server-side only. |
+| `data/` | Ignored persistent SQLite database/cache: UI-managed home address, trip defaults, connection settings, recurring templates/occurrences, overrides, advice/automation choices, and notification preferences. Example config/ENV files contain safe placeholders for private values. |
 
 - Exclude private config, ENV, and runtime data from Git and Docker build context; supply them at runtime.
 - Native development is the default: the UI on **127.0.0.1:7201** (Vite) with the Go API on 127.0.0.1:7202. One command manages backend/frontend startup, reload, and shutdown. The Docker app listens on **0.0.0.0:7201**, reached by existing NGINX using IP/port. No fixed hostname required.
 - Production runs as a **Portainer stack** on a Proxmox Docker VM (x86_64 → `linux/amd64`; Docker 29.3.1, Compose v5.1.1; reaches EVCC). Portainer tracks `refs/heads/main` of the public [GitHub repo](https://github.com/diogoap/evcc-planner), polls every 15 minutes, and redeploys `compose.yaml` on every new commit (same setup as finance-control). `compose.dev.yaml` runs the same image locally for `make docker-smoke`. The VM builds the image from the checked-out repo (`build.context: .`, with `pull_policy: build` to guarantee a rebuild). Real service addresses and secrets are passed through as Portainer stack environment variables, which override config files. SQLite lives in a host bind mount at `/opt/evcc-planner/data`; the service restarts `unless-stopped`. Every push to `main` deploys, so push only after `make verify` passes, and never commit private data.
 - Google Routes supplies road distances/travel times through the **Routes API** with a plain API key: traffic-aware travel times for the planned departure, cached per route and time slot so usage stays far below the free monthly cap (5,000 traffic-aware calls). OpenRouter supplies AI inference. Missing integrations can use explicitly labelled stubs with the same payload contracts, including inferred Tibber/KNMI fixtures. Real Tibber articles may be fetched while inference is stubbed; preserve report dates.
-- Personal/planning settings are editable in the app; system URLs/providers remain configurable through files, with connection status visible in the UI. Notification enablement, destination selection where configured, quiet hours, and reminder preferences are UI-managed; transport URLs/credentials remain server-configured.
+- Personal/planning settings and integration settings without secrets (EVCC and Home Assistant addresses, EVCC loadpoint/vehicle, Home Assistant sensors, intervals, timeouts, route cache, model, forecast schedule, VAT, retention) are editable in the app (decided 2026-11-11), applied without a restart, and audited. Secrets stay in environment variables and the API base URLs that receive keys stay in config; the UI shows only whether each secret is set. The Home Assistant address is editable although the token is sent to it (decided 2026-11-11): with no app login, this relies on network access control, and changes are in the activity log. Connection status is visible in the UI. Notification enablement, destination selection where configured, quiet hours, and reminder preferences are UI-managed; transport URLs/credentials remain server-configured.
 
 **UI direction.** EVCC-inspired cards, clear typography, generous spacing, restrained color, and responsive layouts. Navigation: **Overview**, **Trips**, **Recurring trips**, **Settings**, plus **Activity** (audit trail) from V3. Overview combines EVCC status, the seven-day plan, and daily advice. Use graphs for published prices, planned charging, and projected SoC where useful; represent uncertain long-range advice with labelled signals. See [text UI mockup](UI-MOCKUP.md).
 
@@ -69,7 +69,7 @@ Background EVCC preferences: cheap-grid charging and solar/export-price priority
 - Keep the full departure SoC target. Solar changes timing; count only surplus after household use, before departure, while the car is home.
 - Refresh prices around 14:00; verify forecast coverage and retry missing data.
 - Respect explicit manual plans/pauses. Retain the last valid managed plan during failures; flag stale SoC and impossible deadlines.
-- Store the last EVCC SoC with its timestamp. While unplugged, plan with it and show it as last known, with its date/time.
+- Store the last SoC of each source (EVCC, Home Assistant from V4) with its timestamp. While unplugged, plan with the newest and show its source and date/time; mark old readings as last known.
 
 Example: 100 km total at 18 kWh/100 km, 59 kWh usable capacity, and a configurable 15% arrival reserve requires about **46% departure SoC**.
 
@@ -138,14 +138,23 @@ As implemented (2026-11-10):
 - Source comes from the request context: API requests are UI; jobs mark theirs (scheduled job, calendar sync, automation for advice auto-apply). Restores at expiry are scheduled-job events.
 - External calls are recorded by an HTTP transport on each client (Routes, calendar, Tibber, OpenRouter, KNMI): status, duration, response size; never query strings, and only the host for secret iCal addresses. Configured keys and calendar URLs, bearer tokens, and signed URLs are redacted from every stored text.
 - History: an event's subject (`trip:<key>`, `schedule:<id>`, `place:<id>`, `plan`) plus a related subject (a date's edits belong to its schedule's history; plan sends to their trip's; extra plans to the plan's).
-- Retention: `retention.days` (90) in `config.yaml`; one daily cleanup also deletes ended manual trips, per-date edits of past dates (and of calendar events that are gone), cached routes, older plan records, advice dismissals, and ended EVCC changes. Google Routes' free allowance for the usage card: `routes.monthly_free_calls` (5,000).
+- Retention: 90 days (Settings → Connections since 2026-11-11); one daily cleanup also deletes ended manual trips, per-date edits of past dates (and of calendar events that are gone), cached routes, older plan records, advice dismissals, and ended EVCC changes. Google Routes' free allowance for the usage card: 5,000 (also in Settings → Connections).
 
 </details>
 
-<details open>
-<summary><b>V4 — Always-on SoC</b></summary>
+<details>
+<summary><b>V4 — Always-on SoC</b> ✅</summary>
+
+✅ **Done** (2026-11-11).
 
 - **Always-on SoC:** read the Leaf's SoC from Home Assistant, which has it even when the car is unplugged, using the HA token in `.env`. Fall back to EVCC, and show the source and freshness of every SoC value.
+
+As implemented (2026-11-11):
+
+- Home Assistant's REST API, read-only (`GET /api/states/<entity>`) with a long-lived access token. Environment: `HA_TOKEN`. The address (seeded by `HA_URL`), the SoC sensor (battery level, %) and optional range sensor (km or mi) are chosen in Settings → Connections, which suggests Home Assistant's battery and distance sensors. Polled every 10 minutes; local calls are not in the activity log, and the token is redacted like other secrets. Without a token or sensor, only EVCC is used and Connections says what is missing.
+- A reading's time is when Home Assistant last received the value (`last_reported`, else `last_updated`), or the car's own time from an optional reading-time attribute (e.g. `updated_on`), never later than Home Assistant received it. Unknown, unavailable, 0%, and non-% values are rejected.
+- Each source keeps its last reading. **While plugged in, EVCC's live SoC always wins** (it is what EVCC charges by; decided 2026-11-11). After unplugging, EVCC's last reading, dated to the last poll that saw the car plugged in, stands until Home Assistant has news from after it: a value that changed since (Home Assistant's `last_changed`, or the car's own reading time), or the same value reported again. A lagging cloud value reported again after unplugging never replaces it. Planned trips that left after the chosen reading are subtracted, as before.
+- UI: the vehicle card shows the source and age ("From Home Assistant · 20 min ago"), the other source's last reading below it, and "last known" for readings that are not live and over three hours old. Settings → Connections shows Home Assistant's latest reading or error. Demo mode stubs Home Assistant: the demo car's SoC, 20 minutes behind, also while unplugged. `make test-live` lists the battery and range sensors with the reading each would give.
 
 </details>
 

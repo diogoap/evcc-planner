@@ -22,14 +22,31 @@ export interface Settings {
   autoPlanOnPlugIn: boolean
 }
 
+/** Where a SoC reading comes from: EVCC (only while plugged in) or Home Assistant (always). */
+export type SoCSource = 'evcc' | 'homeassistant'
+
 export interface SoCView {
   percent: number | null
   known: boolean
+  /** Empty when the SoC is unknown. */
+  source: SoCSource | ''
+  /** Read from EVCC just now (car plugged in). */
   live: boolean
   observedAt: string | null
+  /** Not live and older than three hours. */
+  stale: boolean
   estimated: boolean
   projected: number | null
-  /** EVCC's range at the reading (km); only reported while plugged in. */
+  /** The source's range at the reading (km), if it reports one. */
+  rangeKm: number | null
+  /** The other sources' last readings, newest first. */
+  other: SoCReading[]
+}
+
+export interface SoCReading {
+  source: SoCSource
+  percent: number
+  observedAt: string
   rangeKm: number | null
 }
 
@@ -398,6 +415,57 @@ export interface Connection {
   status: 'ok' | 'error' | 'stub' | 'not_configured' | 'planned'
   detail: string
   lastSuccessAt?: string
+}
+
+/** Integration settings edited under Settings → Connections (no secrets). */
+export interface ConnectionSettings {
+  evccUrl: string
+  evccLoadpoint: number
+  evccVehicle: string
+  evccPollIntervalSec: number
+  evccTimeoutSec: number
+  haUrl: string
+  haSocEntity: string
+  haRangeEntity: string
+  haObservedAttribute: string
+  haPollIntervalMin: number
+  haTimeoutSec: number
+  calendarSyncIntervalMin: number
+  routesTrafficAware: boolean
+  routesCacheTtlHours: number
+  routesMonthlyFreeCalls: number
+  tibberUrl: string
+  openRouterModel: string
+  openRouterTimeoutSec: number
+  knmiDataset: string
+  knmiVersion: string
+  forecastDailyAt: string
+  forecastRetryIntervalMin: number
+  forecastVatPct: number
+  retentionDays: number
+}
+
+/** A secret that stays in an environment variable: only whether it is set. */
+export interface EnvValue {
+  name: string
+  env: string
+  set: boolean
+}
+
+export interface ConnectionSettingsView {
+  settings: ConnectionSettings
+  defaults: ConnectionSettings
+  env: EnvValue[]
+  /** The status after a save checked EVCC and Home Assistant. */
+  connections?: Connection[]
+}
+
+export interface HASensor {
+  entityId: string
+  name: string
+  state: string
+  unit: string
+  kind: 'battery' | 'range'
 }
 
 export interface TripInput {

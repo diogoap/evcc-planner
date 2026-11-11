@@ -25,10 +25,10 @@ func (s *Service) PlanOnPlugIn(ctx context.Context) error {
 	s.autoPlanMu.Lock()
 	defer s.autoPlanMu.Unlock()
 	snap := s.snapshot()
-	if snap.state == nil || snap.err != nil || s.now().Sub(snap.okAt) > 3*s.Cfg.EVCC.PollInterval {
+	if snap.state == nil || snap.err != nil || s.now().Sub(snap.okAt) > 3*s.Conn().EVCCPollInterval() {
 		return nil
 	}
-	lp, ok := snap.state.Loadpoint(s.Cfg.EVCC.Loadpoint)
+	lp, ok := s.loadpoint(snap.state)
 	if !ok {
 		return nil
 	}
@@ -54,7 +54,7 @@ func (s *Service) PlanOnPlugIn(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	veh, _ := snap.state.ResolveVehicle(s.Cfg.EVCC.Vehicle, s.Cfg.EVCC.Loadpoint)
+	veh, _ := s.resolveVehicle(snap.state)
 	next := view.Next
 	ev := model.AuditEvent{Action: "plan.keep", SubjectType: "plan", SubjectID: veh.Name}
 	if next != nil {

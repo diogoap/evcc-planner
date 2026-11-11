@@ -1,7 +1,7 @@
 # Agent guide
 
 Instructions for AI coding agents working in this repository. Read
-[PLAN.md](PLAN.md) for scope (V1–V3 are done; V5 is in progress, its plan-on-plug-in rule is implemented; the rest is not) and
+[PLAN.md](PLAN.md) for scope (V1–V4 are done; V5 is in progress, its plan-on-plug-in rule is implemented; the rest is not) and
 [README.md](README.md) for configuration and deployment.
 
 ## Commands
@@ -11,7 +11,7 @@ make setup        # once: prerequisites, locked dependencies, Playwright Chromiu
 make dev          # app with demo data and stubs: UI http://127.0.0.1:7201, API 127.0.0.1:7202
 make test         # fast: go test ./... and vitest
 make verify       # everything: formatting, lint, types, unit/API/component tests, build, browser tests
-make test-live    # read-only checks against the real EVCC (needs EVCC_URL, e.g. in .env)
+make test-live    # read-only checks against the real EVCC and Home Assistant (EVCC_URL, HA_URL, HA_TOKEN in .env)
 make docker-smoke # production image build and smoke test (Docker required)
 ```
 
@@ -23,8 +23,8 @@ automatically. It needs no credentials or live services.
 - **Never commit private data**: no real addresses, IPs, iCal URLs, or keys.
   `config.yaml` uses loopback addresses; real values come from environment
   variables (`.env` locally, ignored by Git). Personal data lives in the UI/SQLite.
-- **Never write to the real EVCC from tests.** Live tests are read-only; plan
-  writes are only exercised against the stub.
+- **Never write to the real EVCC or Home Assistant from tests.** Live tests are
+  read-only; plan writes are only exercised against the stub.
 - Every change goes through the activity log: mutations use `Service.change`, which
   writes the change and its audit event in one transaction (see `internal/service/activity.go`);
   external HTTP clients use `audit.Transport`. Never put secrets in events.

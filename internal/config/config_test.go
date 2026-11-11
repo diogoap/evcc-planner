@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
 func write(t *testing.T, dir, name, content string) string {
@@ -23,8 +22,7 @@ func TestPrecedenceYAMLLocalEnv(t *testing.T) {
 	dir := t.TempDir()
 	base := write(t, dir, "config.yaml", `
 evcc:
-  url: http://127.0.0.1:7070
-  poll_interval: 45s
+  mode: live
 defaults:
   consumption_kwh_per_100km: 17
 `)
@@ -43,11 +41,11 @@ places:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.EVCC.URL != "http://192.0.2.10:7070" {
+	if cfg.EVCC.URL != "http://192.0.2.10:7070" || cfg.ConnectionDefaults().EVCCURL != "http://192.0.2.10:7070" {
 		t.Errorf("EVCC_URL from .env not applied: %s", cfg.EVCC.URL)
 	}
-	if cfg.EVCC.PollInterval != 45*time.Second {
-		t.Errorf("poll interval = %s, want 45s from base", cfg.EVCC.PollInterval)
+	if len(cfg.Warnings) != 0 {
+		t.Errorf("warnings = %v", cfg.Warnings)
 	}
 	if cfg.Defaults.ConsumptionKWhPer100Km != 17 || cfg.Defaults.ArrivalReservePct != 20 {
 		t.Errorf("defaults merge wrong: %+v", cfg.Defaults)
@@ -60,9 +58,6 @@ places:
 	}
 	if cfg.OpenRouter.APIKey != "or-key" || cfg.KNMI.APIKey != "knmi-key" {
 		t.Errorf("forecast keys = %q %q", cfg.OpenRouter.APIKey, cfg.KNMI.APIKey)
-	}
-	if cfg.Forecast.DailyAt != "18:00" || cfg.Forecast.VATPct != 21 || cfg.OpenRouter.Model == "" {
-		t.Errorf("forecast defaults = %+v, model %q", cfg.Forecast, cfg.OpenRouter.Model)
 	}
 	if len(cfg.Calendar.Sources) != 1 || cfg.Calendar.Sources[0].Label != "Calendar" {
 		t.Errorf("calendar sources = %+v", cfg.Calendar.Sources)
@@ -117,6 +112,9 @@ func TestEnvOverridesAndDemo(t *testing.T) {
 	if cfg.Tibber.Mode != ModeStub || cfg.OpenRouter.Mode != ModeStub || cfg.KNMI.Mode != ModeStub {
 		t.Errorf("demo must stub forecasts: %s %s %s", cfg.Tibber.Mode, cfg.OpenRouter.Mode, cfg.KNMI.Mode)
 	}
+	if cfg.HomeAssistant.Mode != ModeStub {
+		t.Errorf("demo must stub Home Assistant: %s", cfg.HomeAssistant.Mode)
+	}
 	if cfg.Fixed == nil || cfg.DBPath() != filepath.Join("/data", "demo.db") {
 		t.Errorf("fixed time %v, db %s", cfg.Fixed, cfg.DBPath())
 	}
@@ -126,12 +124,10 @@ func TestValidation(t *testing.T) {
 	cases := map[string]string{
 		"bad mode":      "evcc:\n  mode: magic\n",
 		"bad timezone":  "timezone: Mars/Base\n",
-		"bad loadpoint": "evcc:\n  loadpoint: 0\n",
 		"bad default":   "defaults:\n  charging_efficiency_pct: 120\n",
 		"bad yaml":      "evcc: [\n",
-		"bad daily_at":  "forecast:\n  daily_at: noon\n",
-		"bad vat":       "forecast:\n  vat_pct: 90\n",
 		"bad knmi mode": "knmi:\n  mode: magic\n",
+		"bad ha mode":   "homeassistant:\n  mode: magic\n",
 	}
 	for name, content := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -143,6 +139,68 @@ func TestValidation(t *testing.T) {
 	}
 	if _, err := Load(Options{Path: filepath.Join(t.TempDir(), "missing.yaml"), Getenv: env(nil)}); err == nil {
 		t.Fatal("missing config.yaml must fail")
+	}
+	p := write(t, t.TempDir(), "config.yaml", "")
+	if _, err := Load(Options{Path: p, Getenv: env(map[string]string{"EVCC_URL": "evcc:7070"})}); err == nil ||
+		!strings.Contains(err.Error(), "EVCC_URL") {
+		t.Fatalf("a bad EVCC_URL must fail naming the variable: %v", err)
+	}
+}
+
+func TestMovedKeysWarnInsteadOfFailing(t *testing.T) {
+	dir := t.TempDir()
+	base := write(t, dir, "config.yaml", "evcc:\n  mode: live\n")
+	// An old local overlay with settings that moved to Settings → Connections.
+	local := write(t, dir, "config.local.yaml", `
+evcc:
+  url: http://127.0.0.1:7070
+  poll_interval: 45s
+homeassistant:
+  observed_attribute: updated_on
+retention:
+  days: 30
+defaults:
+  arrival_reserve_pct: 20
+`)
+	cfg, err := Load(Options{Path: base, LocalPath: local, Getenv: env(nil)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Defaults.ArrivalReservePct != 20 {
+		t.Errorf("known keys must still apply: %+v", cfg.Defaults)
+	}
+	if len(cfg.Warnings) != 4 || !strings.Contains(cfg.Warnings[0], "config.local.yaml") ||
+		!strings.Contains(strings.Join(cfg.Warnings, "\n"), "Settings → Connections") {
+		t.Errorf("warnings = %q", cfg.Warnings)
+	}
+	if cfg.ConnectionDefaults().EVCCURL != "http://127.0.0.1:7070" || cfg.ConnectionDefaults().EVCCPollIntervalSec != 60 {
+		t.Errorf("moved keys must not seed settings: %+v", cfg.ConnectionDefaults())
+	}
+}
+
+func TestHomeAssistantFromEnv(t *testing.T) {
+	p := write(t, t.TempDir(), "config.yaml", "")
+	cfg, err := Load(Options{Path: p, Getenv: env(nil)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ha := cfg.HomeAssistant; ha.Mode != ModeLive || cfg.ConnectionDefaults().HAURL != "http://127.0.0.1:8123" || ha.Token != "" {
+		t.Errorf("defaults = %+v", ha)
+	}
+
+	cfg, err = Load(Options{Path: p, Getenv: env(map[string]string{"HA_URL": "http://ha:8123", "HA_TOKEN": " secret-token\n"})})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ha := cfg.HomeAssistant; cfg.ConnectionDefaults().HAURL != "http://ha:8123" || ha.Token != "secret-token" {
+		t.Errorf("env = %+v", ha)
+	}
+	found := false
+	for _, s := range cfg.Secrets() {
+		found = found || s == "secret-token"
+	}
+	if !found {
+		t.Error("the Home Assistant token must be redacted as a secret")
 	}
 }
 
@@ -171,7 +229,12 @@ func TestRepositoryConfigLoads(t *testing.T) {
 	if err != nil {
 		t.Fatalf("config.yaml must load: %v", err)
 	}
-	if cfg.Server.Listen != "127.0.0.1:7201" || !strings.HasPrefix(cfg.EVCC.URL, "http://127.0.0.1:") {
-		t.Errorf("committed config must use loopback addresses: %+v %+v", cfg.Server, cfg.EVCC)
+	d := cfg.ConnectionDefaults()
+	if cfg.Server.Listen != "127.0.0.1:7201" || !strings.HasPrefix(d.EVCCURL, "http://127.0.0.1:") ||
+		!strings.HasPrefix(d.HAURL, "http://127.0.0.1:") {
+		t.Errorf("committed config must use loopback addresses: %+v %s %s", cfg.Server, d.EVCCURL, d.HAURL)
+	}
+	if len(cfg.Warnings) != 0 {
+		t.Errorf("config.yaml has keys the config ignores: %v", cfg.Warnings)
 	}
 }

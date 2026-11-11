@@ -10,6 +10,7 @@ import (
 	"github.com/diogoap/evcc-planner/internal/audit"
 	"github.com/diogoap/evcc-planner/internal/forecast"
 	"github.com/diogoap/evcc-planner/internal/localtime"
+	"github.com/diogoap/evcc-planner/internal/model"
 	"github.com/diogoap/evcc-planner/internal/store"
 )
 
@@ -31,17 +32,20 @@ type Forecasts struct {
 }
 
 // RefreshForecasts fetches each source that is due (once a day at
-// forecast.daily_at, retrying failures), or all of them when forced. A
+// the daily fetch time, retrying failures), or all of them when forced. A
 // failure keeps the last valid payload.
 func (s *Service) RefreshForecasts(ctx context.Context, force bool) error {
 	s.forecastMu.Lock()
 	defer s.forecastMu.Unlock()
+	// One set of sources and settings for the whole refresh, even if they
+	// are saved meanwhile.
+	cs := s.state()
 	var errs []error
-	if err := s.refreshOutlook(ctx, force); err != nil {
+	if err := s.refreshOutlook(ctx, cs, force); err != nil {
 		errs = append(errs, fmt.Errorf("tibber outlook: %w", err))
 	}
-	if s.Forecasts.Weather != nil {
-		if err := s.refreshWeather(ctx, force); err != nil {
+	if cs.Forecasts.Weather != nil {
+		if err := s.refreshWeather(ctx, cs, force); err != nil {
 			errs = append(errs, fmt.Errorf("knmi: %w", err))
 		}
 	}
@@ -49,15 +53,15 @@ func (s *Service) RefreshForecasts(ctx context.Context, force bool) error {
 }
 
 // due reports whether a source should be fetched now.
-func (s *Service) due(rec *store.ForecastRecord, now time.Time) bool {
+func (s *Service) due(rec *store.ForecastRecord, now time.Time, c model.ConnectionSettings) bool {
 	if rec == nil {
 		return true
 	}
-	retry := rec.LastAttemptAt == nil || now.Sub(*rec.LastAttemptAt) >= s.Cfg.Forecast.RetryInterval
+	retry := rec.LastAttemptAt == nil || now.Sub(*rec.LastAttemptAt) >= c.ForecastRetryInterval()
 	if rec.LastSuccessAt == nil {
 		return retry
 	}
-	at, _ := time.Parse("15:04", s.Cfg.Forecast.DailyAt)
+	at, _ := time.Parse("15:04", c.ForecastDailyAt)
 	today := localtime.StartOfDay(now, s.loc())
 	slot := localtime.OnDay(today, at.Hour(), at.Minute())
 	if now.Before(slot) {
@@ -69,14 +73,14 @@ func (s *Service) due(rec *store.ForecastRecord, now time.Time) bool {
 	return rec.LastAttemptAt.Before(slot) || retry
 }
 
-func (s *Service) refreshOutlook(ctx context.Context, force bool) error {
-	f := s.Forecasts
+func (s *Service) refreshOutlook(ctx context.Context, cs *connState, force bool) error {
+	f := cs.Forecasts
 	rec, err := s.Store.Forecast(SourceTibber)
 	if err != nil {
 		return err
 	}
 	now := s.now()
-	if !force && !s.due(rec, now) {
+	if !force && !s.due(rec, now, cs.settings) {
 		return nil
 	}
 	fail := func(err error) error {
@@ -99,14 +103,14 @@ func (s *Service) refreshOutlook(ctx context.Context, force bool) error {
 	}
 	req := forecast.ExtractRequest{Text: text, URL: f.Article.URL(), FetchedAt: now, Location: s.loc()}
 	ex, usage, err := f.Extractor.Extract(audit.WithCall(ctx, audit.Call{
-		Summary: "Structure the price outlook with " + s.Cfg.OpenRouter.Model,
-		Detail:  map[string]any{"model": s.Cfg.OpenRouter.Model, "articleChars": len(text)},
+		Summary: "Structure the price outlook with " + cs.settings.OpenRouterModel,
+		Detail:  map[string]any{"model": cs.settings.OpenRouterModel, "articleChars": len(text)},
 	}), req)
 	if err != nil {
 		return fail(err)
 	}
 	outlook, err := forecast.Normalize(ex, forecast.NormalizeInput{
-		Text: text, URL: f.Article.URL(), FetchedAt: now, Location: s.loc(), VATPct: s.Cfg.Forecast.VATPct,
+		Text: text, URL: f.Article.URL(), FetchedAt: now, Location: s.loc(), VATPct: cs.settings.ForecastVATPct,
 		Extraction: f.Extractor.Label(),
 	})
 	if err != nil {
@@ -125,16 +129,16 @@ func (s *Service) refreshOutlook(ctx context.Context, force bool) error {
 	return s.Store.SaveForecast(SourceTibber, now, raw, hash, detail)
 }
 
-func (s *Service) refreshWeather(ctx context.Context, force bool) error {
+func (s *Service) refreshWeather(ctx context.Context, cs *connState, force bool) error {
 	rec, err := s.Store.Forecast(SourceKNMI)
 	if err != nil {
 		return err
 	}
 	now := s.now()
-	if !force && !s.due(rec, now) {
+	if !force && !s.due(rec, now, cs.settings) {
 		return nil
 	}
-	w, err := s.Forecasts.Weather.Fetch(ctx)
+	w, err := cs.Forecasts.Weather.Fetch(ctx)
 	if err != nil {
 		s.Log.Warn("forecast fetch failed", "source", SourceKNMI, "err", err)
 		return errors.Join(err, s.Store.SaveForecastFailure(SourceKNMI, now, err.Error()))
@@ -195,7 +199,7 @@ func (s *Service) ForecastDetail() (*ForecastsView, error) {
 
 // forecastConnections reports the forecast integrations.
 func (s *Service) forecastConnections() ([]ConnectionView, error) {
-	f := s.Forecasts
+	f := s.Clients().Forecasts
 	_, trec, err := s.outlook()
 	if err != nil {
 		return nil, err
@@ -230,7 +234,7 @@ func (s *Service) forecastConnections() ([]ConnectionView, error) {
 	}
 	status(&tib, trec, f.Article.Name() == "stub")
 
-	or := ConnectionView{Name: "OpenRouter", Mode: s.Cfg.OpenRouter.Mode, Detail: "Model: " + s.Cfg.OpenRouter.Model}
+	or := ConnectionView{Name: "OpenRouter", Mode: s.Cfg.OpenRouter.Mode, Detail: "Model: " + s.Conn().OpenRouterModel}
 	if f.Extractor.Name() == "openrouter" {
 		or.Status = "ok"
 		if trec != nil && trec.Detail != "" {

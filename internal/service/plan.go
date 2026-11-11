@@ -33,16 +33,35 @@ type PlanView struct {
 	Advice      *AdviceView      `json:"advice"`
 }
 
-// SoCView describes the SoC used for planning and how fresh it is.
+// SoCView describes the SoC used for planning, where it came from, and how
+// fresh it is.
 type SoCView struct {
 	Percent    *float64   `json:"percent"`
 	Known      bool       `json:"known"`
-	Live       bool       `json:"live"` // read from EVCC just now (car plugged in)
+	Source     string     `json:"source"` // evcc or homeassistant; empty when unknown
+	Live       bool       `json:"live"`   // read from EVCC just now (car plugged in)
 	ObservedAt *time.Time `json:"observedAt"`
+	Stale      bool       `json:"stale"`     // not live and older than socStaleAfter
 	Estimated  bool       `json:"estimated"` // lowered by trips driven since the reading
 	Projected  *float64   `json:"projected"` // after subtracting those trips
-	RangeKm    *float64   `json:"rangeKm"`   // EVCC's range at the reading
+	RangeKm    *float64   `json:"rangeKm"`   // the source's range at the reading
+	// Other holds the other sources' last readings, newest first.
+	Other []SoCReadingView `json:"other"`
 }
+
+// SoCReadingView is one source's last reading.
+type SoCReadingView struct {
+	Source     string    `json:"source"`
+	Percent    float64   `json:"percent"`
+	ObservedAt time.Time `json:"observedAt"`
+	RangeKm    *float64  `json:"rangeKm"`
+}
+
+// socStaleAfter is when a reading that is not live is shown as stale: Home
+// Assistant's car integrations update at least hourly, so an older reading
+// means updates stopped (or, from EVCC, that the car has been unplugged a
+// while).
+const socStaleAfter = 3 * time.Hour
 
 // TripView is one trip with its route and energy.
 type TripView struct {
@@ -249,7 +268,7 @@ func (s *Service) Plan(ctx context.Context) (*PlanView, error) {
 		return nil, err
 	}
 
-	resolved := s.resolveRoutes(ctx, list, settings)
+	resolved := s.resolveRoutes(ctx, s.Clients().Routes, list, settings)
 	var input []planner.Trip
 	for i, t := range list {
 		// Trips without a known distance are shown disabled and not planned.
@@ -460,7 +479,7 @@ func (s *Service) days(from time.Time, all []TripView, blocks []BlockView) []Day
 
 // resolveRoutes computes each trip's legs concurrently (cache hits are
 // instant; misses call the routing provider).
-func (s *Service) resolveRoutes(ctx context.Context, list []trips.Trip, settings model.Settings) []tripRoute {
+func (s *Service) resolveRoutes(ctx context.Context, rr *routes.Resolver, list []trips.Trip, settings model.Settings) []tripRoute {
 	out := make([]tripRoute, len(list))
 	sem := make(chan struct{}, 4)
 	var wg sync.WaitGroup
@@ -470,14 +489,14 @@ func (s *Service) resolveRoutes(ctx context.Context, list []trips.Trip, settings
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			out[i] = s.resolveTrip(ctx, list[i], settings)
+			out[i] = resolveTrip(ctx, rr, list[i], settings)
 		}(i)
 	}
 	wg.Wait()
 	return out
 }
 
-func (s *Service) resolveTrip(ctx context.Context, t trips.Trip, settings model.Settings) tripRoute {
+func resolveTrip(ctx context.Context, rr *routes.Resolver, t trips.Trip, settings model.Settings) tripRoute {
 	buffer := time.Duration(settings.DepartureBufferMin) * time.Minute
 	r := tripRoute{departAt: t.Start.Add(-buffer), returnAt: t.End, source: "unknown"}
 	manual := t.DistanceOverrideKm
@@ -506,16 +525,16 @@ func (s *Service) resolveTrip(ctx context.Context, t trips.Trip, settings model.
 	}
 
 	guess := 20 * time.Minute
-	if d, ok := s.Routes.Typical(home, t.Address); ok {
+	if d, ok := rr.Typical(home, t.Address); ok {
 		guess = d
 	}
-	out, err := s.Routes.Leg(ctx, home, t.Address, t.Start.Add(-guess-buffer))
+	out, err := rr.Leg(ctx, home, t.Address, t.Start.Add(-guess-buffer))
 	if err != nil {
 		r.err = routeError(err)
 		estimate()
 		return r
 	}
-	back, err := s.Routes.Leg(ctx, t.Address, home, t.End)
+	back, err := rr.Leg(ctx, t.Address, home, t.End)
 	if err != nil {
 		r.err = routeError(err)
 		estimate()
@@ -539,23 +558,70 @@ func routeError(err error) string {
 	return "Route lookup failed: " + err.Error()
 }
 
-// currentSoC prefers a live EVCC reading; otherwise the last stored one.
+// currentSoC picks the SoC to plan with: EVCC's live reading while the car
+// is plugged in (what EVCC charges by), otherwise a stored reading chosen by
+// chooseSoC.
 func (s *Service) currentSoC() (planner.SoC, SoCView) {
+	readings, err := s.Store.SoCReadings()
+	if err != nil {
+		s.Log.Warn("read soc", "err", err)
+	}
+	var cur *model.SoCReading
+	live := false
 	snap := s.snapshot()
 	if snap.state != nil && snap.err == nil {
-		if lp, ok := snap.state.Loadpoint(s.Cfg.EVCC.Loadpoint); ok && lp.Connected && lp.VehicleSoc > 0 {
-			at := snap.okAt
-			return planner.SoC{Percent: lp.VehicleSoc, Known: true, ObservedAt: at},
-				SoCView{Percent: ptr(lp.VehicleSoc), Known: true, Live: true, ObservedAt: &at, RangeKm: positive(lp.VehicleRange)}
+		if lp, ok := s.loadpoint(snap.state); ok && lp.Connected && lp.VehicleSoc > 0 {
+			cur = &model.SoCReading{
+				Percent: lp.VehicleSoc, RangeKm: positive(lp.VehicleRange), ObservedAt: snap.okAt, Source: model.SoCSourceEVCC,
+			}
+			live = true
 		}
 	}
-	last, err := s.Store.LastSoC()
-	if err != nil || last == nil {
-		return planner.SoC{}, SoCView{}
+	if cur == nil {
+		cur = chooseSoC(readings)
 	}
-	at := last.ObservedAt
-	return planner.SoC{Percent: last.Percent, Known: true, ObservedAt: at},
-		SoCView{Percent: ptr(last.Percent), Known: true, ObservedAt: &at, RangeKm: last.RangeKm}
+	view := SoCView{Other: []SoCReadingView{}}
+	for _, r := range readings {
+		if cur == nil || r.Source != cur.Source {
+			view.Other = append(view.Other, SoCReadingView{Source: r.Source, Percent: r.Percent, ObservedAt: r.ObservedAt, RangeKm: r.RangeKm})
+		}
+	}
+	if cur == nil {
+		return planner.SoC{}, view
+	}
+	at := cur.ObservedAt
+	view.Percent, view.Known, view.Source, view.Live, view.ObservedAt, view.RangeKm =
+		ptr(cur.Percent), true, cur.Source, live, &at, cur.RangeKm
+	view.Stale = !live && s.now().Sub(at) > socStaleAfter
+	return planner.SoC{Percent: cur.Percent, Known: true, ObservedAt: at}, view
+}
+
+// chooseSoC picks the stored reading to plan with while EVCC has no live
+// value. EVCC's last reading, from when the car was plugged in, stands until
+// Home Assistant has news from after it: a value that changed since (e.g.
+// after a drive), or the same value reported again. An older value that
+// Home Assistant reports again, such as a cloud integration that lagged
+// while the car charged, never replaces it.
+func chooseSoC(readings []model.SoCReading) *model.SoCReading {
+	var ev, ha *model.SoCReading
+	for i := range readings {
+		switch readings[i].Source {
+		case model.SoCSourceEVCC:
+			ev = &readings[i]
+		case model.SoCSourceHomeAssistant:
+			ha = &readings[i]
+		}
+	}
+	switch {
+	case ha == nil:
+		return ev
+	case ev == nil:
+		return ha
+	case ha.ObservedAt.After(ev.ObservedAt) &&
+		(ha.Changed().After(ev.ObservedAt) || math.Abs(ha.Percent-ev.Percent) < 0.5):
+		return ha
+	}
+	return ev
 }
 
 func ptr[T any](v T) *T { return &v }

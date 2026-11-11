@@ -163,12 +163,29 @@ func (o Override) Fields() []string {
 	return f
 }
 
-// SoCReading is the last state of charge read from EVCC.
+// SoC reading sources. Each keeps its last reading.
+const (
+	SoCSourceEVCC          = "evcc"          // only while the car is plugged in
+	SoCSourceHomeAssistant = "homeassistant" // also while it is unplugged
+)
+
+// SoCReading is the last state of charge read from one source.
 type SoCReading struct {
 	Percent    float64
-	RangeKm    *float64 // EVCC's range estimate, when it reports one
+	RangeKm    *float64 // the source's range estimate, when it reports one
 	ObservedAt time.Time
-	Source     string
+	// ChangedAt is when the value last changed, if the source says
+	// (Home Assistant); zero means ObservedAt.
+	ChangedAt time.Time
+	Source    string
+}
+
+// Changed is when the reading's value last changed.
+func (r SoCReading) Changed() time.Time {
+	if r.ChangedAt.IsZero() || r.ChangedAt.After(r.ObservedAt) {
+		return r.ObservedAt
+	}
+	return r.ChangedAt
 }
 
 // PlanWrite records a charging plan the app sent to EVCC.

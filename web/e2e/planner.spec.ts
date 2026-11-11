@@ -2,7 +2,8 @@ import { expect, test, type Page } from '@playwright/test'
 
 // Demo data at the fixed clock (Monday 9 November 2026, 19:00 Amsterdam):
 // school runs on weekdays (Wednesday's drop-off skipped), an office visit on
-// Tuesday, and an unplugged car last read at 38%.
+// Tuesday, and an unplugged car at 38%: last read by EVCC at 16:45, and by
+// the Home Assistant stub 20 minutes ago.
 
 test.beforeEach(async ({ request }) => {
   const res = await request.post('/api/demo/reset', { data: {} })
@@ -17,7 +18,8 @@ test('overview shows status, the next departure, and seven days', async ({ page 
   await page.goto('/')
   await expect(page.getByTestId('soc')).toHaveText('38%')
   await expect(page.getByTestId('soc-range')).toHaveText('122 km range')
-  await expect(page.getByTestId('soc-stale')).toContainText('Last known, Mon 9 Nov, 16:45')
+  await expect(page.getByTestId('soc-source')).toHaveText('From Home Assistant · 20 min ago')
+  await expect(page.getByTestId('soc-other')).toHaveText('EVCC: 38% · 2 h ago')
   await expect(page.getByTestId('next-departure')).toHaveText('Tomorrow, leave 07:48')
   await expect(page.getByTestId('next-target')).toHaveText('42%')
   const tue = page.getByTestId('day-2026-11-10')
@@ -147,6 +149,9 @@ test('send a plan to EVCC only after confirmation', async ({ page }) => {
   // Plug in the demo car so EVCC can preview.
   await page.goto('/settings')
   await page.getByRole('link', { name: 'Connections' }).click()
+  await expect(page.getByTestId('connection-Home Assistant')).toContainText(
+    'SoC 38% from sensor.demo_leaf_battery, reported Mon 9 Nov 18:40',
+  )
   await page.getByLabel('Plugged in').check()
   await page.getByRole('button', { name: 'Apply' }).click()
   await expect(page.getByText('Demo car plugged in')).toBeVisible()
@@ -221,7 +226,7 @@ test('plugging in the car sends the next departure plan once', async ({ page }) 
   await page.getByRole('link', { name: 'Connections' }).click()
   await page.getByLabel('Plugged in').check()
   // Below the 42% target: at 42% or more the charge already covers it.
-  await page.getByLabel('SoC').fill('30')
+  await page.getByTestId('demo-soc').fill('30')
   await page.getByRole('button', { name: 'Apply' }).click()
   await expect(page.getByText('Demo car plugged in')).toBeVisible()
 
@@ -242,6 +247,33 @@ test('plugging in the car sends the next departure plan once', async ({ page }) 
   await expect(page.getByText('Settings saved')).toBeVisible()
   await page.goto('/')
   await expect(page.getByTestId('trip-plans')).toHaveText('Send manually')
+})
+
+test('connection settings are edited in the UI and kept', async ({ page }) => {
+  await page.goto('/settings')
+  await page.getByRole('link', { name: 'Connections' }).click()
+  const form = page.getByRole('region', { name: 'Connection settings' })
+  await expect(form.getByTestId('connection-evccUrl')).toHaveValue('http://127.0.0.1:7070')
+  await expect(form.getByTestId('connection-group-Google Routes')).toContainText(
+    'GOOGLE_MAPS_API_KEY: not set',
+  )
+
+  await form.getByTestId('connection-haPollIntervalMin').fill('5')
+  await form.getByTestId('connection-haSocEntity').fill('sensor.demo_leaf_battery')
+  await form.getByTestId('save-connections').click()
+  await expect(page.getByText('Connection settings saved')).toBeVisible()
+  await expect(page.getByTestId('connection-Home Assistant')).toContainText('sensor.demo_leaf_battery')
+
+  await page.reload()
+  await page.getByRole('link', { name: 'Connections' }).click()
+  await expect(form.getByTestId('connection-haPollIntervalMin')).toHaveValue('5')
+  await expect(form.getByTestId('connection-haSocEntity')).toHaveValue('sensor.demo_leaf_battery')
+  await shot(page, 'connection-settings')
+
+  await page.goto('/activity')
+  await expect(page.locator('li.activity').first()).toContainText(
+    'Changed connection settings: Home Assistant poll interval, Home Assistant SoC sensor',
+  )
 })
 
 test('installable as an app: manifest and icons', async ({ page, request }) => {

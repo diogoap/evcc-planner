@@ -17,11 +17,17 @@ day (charge ahead, defer, or nothing), with confirmed **Create extra plan**
 and **Review postponement** actions that are undone when they expire.
 Optional auto-apply, off by default.
 
-**V3 (this version):** an **Activity** page with the append-only activity
+**V3:** an **Activity** page with the append-only activity
 log (every change, EVCC write, and external API call, with before → after
 values), history links from trips, schedules, and the EVCC plan, monthly
 external API usage, CSV/JSON export, and a daily cleanup of history older than
 90 days.
+
+**V4 (this version):** an always-on SoC. Home Assistant has the car's state
+of charge also while it is unplugged; the planner reads it (optional) and
+shows where every SoC value comes from and how old it is. Integration
+settings without secrets (addresses, sensors, intervals, model, retention)
+are edited under Settings → Connections instead of config files.
 
 ## Quick start
 
@@ -47,7 +53,7 @@ deletes it.
 | `make verify` | Go format/vet/tests, web format/lint/types/tests, production build, browser tests. Must pass before pushing. |
 | `make test` | Fast Go and web unit tests only. |
 | `make e2e` | Build, then run the Playwright browser tests (desktop and phone). |
-| `make test-live` | Read-only checks against your real EVCC (state and, when plugged in, a plan preview) and the forecast sources (Tibber page; KNMI with a key; OpenRouter only with `LIVE_OPENROUTER=1`). |
+| `make test-live` | Read-only checks against your real EVCC (state and, when plugged in, a plan preview), Home Assistant (the SoC entity, or a list of battery sensors to pick from), and the forecast sources (Tibber page; KNMI with a key; OpenRouter only with `LIVE_OPENROUTER=1`). |
 | `make docker-smoke` | Build the production image, start it, check health/UI/API, report image size and idle memory. |
 | `make run` | Production build, run locally with your real config. |
 | `make fmt` / `make lint` / `make clean` | Format, lint, remove build output. |
@@ -56,10 +62,10 @@ deletes it.
 
 | Location | Contents | In Git |
 | --- | --- | --- |
-| `config.yaml` | System settings: port, timezone, EVCC URL (loopback default), routing, forecast sources and model, history retention, planning defaults. | Yes |
-| `.env` | Deployment values and secrets: `EVCC_URL`, `GOOGLE_CALENDAR_ICAL_URL`, `GOOGLE_MAPS_API_KEY`, and optionally `OPENROUTER_API_KEY`, `KNMI_API_KEY`. Copy `.env.example`. Real environment variables win. | No |
+| `config.yaml` | System settings: port, timezone, live or stub mode per integration, the names of the secret variables, the API base URLs that receive keys, the Home Assistant address default (loopback), planning defaults. | Yes |
+| `.env` | Deployment values and secrets: `GOOGLE_CALENDAR_ICAL_URL`, `GOOGLE_MAPS_API_KEY`, and optionally `OPENROUTER_API_KEY`, `KNMI_API_KEY`, `HA_TOKEN`; `EVCC_URL` and `HA_URL` only as starting addresses. Copy `.env.example`. Real environment variables win. | No |
 | `config.local.yaml` | Optional overrides of `config.yaml` values, and saved places to seed. Copy `config.local.example.yaml`. | No |
-| `data/` | SQLite database with everything edited in the UI. | No |
+| `data/` | SQLite database with everything edited in the UI, including the connection settings. | No |
 
 Other environment variables: `EVCC_PLANNER_LISTEN`, `EVCC_PLANNER_DATA_DIR`,
 `EVCC_PLANNER_WEB_DIR`, `EVCC_PLANNER_DEMO`.
@@ -67,6 +73,44 @@ Other environment variables: `EVCC_PLANNER_LISTEN`, `EVCC_PLANNER_DATA_DIR`,
 Personal data (home address, vehicle and buffer settings, saved places,
 recurring trips) is edited in the UI and stored in SQLite; config values only
 seed the vehicle and buffer defaults.
+
+### Connection settings (Settings → Connections)
+
+Integration settings that hold no secret are edited in the UI, stored in the
+database, and applied at once, without a restart:
+
+- **EVCC:** address, loadpoint, vehicle, poll interval (60 s), timeout.
+  `EVCC_URL` only sets the starting address, until the form is saved.
+- **Home Assistant:** address, the car's SoC and range sensors, the
+  reading-time attribute, poll interval (10 min), timeout. `HA_URL` only
+  sets the starting address.
+- **Google Calendar:** sync interval (1 h). **Google Routes:** traffic-aware
+  routes, route cache (1 week), free calls per month (5,000).
+- **Daily forecasts:** Tibber outlook page, OpenRouter model and timeout, KNMI
+  dataset and version, daily fetch time (18:00), retry interval (1 h), VAT
+  (21%).
+- **History:** how many days to keep (90).
+
+Each field shows its default; **Reset to defaults** fills them in again.
+Saving stores every value that differs from the built-in defaults, including
+addresses that came from `EVCC_URL` and `HA_URL`: after one save, those
+variables are no longer needed by the app (`make test-live` still reads them
+from `.env`).
+Fields left at their built-in values keep following them. Saving checks EVCC
+and Home Assistant again and is recorded in the activity log. Changing the EVCC
+address, loadpoint, or vehicle waits until an active extra plan or
+postponement has ended, because each one restores EVCC's previous setting
+where it was made.
+
+Secrets stay in environment variables: the API keys, the calendar
+addresses, and `HA_TOKEN`; the Connections tab shows only whether each is
+set. The Google Routes, OpenRouter, and KNMI base URLs, which receive the
+keys, stay in `config.yaml`. The Home Assistant address is editable although
+the token is sent to it: the planner has no login, so anyone who can open it
+could point the address elsewhere and receive the token. Keep the planner
+reachable only by people you trust (every change is in the activity log). Keys of
+the old integration settings left in a `config.local.yaml` are ignored with
+a warning in the log.
 
 ### Google Calendar (secret iCal address)
 
@@ -98,8 +142,8 @@ a key it falls back to labelled stub distances.
 ### Daily advice: OpenRouter and KNMI (optional)
 
 - **OpenRouter** structures Tibber's weekly outlook article. Create a key at
-  openrouter.ai and set `OPENROUTER_API_KEY`. The model (`openrouter.model`)
-  must support structured outputs. The planner downloads the page itself and
+  openrouter.ai and set `OPENROUTER_API_KEY`. The model (Settings →
+  Connections) must support structured outputs. The planner downloads the page itself and
   sends only the article text (about 2,000 characters; no link, tools, or web
   access). The article changes weekly and an unchanged one is not sent again,
   so cost is a fraction of a cent a week.
@@ -114,9 +158,39 @@ a key it falls back to labelled stub distances.
 - **Local sun** comes from the solar forecast configured in EVCC (today and
   tomorrow), read from EVCC's state; nothing to set up here.
 
-Both are fetched once a day at `forecast.daily_at` (and with **Refresh
-forecasts** under Settings → Connections); failures retry hourly and keep the
-last valid forecast.
+Both are fetched once a day at the daily fetch time (18:00 by default; Settings →
+Connections, which also has **Refresh forecasts**); failures retry hourly and
+keep the last valid forecast.
+
+### Home Assistant: always-on SoC (optional)
+
+EVCC only reads the car's state of charge (SoC) while it is plugged in. If
+Home Assistant has the car (for example through a Nissan Leaf integration),
+the planner reads the SoC from it too, so it stays current while the car is
+unplugged. It only reads, through Home Assistant's REST API.
+
+1. In Home Assistant, create a long-lived access token: your profile (bottom
+   left) → **Security** → **Long-lived access tokens** → **Create token**.
+   Tokens cannot be limited to reading, so consider a separate, non-admin
+   user just for the planner. Set `HA_TOKEN` to it.
+2. In **Settings → Connections**, enter Home Assistant's address as the
+   planner reaches it, e.g. `http://192.0.2.20:8123`, and save.
+3. Then choose the car's battery level sensor (in %) as the SoC sensor, e.g. `sensor.leaf_battery_level`; the field
+   suggests Home Assistant's battery sensors. Optionally choose the range
+   sensor (km or mi).
+4. Optionally run `make test-live`: it lists the battery and range sensors
+   with the reading each would give, and attributes that hold a time. If the
+   integration has one with the car's own reading time (Home Assistant's
+   Nissan Leaf integration calls it `updated_on`), enter it as the
+   reading-time attribute. Otherwise the reading's time is when Home
+   Assistant last received the value.
+
+The planner reads Home Assistant every 10 minutes (adjustable in Settings →
+Connections) and keeps each source's last reading. Settings → Connections shows the
+latest one or the error. Wrong tokens are refused with 401; if Home
+Assistant bans IPs after failed logins (`ip_ban_enabled`), fix the token
+quickly or the planner's address gets banned. Calls to Home Assistant are on
+your network and are not in the activity log.
 
 ## Install on your phone
 
@@ -137,9 +211,11 @@ from one design: `cd web && pnpm icons`.
    (uid 65532), which cannot take ownership of a root-owned folder itself:
    `sudo install -d -o 65532 -g 65532 /opt/evcc-planner/data`
    (same as `sudo mkdir -p … && sudo chown 65532:65532 …`).
-2. Provide `EVCC_URL`, `GOOGLE_CALENDAR_ICAL_URL`, and `GOOGLE_MAPS_API_KEY`
-   (optionally `OPENROUTER_API_KEY` and `KNMI_API_KEY`) as environment
-   variables, then `docker compose up -d --build`.
+2. Provide `GOOGLE_CALENDAR_ICAL_URL` and `GOOGLE_MAPS_API_KEY` (optionally
+   `OPENROUTER_API_KEY`, `KNMI_API_KEY`, and `HA_TOKEN`) as environment
+   variables, then `docker compose up -d --build`. Enter the EVCC and Home
+   Assistant addresses and everything else in Settings → Connections
+   (`EVCC_URL` and `HA_URL` can provide the starting addresses).
 3. Point a reverse proxy at port 7201. To put the container on the proxy's
    existing Docker network instead, also set `EVCC_PLANNER_NETWORK` to that
    network's name and `EVCC_PLANNER_NETWORK_EXTERNAL=true`; the proxy then
@@ -167,9 +243,16 @@ to `main` deploy automatically, run `make verify` before pushing.
   charges at wall power × efficiency, minus a charging time buffer.
 - **Targets:** each departure needs its own energy plus the arrival reserve, and
   enough to cover later trips the following home periods cannot recharge.
-- **SoC:** EVCC only reports SoC while the car is plugged in. The planner stores
-  the last reading and shows it as "last known" with its time; trips driven since
-  are subtracted.
+- **SoC:** while the car is plugged in, EVCC's live SoC always wins (it is
+  what EVCC charges by); Home Assistant's is only shown next to it. After
+  unplugging, EVCC's last reading (dated to the last moment EVCC saw the car
+  plugged in) stays in use until Home Assistant has news from after that: a
+  value that changed since, such as after a drive, or the same value
+  reported again. An older value that Home Assistant reports again (a cloud
+  integration that lagged while the car charged) never replaces it. Every
+  SoC shows its source and age, with the other source's last reading below
+  it; a reading that is not live and more than three hours old is marked
+  "last known". Planned trips that left after the reading are subtracted.
 - **Send plan to EVCC** writes the next departure's target (EVCC keeps one plan
   per vehicle) after you confirm. It never changes limits or repeating plans;
   EVCC's planner charges past the charge limit during planned slots. EVCC can
@@ -242,17 +325,18 @@ The **Activity** page lists, newest first, everything the planner did:
   expiry), the calendar sync, or automation (plans created from advice).
 - **External API calls:** every request to Google Routes (route and time slot;
   cache hits make no call), the calendar feeds, the Tibber page, OpenRouter,
-  and KNMI, with HTTP status, duration, and size. Calls to EVCC on your
-  network are not logged; writes to EVCC are logged as changes. The page shows
+  and KNMI, with HTTP status, duration, and size. Calls to EVCC and Home
+  Assistant on your network are not logged; writes to EVCC are logged as changes. The page shows
   each month's calls per service, with Google Routes against its free
-  allowance (`routes.monthly_free_calls`).
+  allowance (free calls per month, Settings → Connections).
 
 Filter by type, source, and dates; **History** on a trip, schedule, or the
 EVCC plan opens just its entries. **Export CSV/JSON** downloads the filtered
 log. Entries are never edited. Calendars appear by name and ID; API keys,
 secret iCal addresses, and signed download links are never recorded.
 
-Once a day the planner deletes history older than `retention.days` (90 by
+Once a day the planner deletes history older than the retention in Settings →
+Connections (90 days by
 default): activity entries, manual trips that have ended, per-date edits of
 past dates, cached routes, plan records (keeping the latest), advice
 dismissals, and ended EVCC changes. Schedules, places, and settings are kept;
@@ -286,6 +370,7 @@ internal/trips     merges manual, recurring, and calendar trips with local edits
 internal/calendar  iCal parsing, trip classification, sync, demo feed
 internal/routes    Google Routes client, stub, cache
 internal/evcc      EVCC client and stub
+internal/homeassistant  Home Assistant SoC reader and stub
 internal/service   use cases and API view models
 internal/server    HTTP API and static UI
 internal/store     SQLite persistence and migrations

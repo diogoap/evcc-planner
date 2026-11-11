@@ -75,8 +75,8 @@ func (s *Service) Proposal(ctx context.Context, kind, date string) (*ProposalVie
 	var veh evcc.Vehicle
 	var lp *evcc.Loadpoint
 	if snap.state != nil {
-		veh, _ = snap.state.ResolveVehicle(s.Cfg.EVCC.Vehicle, s.Cfg.EVCC.Loadpoint)
-		lp, _ = snap.state.Loadpoint(s.Cfg.EVCC.Loadpoint)
+		veh, _ = s.resolveVehicle(snap.state)
+		lp, _ = s.loadpoint(snap.state)
 		if veh.Name != "" {
 			p.CurrentPlan = s.planView(veh)
 		}
@@ -99,7 +99,7 @@ func (s *Service) Proposal(ctx context.Context, kind, date string) (*ProposalVie
 	case snap.state == nil || snap.err != nil:
 		return unavailable("EVCC is not reachable.")
 	case veh.Name == "":
-		return unavailable("No EVCC vehicle found; set evcc.vehicle in the config.")
+		return unavailable("No EVCC vehicle found; choose it under Settings → Connections.")
 	}
 
 	now := s.now()
@@ -243,9 +243,9 @@ func (s *Service) applyAdjustment(ctx context.Context, in AdjustInput, source st
 		return nil, invalid("the expiry must be in the future and no later than %s", dateTimeText(*p.MaxExpiresAt, s.loc()))
 	}
 	snap := s.snapshot()
-	veh, _ := snap.state.ResolveVehicle(s.Cfg.EVCC.Vehicle, s.Cfg.EVCC.Loadpoint)
+	veh, _ := s.resolveVehicle(snap.state)
 	a := model.Adjustment{
-		Kind: in.Kind, Source: source, AdviceDate: in.Date, Vehicle: veh.Name, Loadpoint: s.Cfg.EVCC.Loadpoint,
+		Kind: in.Kind, Source: source, AdviceDate: in.Date, Vehicle: veh.Name, Loadpoint: s.Conn().EVCCLoadpoint,
 		ExpiresAt: in.ExpiresAt.Truncate(time.Minute), Status: model.AdjustActive, CreatedAt: now,
 	}
 
@@ -279,7 +279,7 @@ func (s *Service) applyAdjustment(ctx context.Context, in AdjustInput, source st
 			s.dateText(in.Date), in.SoC, dateTimeText(at, s.loc()), dateTimeText(a.ExpiresAt, s.loc()))
 		ev.Before = audit.Marshal(map[string]string{"evccPlan": s.adjustPlanText(a.PrevPlan)})
 		ev.After = audit.Marshal(map[string]string{"evccPlan": s.adjustPlanText(a.Plan)})
-		if _, err := s.EVCC.SetSocPlan(ctx, veh.Name, in.SoC, at); err != nil {
+		if _, err := s.Clients().EVCC.SetSocPlan(ctx, veh.Name, in.SoC, at); err != nil {
 			return nil, s.failedAdjustment(ctx, ev, err)
 		}
 		write = &model.PlanWrite{Vehicle: veh.Name, SoC: in.SoC, TargetTime: at, TripKey: "advice:" + in.Date, WrittenAt: now}
@@ -290,7 +290,7 @@ func (s *Service) applyAdjustment(ctx context.Context, in AdjustInput, source st
 			dateTimeText(a.ExpiresAt, s.loc()), s.dateText(in.Date))
 		ev.Before = audit.Marshal(map[string]string{"cheapChargingLimit": limitText(a.PrevSmartCostLimit)})
 		ev.After = audit.Marshal(map[string]string{"cheapChargingLimit": limitText(nil)})
-		if err := s.EVCC.SetSmartCostLimit(ctx, a.Loadpoint, nil); err != nil {
+		if err := s.Clients().EVCC.SetSmartCostLimit(ctx, a.Loadpoint, nil); err != nil {
 			return nil, s.failedAdjustment(ctx, ev, err)
 		}
 	}
@@ -362,7 +362,7 @@ func (s *Service) CheckAdjustments(ctx context.Context) error {
 	s.adjustMu.Lock()
 	defer s.adjustMu.Unlock()
 	snap := s.snapshot()
-	if snap.state == nil || snap.err != nil || s.now().Sub(snap.okAt) > 3*s.Cfg.EVCC.PollInterval {
+	if snap.state == nil || snap.err != nil || s.now().Sub(snap.okAt) > 3*s.Conn().EVCCPollInterval() {
 		return nil
 	}
 	list, err := s.Store.Adjustments(localtime.Date(s.now(), s.loc()))
@@ -443,14 +443,14 @@ func (s *Service) settle(ctx context.Context, a *model.Adjustment, cancel bool) 
 		switch {
 		case a.PrevPlan != nil && a.PrevPlan.Time.After(now):
 			soc := int(math.Round(a.PrevPlan.SoC))
-			if _, err := s.EVCC.SetSocPlan(ctx, a.Vehicle, soc, a.PrevPlan.Time); err != nil {
+			if _, err := s.Clients().EVCC.SetSocPlan(ctx, a.Vehicle, soc, a.PrevPlan.Time); err != nil {
 				return s.restoreFailed(ctx, a, err)
 			}
 			write := &model.PlanWrite{Vehicle: a.Vehicle, SoC: soc, TargetTime: a.PrevPlan.Time, TripKey: "restore", WrittenAt: now}
 			return end(done, fmt.Sprintf("Restored the previous plan: %d%% by %s.", soc, dateTimeText(a.PrevPlan.Time, s.loc())),
 				set, map[string]string{"evccPlan": s.adjustPlanText(a.PrevPlan)}, write)
 		case ours:
-			if err := s.EVCC.DeleteSocPlan(ctx, a.Vehicle); err != nil {
+			if err := s.Clients().EVCC.DeleteSocPlan(ctx, a.Vehicle); err != nil {
 				return s.restoreFailed(ctx, a, err)
 			}
 			return end(done, "Removed the extra plan; there was no earlier plan to restore.", set,
@@ -472,7 +472,7 @@ func (s *Service) settle(ctx context.Context, a *model.Adjustment, cancel bool) 
 		if !cancel && now.Before(a.ExpiresAt) {
 			return nil
 		}
-		if err := s.EVCC.SetSmartCostLimit(ctx, a.Loadpoint, a.PrevSmartCostLimit); err != nil {
+		if err := s.Clients().EVCC.SetSmartCostLimit(ctx, a.Loadpoint, a.PrevSmartCostLimit); err != nil {
 			return s.restoreFailed(ctx, a, err)
 		}
 		note := "Cheap-grid charging restored."
@@ -497,8 +497,8 @@ func (s *Service) planFinished(a *model.Adjustment, now time.Time) bool {
 	if a.Plan == nil || !now.Before(a.Plan.Time) {
 		return true
 	}
-	last, err := s.Store.LastSoC()
-	return err == nil && last != nil && last.Percent >= a.Plan.SoC-0.5
+	soc, _ := s.currentSoC()
+	return soc.Known && soc.Percent >= a.Plan.SoC-0.5
 }
 
 // restoreFailed keeps the adjustment active so the next check retries, and
@@ -597,13 +597,13 @@ func (s *Service) AutoApply(ctx context.Context) error {
 	}
 	snap := s.snapshot()
 	if snap.state != nil {
-		if veh, ok := snap.state.ResolveVehicle(s.Cfg.EVCC.Vehicle, s.Cfg.EVCC.Loadpoint); ok {
+		if veh, ok := s.resolveVehicle(snap.state); ok {
 			if pv := s.planView(veh); pv != nil && !pv.SetByPlanner {
 				s.Log.Info("auto-apply skipped: EVCC plan set manually", "date", today)
 				return nil
 			}
 		}
-		if lp, ok := snap.state.Loadpoint(s.Cfg.EVCC.Loadpoint); ok && lp.Mode == "off" {
+		if lp, ok := s.loadpoint(snap.state); ok && lp.Mode == "off" {
 			s.Log.Info("auto-apply skipped: charging is off in EVCC", "date", today)
 			return nil
 		}

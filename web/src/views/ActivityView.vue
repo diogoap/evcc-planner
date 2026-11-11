@@ -234,7 +234,7 @@ const number = (n: number) => n.toLocaleString('en-GB')
       </div>
       <p class="small muted" style="margin: 16px 0 0">
         Newest first. Entries are never edited; history older than {{ retentionDays }} days is deleted daily
-        (<code>retention.days</code>). Keys and secret calendar addresses are never recorded.
+        (Settings → Connections). Keys and secret calendar addresses are never recorded.
       </p>
     </section>
   </main>

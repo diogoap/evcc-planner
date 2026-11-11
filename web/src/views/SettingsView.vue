@@ -3,6 +3,7 @@ import { onMounted, reactive, ref } from 'vue'
 import { api } from '../api/client'
 import type { Connection, Place, Settings } from '../api/types'
 import AdviceSettingsForm from '../components/AdviceSettingsForm.vue'
+import ConnectionSettingsForm from '../components/ConnectionSettingsForm.vue'
 import ForecastDetails from '../components/ForecastDetails.vue'
 import ToggleSwitch from '../components/ToggleSwitch.vue'
 import { ago } from '../lib/format'
@@ -311,51 +312,62 @@ async function applyDemo() {
 
     <AdviceSettingsForm v-if="tab === 'advice'" />
 
-    <section v-if="tab === 'connections'" class="card">
-      <div class="card-title">
-        Connections — configured on the server
-        <span class="row">
-          <button class="btn sm" type="button" @click="checkEVCC">Check EVCC</button>
-          <button class="btn sm" type="button" @click="syncCalendar">Sync calendar now</button>
-          <button class="btn sm" type="button" :disabled="refreshing" @click="refreshForecasts">
-            Refresh forecasts
-          </button>
-        </span>
-      </div>
-      <table class="table">
-        <tbody>
-          <tr v-for="c in connections" :key="c.name" :data-testid="`connection-${c.name}`">
-            <td>
-              <strong>{{ c.name }}</strong>
-            </td>
-            <td>
-              <span class="pill" :class="statusTone[c.status]">{{ statusText[c.status] }}</span>
-            </td>
-            <td class="small">
-              {{ c.detail }}
-              <div v-if="c.lastSuccessAt && state.plan" class="muted">
-                Last success {{ ago(c.lastSuccessAt, state.plan.now) }}
-              </div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-      <p class="small muted" style="margin: 12px 0 0">
-        URLs, calendars, and API keys live in config files and environment variables; secrets are never shown
-        here. Forecasts are fetched once a day.
-      </p>
-      <div style="margin-top: 20px"><ForecastDetails ref="forecastDetails" /></div>
+    <div v-if="tab === 'connections'" class="stack">
+      <section class="card">
+        <div class="card-title">
+          Connections
+          <span class="row">
+            <button class="btn sm" type="button" @click="checkEVCC">Check EVCC</button>
+            <button class="btn sm" type="button" @click="syncCalendar">Sync calendar now</button>
+            <button class="btn sm" type="button" :disabled="refreshing" @click="refreshForecasts">
+              Refresh forecasts
+            </button>
+          </span>
+        </div>
+        <table class="table">
+          <tbody>
+            <tr v-for="c in connections" :key="c.name" :data-testid="`connection-${c.name}`">
+              <td>
+                <strong>{{ c.name }}</strong>
+              </td>
+              <td>
+                <span class="pill" :class="statusTone[c.status]">{{ statusText[c.status] }}</span>
+              </td>
+              <td class="small">
+                {{ c.detail }}
+                <div v-if="c.lastSuccessAt && state.plan" class="muted">
+                  Last success {{ ago(c.lastSuccessAt, state.plan.now) }}
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="small muted" style="margin: 12px 0 0">
+          Edit the settings below. API keys, calendar addresses, and the Home Assistant address and token stay
+          in environment variables on the server and are never shown here. Forecasts are fetched once a day.
+        </p>
+        <div style="margin-top: 20px"><ForecastDetails ref="forecastDetails" /></div>
+      </section>
 
-      <div v-if="state.meta?.demo" style="margin-top: 20px">
-        <div class="card-title">Demo car</div>
-        <form class="row" @submit.prevent="applyDemo">
-          <label class="row small"><input v-model="demo.connected" type="checkbox" /> Plugged in</label>
-          <label class="unit small" style="max-width: 160px">
-            SoC <input v-model.number="demo.soc" type="number" min="1" max="100" /> <span>%</span>
-          </label>
-          <button class="btn sm" type="submit">Apply</button>
-        </form>
-      </div>
-    </section>
+      <ConnectionSettingsForm @saved="(c) => (connections = c)" />
+
+      <section v-if="state.meta?.demo" class="card">
+        <div>
+          <div class="card-title">Demo car</div>
+          <form class="row" @submit.prevent="applyDemo">
+            <label class="row small"><input v-model="demo.connected" type="checkbox" /> Plugged in</label>
+            <label class="unit small" style="max-width: 160px">
+              SoC <input v-model.number="demo.soc" type="number" min="1" max="100" data-testid="demo-soc" />
+              <span>%</span>
+            </label>
+            <button class="btn sm" type="submit">Apply</button>
+          </form>
+          <p class="small muted" style="margin: 8px 0 0">
+            EVCC reads this SoC only while plugged in; the Home Assistant stub reports it always, 20 minutes
+            behind.
+          </p>
+        </div>
+      </section>
+    </div>
   </main>
 </template>

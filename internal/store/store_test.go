@@ -1,8 +1,12 @@
 package store
 
 import (
+	"database/sql"
 	"errors"
+	"fmt"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -172,20 +176,35 @@ func TestCalendarReplaceAndSyncStatus(t *testing.T) {
 
 func TestSoCAndPlanWrites(t *testing.T) {
 	s := open(t)
-	if r, err := s.LastSoC(); r != nil || err != nil {
-		t.Fatalf("empty soc = %+v %v", r, err)
+	if list, err := s.SoCReadings(); len(list) != 0 || err != nil {
+		t.Fatalf("empty soc = %+v %v", list, err)
 	}
 	at := time.Date(2026, 11, 9, 18, 42, 0, 0, time.UTC)
 	rangeKm := 107.0
-	s.SaveSoC(model.SoCReading{Percent: 38, RangeKm: &rangeKm, ObservedAt: at, Source: "evcc"})
-	if r, _ := s.LastSoC(); r.RangeKm == nil || *r.RangeKm != 107 {
+	s.SaveSoC(model.SoCReading{Percent: 38, RangeKm: &rangeKm, ObservedAt: at, Source: model.SoCSourceEVCC})
+	if r, _ := s.SoCReading(model.SoCSourceEVCC); r.RangeKm == nil || *r.RangeKm != 107 {
 		t.Fatalf("range = %+v", r)
 	}
-	s.SaveSoC(model.SoCReading{Percent: 41, ObservedAt: at.Add(time.Hour), Source: "evcc"})
-	r, _ := s.LastSoC()
+	s.SaveSoC(model.SoCReading{Percent: 41, ObservedAt: at.Add(time.Hour), Source: model.SoCSourceEVCC})
+	r, _ := s.SoCReading(model.SoCSourceEVCC)
 	if r.Percent != 41 || !r.ObservedAt.Equal(at.Add(time.Hour)) || r.RangeKm != nil {
 		t.Fatalf("last soc = %+v (a reading without range clears it)", r)
 	}
+
+	// Each source keeps its own reading; the newest comes first.
+	s.SaveSoC(model.SoCReading{Percent: 35, ObservedAt: at.Add(2 * time.Hour), ChangedAt: at.Add(time.Hour), Source: model.SoCSourceHomeAssistant})
+	list, err := s.SoCReadings()
+	if err != nil || len(list) != 2 || list[0].Source != model.SoCSourceHomeAssistant || list[1].Percent != 41 ||
+		!list[0].Changed().Equal(at.Add(time.Hour)) || !list[1].Changed().Equal(list[1].ObservedAt) {
+		t.Fatalf("readings = %+v %v", list, err)
+	}
+	if r, _ := s.SoCReading(model.SoCSourceEVCC); r == nil || r.Percent != 41 {
+		t.Fatalf("evcc reading = %+v", r)
+	}
+	if r, err := s.SoCReading("other"); r != nil || err != nil {
+		t.Fatalf("unknown source = %+v %v", r, err)
+	}
+
 	w, err := s.AddPlanWrite(model.PlanWrite{Vehicle: "db:3", SoC: 46, TargetTime: at, WrittenAt: at})
 	if err != nil || w.ID == 0 {
 		t.Fatal(err)
@@ -279,5 +298,58 @@ func TestAdviceSettingsDismissalsAndAdjustments(t *testing.T) {
 	}
 	if _, err := s.Adjustment(99); !errors.Is(err, ErrNotFound) {
 		t.Errorf("missing adjustment: %v", err)
+	}
+}
+
+func TestSoCMigrationKeepsTheLastReading(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "old.db")
+	db, err := sql.Open("sqlite", "file:"+path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The schema before per-source readings, with a demo reading in it.
+	last := slices.IndexFunc(migrations, func(m string) bool { return strings.Contains(m, "CREATE TABLE soc_readings") })
+	for _, m := range migrations[:last] {
+		if _, err := db.Exec(m); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := db.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, last)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO vehicle_soc (id, soc, range_km, observed_at, source)
+		VALUES (1, 38, 122, '2026-11-09T15:45:00Z', 'demo')`); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	r, err := s.SoCReading(model.SoCSourceEVCC)
+	if err != nil || r == nil || r.Source != model.SoCSourceEVCC || r.Percent != 38 || r.RangeKm == nil || *r.RangeKm != 122 ||
+		!r.ObservedAt.Equal(time.Date(2026, 11, 9, 15, 45, 0, 0, time.UTC)) {
+		t.Fatalf("migrated reading = %+v %v", r, err)
+	}
+}
+
+func TestConnectionSettingsAreSparse(t *testing.T) {
+	s := open(t)
+	defaults := model.DefaultConnectionSettings()
+	if v, err := s.ConnectionSettings(defaults); err != nil || v != defaults {
+		t.Fatalf("unsaved = %+v %v", v, err)
+	}
+	if err := s.SaveConnectionSettings(map[string]any{"haSocEntity": "sensor.leaf_battery", "evccPollIntervalSec": 30}); err != nil {
+		t.Fatal(err)
+	}
+	// Fields that were not saved follow the defaults they are read with.
+	seeded := defaults
+	seeded.EVCCURL = "http://192.0.2.10:7070"
+	v, err := s.ConnectionSettings(seeded)
+	if err != nil || v.HASoCEntity != "sensor.leaf_battery" || v.EVCCPollIntervalSec != 30 || v.EVCCURL != seeded.EVCCURL ||
+		v.RetentionDays != 90 {
+		t.Fatalf("merged = %+v %v", v, err)
 	}
 }

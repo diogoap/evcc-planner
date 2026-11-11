@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/diogoap/evcc-planner/internal/evcc"
+	"github.com/diogoap/evcc-planner/internal/service"
 )
 
 // replay serves a captured EVCC state and refuses every write.
@@ -39,7 +40,7 @@ func TestAdviceWithRealEVCCState(t *testing.T) {
 		t.Fatal(err)
 	}
 	ta := newTestApp(t, "")
-	ta.app.Service.EVCC = replay{st}
+	ta.app.Service.UseIntegrations(func(i *service.Integrations) { i.EVCC = replay{st} })
 	ta.at(time.Date(2026, 11, 10, 15, 10, 14, 0, ams)) // when the payload was captured
 	ctx := context.Background()
 	if err := ta.app.Service.PollEVCC(ctx); err != nil {
