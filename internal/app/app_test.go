@@ -388,8 +388,23 @@ func TestHealthConnectionsAndStatic(t *testing.T) {
 	if code != http.StatusNotFound || !strings.Contains(string(body), "UI not built") {
 		t.Errorf("missing UI = %d %s", code, body)
 	}
+	var meta struct{ Build string }
+	ta.json("GET", "/api/meta", nil, http.StatusOK, &meta)
+	if meta.Build != "" {
+		t.Errorf("build without a compiled UI = %q", meta.Build)
+	}
 	web := filepath.Join(ta.dir, "web")
 	os.MkdirAll(filepath.Join(web, "assets"), 0o755)
+	os.WriteFile(filepath.Join(web, "index.html"), []byte("<html>app</html>"), 0o644)
+	// The build identifier changes with the compiled UI, so open pages
+	// notice a deploy.
+	ta.json("GET", "/api/meta", nil, http.StatusOK, &meta)
+	first := meta.Build
+	os.WriteFile(filepath.Join(web, "index.html"), []byte("<html>app v2</html>"), 0o644)
+	ta.json("GET", "/api/meta", nil, http.StatusOK, &meta)
+	if first == "" || meta.Build == "" || meta.Build == first {
+		t.Errorf("builds = %q then %q", first, meta.Build)
+	}
 	os.WriteFile(filepath.Join(web, "index.html"), []byte("<html>app</html>"), 0o644)
 	os.WriteFile(filepath.Join(web, "assets", "a.js"), []byte("js"), 0o644)
 	if code, body := ta.do("GET", "/recurring", nil); code != 200 || string(body) != "<html>app</html>" {

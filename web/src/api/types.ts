@@ -6,6 +6,8 @@ export interface Meta {
   timezone: string
   now: string
   windowDays: number
+  /** Identifies the compiled UI the server serves; empty in development. */
+  build: string
 }
 
 export interface Settings {

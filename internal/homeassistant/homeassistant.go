@@ -161,11 +161,15 @@ func ParseTimestamp(e EntityState, loc *time.Location) (time.Time, error) {
 	return t, nil
 }
 
-// SetCarTime dates the reading to the car's own reading time, never later
-// than Home Assistant received the SoC. That is also when its value is news.
+// SetCarTime dates the reading to the car's own reading time from a
+// reading-time sensor, or to when the SoC value last changed if that is
+// later (the sensor lagging). The SoC sensor's own update times are not
+// used: an unchanged value is often not written again when the car reports.
+// The result is also when the value is news.
 func (r *Reading) SetCarTime(t time.Time) {
-	if t.Before(r.ObservedAt) {
-		r.ObservedAt = t
+	r.ObservedAt = t
+	if r.ChangedAt.After(t) {
+		r.ObservedAt = r.ChangedAt
 	}
 	r.ChangedAt = r.ObservedAt
 }
@@ -243,7 +247,7 @@ func (e *APIError) Error() string {
 var ErrNotFound = errors.New("entity not found")
 
 // SoC reads the SoC entity and, if configured, the reading-time and range
-// entities. A failing reading-time entity fails the reading (its time would
+// entities. The caller caps a reading time in the future. A failing reading-time entity fails the reading (its time would
 // be wrong); a failing range entity only drops the range.
 func (c *HTTPClient) SoC(ctx context.Context) (*Reading, error) {
 	e, err := c.State(ctx, c.SoCEntity)

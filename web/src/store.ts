@@ -18,7 +18,12 @@ export const state = reactive({
   loading: false,
   error: '',
   toasts: [] as Toast[],
+  /** The server serves a newer UI than this page (a deploy since it loaded). */
+  newVersion: false,
 })
+
+// The UI build this page was loaded with.
+let build: string | undefined
 
 let toastId = 0
 
@@ -33,7 +38,19 @@ export function notify(text: string, kind: Toast['kind'] = 'ok') {
 
 export async function loadMeta() {
   state.meta = await api.meta()
+  build ??= state.meta.build
   setTimeZone(state.meta.timezone)
+}
+
+/** Checks whether the server now serves a newer UI than this page. */
+export async function checkVersion() {
+  try {
+    await loadMeta()
+  } catch {
+    return false
+  }
+  state.newVersion = !!build && !!state.meta?.build && state.meta.build !== build
+  return state.newVersion
 }
 
 export async function refresh() {

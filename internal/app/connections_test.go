@@ -211,8 +211,11 @@ func TestHomeAssistantConfiguredFromSettings(t *testing.T) {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
+		// The SoC sensor is not written again while its value is unchanged;
+		// the reading-time sensor shows when the car last reported.
 		battery := map[string]any{
-			"entity_id": "sensor.leaf_battery", "state": "72", "last_reported": "2026-11-09T17:50:00Z",
+			"entity_id": "sensor.leaf_battery", "state": "72", "last_changed": "2026-11-09T15:00:00Z",
+			"last_updated": "2026-11-09T15:00:00Z", "last_reported": "2026-11-09T15:00:00Z",
 			"attributes": map[string]any{"unit_of_measurement": "%", "device_class": "battery", "friendly_name": "Leaf battery"},
 		}
 		updated := map[string]any{
@@ -269,13 +272,13 @@ func TestHomeAssistantConfiguredFromSettings(t *testing.T) {
 	found := false
 	for _, c := range saved.Connections {
 		if c.Name == "Home Assistant" {
-			found = c.Status == "ok" && c.Detail == "SoC 72% from sensor.leaf_battery, reported Mon 9 Nov 18:50"
+			found = c.Status == "ok" && c.Detail == "SoC 72% from sensor.leaf_battery, reported Mon 9 Nov 16:00"
 		}
 	}
 	if !found {
 		t.Errorf("connections after save = %+v", saved.Connections)
 	}
-	if s := ta.soc(); s.Source != "homeassistant" || *s.Percent != 72 || !s.ObservedAt.Equal(local("2026-11-09T18:50:00+01:00")) {
+	if s := ta.soc(); s.Source != "homeassistant" || *s.Percent != 72 || !s.ObservedAt.Equal(local("2026-11-09T16:00:00+01:00")) {
 		t.Errorf("soc = %+v", s)
 	}
 	// The reading-time sensor dates the reading to when the car reported.

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted } from 'vue'
 import { RouterLink, RouterView } from 'vue-router'
-import { loadMeta, refresh, state } from './store'
+import { checkVersion, loadMeta, refresh, state } from './store'
 
 let timer: number | undefined
 
@@ -12,13 +12,36 @@ onMounted(async () => {
     state.error = (e as Error).message
   }
   await refresh()
-  // Keep EVCC status and the plan current while the page is open.
+  // Keep EVCC status and the plan current while the page is open, and
+  // notice a deploy (an older page would send outdated requests).
   timer = window.setInterval(() => {
-    if (document.visibilityState === 'visible') refresh()
+    if (document.visibilityState === 'visible') {
+      checkVersion()
+      refresh()
+    }
   }, 60_000)
+  document.addEventListener('visibilitychange', resumed)
 })
 
-onUnmounted(() => window.clearInterval(timer))
+onUnmounted(() => {
+  window.clearInterval(timer)
+  document.removeEventListener('visibilitychange', resumed)
+})
+
+// Back to the page (e.g. the installed app): reload after a deploy, before
+// anything is edited; otherwise just refresh.
+async function resumed() {
+  if (document.visibilityState !== 'visible') return
+  if (await checkVersion()) {
+    window.location.reload()
+    return
+  }
+  refresh()
+}
+
+function reload() {
+  window.location.reload()
+}
 </script>
 
 <template>
@@ -47,6 +70,12 @@ onUnmounted(() => window.clearInterval(timer))
     </div>
   </header>
 
+  <div v-if="state.newVersion" class="page" style="padding-bottom: 0">
+    <div class="banner tone-warn row" role="status" data-testid="new-version">
+      <span style="flex: 1">A new version of the planner is available.</span>
+      <button class="btn sm" type="button" @click="reload">Reload</button>
+    </div>
+  </div>
   <div v-if="state.error" class="page" style="padding-bottom: 0">
     <div class="banner tone-bad" role="alert">{{ state.error }}</div>
   </div>

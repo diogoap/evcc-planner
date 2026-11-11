@@ -4,6 +4,8 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -250,8 +252,20 @@ func (s *Server) meta(w http.ResponseWriter, r *http.Request) {
 		s.Svc.Clients().Routes.Router.Name() == "stub"
 	writeJSON(w, http.StatusOK, map[string]any{
 		"demo": cfg.Demo, "stubs": stub, "timezone": cfg.Timezone, "now": s.Svc.Clock.Now(),
-		"windowDays": service.WindowDays,
+		"windowDays": service.WindowDays, "build": uiBuild(cfg.Server.WebDir),
 	})
+}
+
+// uiBuild identifies the compiled UI: index.html names the hashed bundles,
+// so it changes with every build. A page compares it with the one it loaded
+// to notice a deploy. Empty without a compiled UI (development).
+func uiBuild(dir string) string {
+	b, err := os.ReadFile(filepath.Join(dir, "index.html"))
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:6])
 }
 
 func (s *Server) plan(w http.ResponseWriter, r *http.Request) {

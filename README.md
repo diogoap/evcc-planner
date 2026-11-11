@@ -180,8 +180,10 @@ unplugged. It only reads, through Home Assistant's REST API.
    sensor (km or mi).
 4. If the integration has a timestamp sensor with when the car last
    reported, choose it as the reading-time sensor (the field suggests
-   timestamp sensors). The reading is then dated to the car's own time;
-   otherwise to when Home Assistant last received the value. `make
+   timestamp sensors). The reading is then dated to the car's own time,
+   which is better than the SoC sensor's: an unchanged SoC is often not
+   written again when the car reports. Without it, the reading is dated to
+   when Home Assistant last received the value. `make
    test-live` lists the battery, range, and timestamp sensors with the
    reading each would give.
 

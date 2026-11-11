@@ -86,11 +86,18 @@ func TestReadingTimeSensor(t *testing.T) {
 	if !r.ObservedAt.Equal(carTime) || !r.ChangedAt.Equal(carTime) {
 		t.Errorf("car time = %+v", r)
 	}
-	// Never later than Home Assistant received the SoC.
+	// Later than the SoC sensor's own times: an unchanged SoC is often not
+	// written again when the car reports, so the car's time counts.
 	r, _ = ParseSoC(entity("61", nil))
 	r.SetCarTime(reported.Add(time.Hour))
-	if !r.ObservedAt.Equal(reported) || !r.ChangedAt.Equal(reported) {
-		t.Errorf("future car time = %+v, want %v", r, reported)
+	if !r.ObservedAt.Equal(reported.Add(time.Hour)) || !r.ChangedAt.Equal(reported.Add(time.Hour)) {
+		t.Errorf("car time after the SoC's report = %+v", r)
+	}
+	// A lagging reading-time sensor: the SoC changed after it.
+	r, _ = ParseSoC(entity("61", nil))
+	r.SetCarTime(reported.Add(-4 * time.Hour))
+	if !r.ObservedAt.Equal(reported.Add(-3*time.Hour)) || !r.ChangedAt.Equal(reported.Add(-3*time.Hour)) {
+		t.Errorf("car time before the SoC changed = %+v, want the change time", r)
 	}
 }
 
@@ -221,5 +228,24 @@ func TestCandidates(t *testing.T) {
 	stub, _ := Stub{Now: time.Now, Car: func() (float64, float64) { return 38, 122 }}.Sensors(context.Background())
 	if len(stub) != 3 || stub[0].EntityID != StubEntity || stub[0].State != "38" || stub[1].Kind != KindTimestamp || stub[2].Kind != KindRange {
 		t.Errorf("stub sensors = %+v", stub)
+	}
+}
+
+// A timestamp sensor as Home Assistant serializes it: an RFC 3339 state,
+// change times with milliseconds and a Z.
+func TestTimestampSensorState(t *testing.T) {
+	var e EntityState
+	err := json.Unmarshal([]byte(`{"entity_id":"sensor.car_last_updated","state":"2026-11-11T13:09:07+00:00",
+		"last_changed":"2026-11-11T13:11:21.380Z","last_updated":"2026-11-11T13:11:21.380Z",
+		"attributes":{"device_class":"timestamp","friendly_name":"Car last updated"}}`), &e)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := ParseTimestamp(e, amsterdam)
+	if err != nil || !got.Equal(time.Date(2026, 11, 11, 13, 9, 7, 0, time.UTC)) {
+		t.Fatalf("timestamp = %v %v", got, err)
+	}
+	if c := Candidates([]EntityState{e}); len(c) != 1 || c[0].Kind != KindTimestamp || c[0].Name != "Car last updated" {
+		t.Errorf("candidates = %+v", c)
 	}
 }
