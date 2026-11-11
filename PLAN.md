@@ -16,7 +16,7 @@ Have enough charge for upcoming trips by departure time, using the cheapest prac
 **Context (2026-11-09).** Local EVCC API (`/api/state`; LAN address kept in private config): SoC, connection, prices, solar forecast. EVCC 0.319.0; Alfen Eve Pro charger (6–16 A); Leaf configured with 62 kWh gross; 15-minute price slots; optimizer automatic control off; Home Assistant connected.
 
 - Defaults: **59 kWh usable** and **3.68 kW** (Leaf charges single-phase at 16 A; about 3.3 kW into the battery at 90% efficiency). Validate both live.
-- Vehicle SoC comes from EVCC's Leaf integration and is **only available while plugged in**; EVCC reports 0 when unplugged. Home Assistant always has it (see V8).
+- Vehicle SoC comes from EVCC's Leaf integration and is **only available while plugged in**; EVCC reports 0 when unplugged. Home Assistant always has it (see V4).
 - EVCC plan endpoints need no login. Each vehicle holds **one one-off SoC plan** (`POST /api/vehicles/{name}/plan/soc/{soc}/{timestamp}`) plus optional repeating plans (none configured). Previews: `GET /api/loadpoints/{id}/plan/static/preview/soc/{soc}/{timestamp}`.
 
 Background EVCC preferences: cheap-grid charging and solar/export-price priority. Typical thresholds discussed: €0.15/€0.30 per kWh; snapshot: €0.20/€0.40. Trip requirements take priority.
@@ -127,13 +127,9 @@ As implemented (2026-11-10):
 - History: an event's subject (`trip:<key>`, `schedule:<id>`, `place:<id>`, `plan`) plus a related subject (a date's edits belong to its schedule's history; plan sends to their trip's; extra plans to the plan's).
 - Retention: `retention.days` (90) in `config.yaml`; one daily cleanup also deletes ended manual trips, per-date edits of past dates (and of calendar events that are gone), cached routes, older plan records, advice dismissals, and ended EVCC changes. Google Routes' free allowance for the usage card: `routes.monthly_free_calls` (5,000).
 
-**V4 — UI polish.**
+**V4 — Always-on SoC.**
 
-- Refine the visual design: typography scale, spacing, color tokens, dark-mode parity, icons, and empty, loading, and error states.
-- Better graphs: an interactive SoC timeline with trip markers and charging windows, a price chart with planned charging and confirmed vs estimated prices, day drill-downs, and tap-friendly tooltips on phones.
-- Clearer Overview hierarchy and a day detail view with quick actions.
-- Phone and installed-app polish: touch targets, bottom navigation on small screens, safe areas, pull-to-refresh, splash and theme colors.
-- Accessibility: contrast, focus order, screen-reader labels, reduced motion. Keep screenshot checks of key screens at desktop and phone sizes.
+- **Always-on SoC:** read the Leaf's SoC from Home Assistant, which has it even when the car is unplugged, using the HA token in `.env`. Fall back to EVCC, and show the source and freshness of every SoC value.
 
 **V5 — Automatic plans and interaction.**
 
@@ -144,20 +140,24 @@ As implemented (2026-11-10):
 - Manual changes made in EVCC pause app control for that vehicle until explicit **Resume**. Preserve plans/settings the app does not own.
 - Track temporary app-managed settings and restore their previous background values on expiry/completion/cancellation, provided the user has not subsequently changed them.
 - Prefer Home Assistant Companion notifications; Telegram is an alternative.
-- HA flow: planner calls HA's mobile notification service; phone buttons emit HA events, and an HA automation calls back to the planner. Configure HA address/notification target and keep its token in `.env`. HA must reach the callback address; local-only development can stub callbacks or use a configurable LAN bind for integration checks.
+- HA flow: planner calls HA's mobile notification service; phone buttons emit HA events, and an HA automation calls back to the planner. Uses the HA connection from V4 (address and token in `.env`); configure the notification target. HA must reach the callback address; local-only development can stub callbacks or use a configurable LAN bind for integration checks.
 - Request connection before useful cheap/solar windows; escalate near the latest feasible plug-in time.
 - Actions: **Remind in 30 minutes**, **Skip trip**, **View plan**. Support trip edits and clarification requests.
 - Confirm connection through EVCC, cancel reminders, and flag interruptions/missed targets; readiness confirmations are optional.
 - Persist snoozes/decisions and deduplicate notifications. Expose notification enablement, available destinations, early/urgent reminder timing, quiet hours/urgent handling, and snoozing in UI settings.
 - UI: target, charging windows, readiness/plug-in deadline, pause/resume, and notification actions. Graph published prices and planned charging.
 
-**V6 — Reliability.** Extend the tests already built from V1; harden recovery, credential renewal, stale-data handling, and notification delivery. UI: sync/health status and recovery actions.
+**V6 — UI polish.**
 
-**V7 — Optimization and conversation.** Validate EVCC optimizer control for solar/grid scheduling; its regular planner selects tariff slots and uses available solar. Optional OpenClaw interface using the same core. UI: schedule comparisons/explanations.
+- Refine the visual design: typography scale, spacing, color tokens, dark-mode parity, icons, and empty, loading, and error states.
+- Better graphs: an interactive SoC timeline with trip markers and charging windows, a price chart with planned charging and confirmed vs estimated prices, day drill-downs, and tap-friendly tooltips on phones.
+- Clearer Overview hierarchy and a day detail view with quick actions.
+- Phone and installed-app polish: touch targets, bottom navigation on small screens, safe areas, pull-to-refresh, splash and theme colors.
+- Accessibility: contrast, focus order, screen-reader labels, reduced motion. Keep screenshot checks of key screens at desktop and phone sizes.
 
-**V8 — Future improvements.**
+**V7 — Reliability.** Extend the tests already built from V1; harden recovery, credential renewal, stale-data handling, and notification delivery. UI: sync/health status and recovery actions.
 
-- **Always-on SoC:** read the Leaf's SoC from Home Assistant, which has it even when the car is unplugged, using the HA token in `.env`. Fall back to EVCC, and show the source and freshness of every SoC value.
+**V8 — Optimization and conversation.** Validate EVCC optimizer control for solar/grid scheduling; its regular planner selects tariff slots and uses available solar. Optional OpenClaw interface using the same core. UI: schedule comparisons/explanations.
 
 **Costs.** Existing hosting adds little cost. Calendar/Telegram and personal routing should fit free allowances. V2 adds daily OpenRouter extraction usage; model choice determines cost. KNMI open datasets are free.
 
