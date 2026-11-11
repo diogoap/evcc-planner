@@ -237,7 +237,7 @@ func homeAssistant(cfg *config.Config, cs model.ConnectionSettings, car *evcc.St
 	}
 	c := &homeassistant.HTTPClient{
 		BaseURL: cs.HAURL, Token: ha.Token, HTTP: &http.Client{Timeout: cs.HATimeout()},
-		SoCEntity: cs.HASoCEntity, RangeEntity: cs.HARangeEntity, ObservedAttribute: cs.HAObservedAttribute,
+		SoCEntity: cs.HASoCEntity, RangeEntity: cs.HARangeEntity, UpdatedEntity: cs.HAUpdatedEntity,
 		Location: cfg.Location,
 	}
 	if cs.HASoCEntity == "" {

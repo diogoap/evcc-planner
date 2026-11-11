@@ -81,8 +81,8 @@ database, and applied at once, without a restart:
 
 - **EVCC:** address, loadpoint, vehicle, poll interval (60 s), timeout.
   `EVCC_URL` only sets the starting address, until the form is saved.
-- **Home Assistant:** address, the car's SoC and range sensors, the
-  reading-time attribute, poll interval (10 min), timeout. `HA_URL` only
+- **Home Assistant:** address, the car's SoC, range, and reading-time
+  sensors, poll interval (10 min), timeout. `HA_URL` only
   sets the starting address.
 - **Google Calendar:** sync interval (1 h). **Google Routes:** traffic-aware
   routes, route cache (1 week), free calls per month (5,000).
@@ -178,12 +178,12 @@ unplugged. It only reads, through Home Assistant's REST API.
 3. Then choose the car's battery level sensor (in %) as the SoC sensor, e.g. `sensor.leaf_battery_level`; the field
    suggests Home Assistant's battery sensors. Optionally choose the range
    sensor (km or mi).
-4. Optionally run `make test-live`: it lists the battery and range sensors
-   with the reading each would give, and attributes that hold a time. If the
-   integration has one with the car's own reading time (Home Assistant's
-   Nissan Leaf integration calls it `updated_on`), enter it as the
-   reading-time attribute. Otherwise the reading's time is when Home
-   Assistant last received the value.
+4. If the integration has a timestamp sensor with when the car last
+   reported, choose it as the reading-time sensor (the field suggests
+   timestamp sensors). The reading is then dated to the car's own time;
+   otherwise to when Home Assistant last received the value. `make
+   test-live` lists the battery, range, and timestamp sensors with the
+   reading each would give.
 
 The planner reads Home Assistant every 10 minutes (adjustable in Settings →
 Connections) and keeps each source's last reading. Settings → Connections shows the

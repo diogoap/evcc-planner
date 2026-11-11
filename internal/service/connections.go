@@ -125,7 +125,7 @@ func evccTarget(c model.ConnectionSettings) target {
 
 // haTarget identifies what a Home Assistant reading comes from.
 func haTarget(c model.ConnectionSettings) [4]string {
-	return [4]string{c.HAURL, c.HASoCEntity, c.HARangeEntity, c.HAObservedAttribute}
+	return [4]string{c.HAURL, c.HASoCEntity, c.HARangeEntity, c.HAUpdatedEntity}
 }
 
 // ConnectionSettingsView is what Settings → Connections edits.
@@ -166,7 +166,7 @@ func (s *Service) ConnectionSettings() ConnectionSettingsView {
 // at once, and checks EVCC and Home Assistant with them. Fields that differ
 // from the built-in defaults are stored; the others keep following them.
 func (s *Service) SaveConnections(ctx context.Context, v model.ConnectionSettings) (ConnectionSettingsView, error) {
-	for _, f := range []*string{&v.EVCCURL, &v.EVCCVehicle, &v.HAURL, &v.HASoCEntity, &v.HARangeEntity, &v.HAObservedAttribute,
+	for _, f := range []*string{&v.EVCCURL, &v.EVCCVehicle, &v.HAURL, &v.HASoCEntity, &v.HARangeEntity, &v.HAUpdatedEntity,
 		&v.TibberURL, &v.OpenRouterModel, &v.KNMIDataset, &v.KNMIVersion, &v.ForecastDailyAt} {
 		*f = strings.TrimSpace(*f)
 	}

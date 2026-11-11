@@ -24,28 +24,30 @@ type Reader interface {
 	SoC(ctx context.Context) (*Reading, error)
 }
 
-// SensorLister lists sensors that could hold the car's SoC or range.
+// SensorLister lists sensors that could hold the car's SoC, range, or
+// reading time.
 type SensorLister interface {
 	Sensors(ctx context.Context) ([]Sensor, error)
 }
 
-// Sensor is a candidate for the SoC or range sensor.
+// Sensor is a candidate for the SoC, range, or reading-time sensor.
 type Sensor struct {
 	EntityID string `json:"entityId"`
 	Name     string `json:"name"`
 	State    string `json:"state"`
 	Unit     string `json:"unit"`
-	Kind     string `json:"kind"` // battery or range
+	Kind     string `json:"kind"` // battery, range, or timestamp
 }
 
 // Sensor kinds.
 const (
-	KindBattery = "battery"
-	KindRange   = "range"
+	KindBattery   = "battery"
+	KindRange     = "range"
+	KindTimestamp = "timestamp"
 )
 
-// Candidates picks battery level sensors (%) and distance sensors (km, mi),
-// sorted by entity ID.
+// Candidates picks battery level sensors (%), distance sensors (km, mi), and
+// timestamp sensors, sorted by entity ID.
 func Candidates(states []EntityState) []Sensor {
 	var out []Sensor
 	for _, e := range states {
@@ -60,6 +62,8 @@ func Candidates(states []EntityState) []Sensor {
 			sn.Kind = KindBattery
 		case class == "distance" || sn.Unit == "km" || sn.Unit == "mi":
 			sn.Kind = KindRange
+		case class == "timestamp":
+			sn.Kind = KindTimestamp
 		default:
 			continue
 		}
@@ -114,12 +118,10 @@ func (e EntityState) unknown() bool {
 	return e.State == "" || e.State == "unknown" || e.State == "unavailable"
 }
 
-// ParseSoC turns the SoC entity into a reading. The reading's time is when
-// the car reported it, from the observed attribute when one is configured
-// (never later than Home Assistant received it), else when Home Assistant
-// last received the state; its change time is when the value last changed
-// (the car's time with the attribute). Zero counts as unknown, as in EVCC.
-func ParseSoC(e EntityState, observedAttribute string, loc *time.Location) (Reading, error) {
+// ParseSoC turns the SoC entity into a reading, dated to when Home
+// Assistant last received the state; its change time is when the value last
+// changed. Zero counts as unknown, as in EVCC.
+func ParseSoC(e EntityState) (Reading, error) {
 	r := Reading{Entity: e.EntityID}
 	if e.unknown() {
 		return r, fmt.Errorf("%s is %s", e.EntityID, orDefault(e.State, "empty"))
@@ -136,30 +138,36 @@ func ParseSoC(e EntityState, observedAttribute string, loc *time.Location) (Read
 	}
 	r.Percent = v
 	r.ObservedAt = e.Reported()
-	if observedAttribute != "" {
-		raw, ok := e.Attributes[observedAttribute]
-		if !ok {
-			return r, fmt.Errorf("%s has no attribute %s", e.EntityID, observedAttribute)
-		}
-		t, err := parseTime(raw, loc)
-		if err != nil {
-			return r, fmt.Errorf("%s attribute %s: %w", e.EntityID, observedAttribute, err)
-		}
-		if r.ObservedAt.IsZero() || t.Before(r.ObservedAt) {
-			r.ObservedAt = t
-		}
-		r.ChangedAt = r.ObservedAt
-	}
 	if r.ObservedAt.IsZero() {
 		return r, fmt.Errorf("%s has no update time", e.EntityID)
 	}
-	if r.ChangedAt.IsZero() {
-		r.ChangedAt = e.LastChanged
-	}
+	r.ChangedAt = e.LastChanged
 	if r.ChangedAt.IsZero() || r.ChangedAt.After(r.ObservedAt) {
 		r.ChangedAt = r.ObservedAt
 	}
 	return r, nil
+}
+
+// ParseTimestamp reads a timestamp sensor, such as when the car last
+// reported to its cloud.
+func ParseTimestamp(e EntityState, loc *time.Location) (time.Time, error) {
+	if e.unknown() {
+		return time.Time{}, fmt.Errorf("%s is %s", e.EntityID, orDefault(e.State, "empty"))
+	}
+	t, err := parseTime(e.State, loc)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("%s: %w", e.EntityID, err)
+	}
+	return t, nil
+}
+
+// SetCarTime dates the reading to the car's own reading time, never later
+// than Home Assistant received the SoC. That is also when its value is news.
+func (r *Reading) SetCarTime(t time.Time) {
+	if t.Before(r.ObservedAt) {
+		r.ObservedAt = t
+	}
+	r.ChangedAt = r.ObservedAt
 }
 
 // ParseRange returns the range entity's value in km, or nil when it is
@@ -186,13 +194,9 @@ func ParseRange(e EntityState) (*float64, error) {
 	return &v, nil
 }
 
-// parseTime reads a time attribute: RFC 3339 (how Home Assistant
-// serializes datetimes), or a local time without zone.
-func parseTime(raw any, loc *time.Location) (time.Time, error) {
-	s, ok := raw.(string)
-	if !ok {
-		return time.Time{}, fmt.Errorf("%v is not a time", raw)
-	}
+// parseTime reads a time: RFC 3339 (how Home Assistant serializes
+// timestamps), or a local time without zone.
+func parseTime(s string, loc *time.Location) (time.Time, error) {
 	if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
 		return t, nil
 	}
@@ -219,10 +223,10 @@ type HTTPClient struct {
 	Token   string
 	HTTP    *http.Client
 
-	SoCEntity         string
-	RangeEntity       string // optional
-	ObservedAttribute string // optional: the SoC entity's attribute with the car's own reading time
-	Location          *time.Location
+	SoCEntity     string
+	RangeEntity   string // optional
+	UpdatedEntity string // optional: a timestamp sensor with when the car last reported
+	Location      *time.Location
 }
 
 // APIError is a non-2xx response from Home Assistant.
@@ -238,16 +242,28 @@ func (e *APIError) Error() string {
 // ErrNotFound means the entity does not exist.
 var ErrNotFound = errors.New("entity not found")
 
-// SoC reads the SoC entity and, if configured, the range entity. A failing
-// range entity only drops the range.
+// SoC reads the SoC entity and, if configured, the reading-time and range
+// entities. A failing reading-time entity fails the reading (its time would
+// be wrong); a failing range entity only drops the range.
 func (c *HTTPClient) SoC(ctx context.Context) (*Reading, error) {
 	e, err := c.State(ctx, c.SoCEntity)
 	if err != nil {
 		return nil, err
 	}
-	r, err := ParseSoC(*e, c.ObservedAttribute, c.Location)
+	r, err := ParseSoC(*e)
 	if err != nil {
 		return nil, err
+	}
+	if c.UpdatedEntity != "" {
+		ue, err := c.State(ctx, c.UpdatedEntity)
+		if err != nil {
+			return nil, err
+		}
+		t, err := ParseTimestamp(*ue, c.Location)
+		if err != nil {
+			return nil, err
+		}
+		r.SetCarTime(t)
 	}
 	if c.RangeEntity != "" {
 		if re, err := c.State(ctx, c.RangeEntity); err == nil {
@@ -335,8 +351,9 @@ func (c *HTTPClient) get(ctx context.Context, path string) ([]byte, error) {
 
 // Entities the stub reports.
 const (
-	StubEntity      = "sensor.demo_leaf_battery"
-	StubRangeEntity = "sensor.demo_leaf_range"
+	StubEntity        = "sensor.demo_leaf_battery"
+	StubRangeEntity   = "sensor.demo_leaf_range"
+	StubUpdatedEntity = "sensor.demo_leaf_last_update"
 )
 
 // stubLag is how far the stub's readings trail the car, like a cloud
@@ -361,8 +378,10 @@ func (s Stub) SoC(ctx context.Context) (*Reading, error) {
 // Sensors lists the demo car's sensors.
 func (s Stub) Sensors(ctx context.Context) ([]Sensor, error) {
 	soc, rangeKm := s.Car()
+	at := s.Now().Add(-stubLag).Truncate(time.Minute)
 	return []Sensor{
 		{EntityID: StubEntity, Name: "Demo Leaf battery", State: strconv.FormatFloat(soc, 'f', -1, 64), Unit: "%", Kind: KindBattery},
+		{EntityID: StubUpdatedEntity, Name: "Demo Leaf last update", State: at.UTC().Format(time.RFC3339), Kind: KindTimestamp},
 		{EntityID: StubRangeEntity, Name: "Demo Leaf range", State: strconv.FormatFloat(rangeKm, 'f', -1, 64), Unit: "km", Kind: KindRange},
 	}, nil
 }

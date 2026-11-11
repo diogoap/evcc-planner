@@ -230,7 +230,7 @@ var settingLabels = map[string]string{
 	"evccUrl": "EVCC address", "evccLoadpoint": "EVCC loadpoint", "evccVehicle": "EVCC vehicle",
 	"evccPollIntervalSec": "EVCC poll interval", "evccTimeoutSec": "EVCC timeout",
 	"haUrl": "Home Assistant address", "haSocEntity": "Home Assistant SoC sensor", "haRangeEntity": "Home Assistant range sensor",
-	"haObservedAttribute": "reading-time attribute", "haPollIntervalMin": "Home Assistant poll interval",
+	"haUpdatedEntity": "Home Assistant reading-time sensor", "haPollIntervalMin": "Home Assistant poll interval",
 	"haTimeoutSec": "Home Assistant timeout", "calendarSyncIntervalMin": "calendar sync interval",
 	"routesTrafficAware": "traffic-aware routes", "routesCacheTtlHours": "route cache",
 	"routesMonthlyFreeCalls": "free route calls", "tibberUrl": "Tibber outlook page",

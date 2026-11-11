@@ -88,10 +88,11 @@ const groups: Group[] = [
         hint: "Optional: the car's range sensor (km or mi).",
       },
       {
-        key: 'haObservedAttribute',
-        label: 'Reading-time attribute',
+        key: 'haUpdatedEntity',
+        label: 'Reading-time sensor',
         kind: 'text',
-        hint: "Optional: an attribute of the SoC sensor with the car's own reading time (e.g. updated_on). Otherwise the time Home Assistant received it.",
+        sensor: 'timestamp',
+        hint: 'Optional: a timestamp sensor with when the car last reported its SoC, e.g. sensor.leaf_last_updated. Otherwise the time Home Assistant received the SoC.',
       },
       {
         key: 'haPollIntervalMin',
@@ -340,7 +341,7 @@ async function save() {
           </template>
         </div>
       </fieldset>
-      <datalist v-for="kind in ['battery', 'range']" :id="`ha-sensors-${kind}`" :key="kind">
+      <datalist v-for="kind in ['battery', 'range', 'timestamp']" :id="`ha-sensors-${kind}`" :key="kind">
         <option v-for="s in sensors.filter((x) => x.kind === kind)" :key="s.entityId" :value="s.entityId">
           {{ s.name || s.entityId }} ({{ s.state }} {{ s.unit }})
         </option>

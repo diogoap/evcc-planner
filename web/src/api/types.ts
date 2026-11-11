@@ -427,7 +427,7 @@ export interface ConnectionSettings {
   haUrl: string
   haSocEntity: string
   haRangeEntity: string
-  haObservedAttribute: string
+  haUpdatedEntity: string
   haPollIntervalMin: number
   haTimeoutSec: number
   calendarSyncIntervalMin: number
@@ -465,7 +465,7 @@ export interface HASensor {
   name: string
   state: string
   unit: string
-  kind: 'battery' | 'range'
+  kind: 'battery' | 'range' | 'timestamp'
 }
 
 export interface TripInput {

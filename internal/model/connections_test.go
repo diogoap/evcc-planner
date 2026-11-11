@@ -24,6 +24,7 @@ func TestConnectionSettingsValidate(t *testing.T) {
 		"tibber query":    {func(c *ConnectionSettings) { c.TibberURL = "https://tibber.com/x?token=1" }, "must not contain a query"},
 		"entity":          {func(c *ConnectionSettings) { c.HASoCEntity = "Leaf battery" }, "SoC sensor must be an entity ID"},
 		"range entity":    {func(c *ConnectionSettings) { c.HARangeEntity = "leaf_range" }, "range sensor must be an entity ID"},
+		"updated entity":  {func(c *ConnectionSettings) { c.HAUpdatedEntity = "updated_on" }, "reading-time sensor must be an entity ID"},
 		"loadpoint":       {func(c *ConnectionSettings) { c.EVCCLoadpoint = 0 }, "EVCC loadpoint must be between 1 and 20"},
 		"evcc poll":       {func(c *ConnectionSettings) { c.EVCCPollIntervalSec = 1 }, "EVCC poll interval"},
 		"ha poll":         {func(c *ConnectionSettings) { c.HAPollIntervalMin = 0 }, "Home Assistant poll interval"},

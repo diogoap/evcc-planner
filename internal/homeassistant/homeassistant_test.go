@@ -26,7 +26,7 @@ func entity(state string, attrs map[string]any) EntityState {
 }
 
 func TestParseSoC(t *testing.T) {
-	r, err := ParseSoC(entity("72", nil), "", amsterdam)
+	r, err := ParseSoC(entity("72", nil))
 	if err != nil || r.Percent != 72 || !r.ObservedAt.Equal(reported) || r.Entity != "sensor.leaf_battery" ||
 		!r.ChangedAt.Equal(reported.Add(-3*time.Hour)) {
 		t.Fatalf("reading = %+v %v (want the last reported time, and when the value changed)", r, err)
@@ -35,7 +35,7 @@ func TestParseSoC(t *testing.T) {
 	// Older Home Assistant versions have no last_reported.
 	e := entity("72.5", nil)
 	e.LastReported = time.Time{}
-	if r, _ := ParseSoC(e, "", amsterdam); r.Percent != 72.5 || !r.ObservedAt.Equal(reported.Add(-time.Hour)) {
+	if r, _ := ParseSoC(e); r.Percent != 72.5 || !r.ObservedAt.Equal(reported.Add(-time.Hour)) {
 		t.Fatalf("without last_reported = %+v, want last_updated", r)
 	}
 
@@ -47,41 +47,50 @@ func TestParseSoC(t *testing.T) {
 		"0":           "reports 0%, treated as unknown",
 		"101":         "reports 101%",
 	} {
-		if _, err := ParseSoC(entity(state, nil), "", amsterdam); err == nil || !strings.Contains(err.Error(), want) {
+		if _, err := ParseSoC(entity(state, nil)); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("state %q: err = %v, want %q", state, err, want)
 		}
 	}
-	if _, err := ParseSoC(entity("40", map[string]any{"unit_of_measurement": "kWh"}), "", amsterdam); err == nil ||
+	if _, err := ParseSoC(entity("40", map[string]any{"unit_of_measurement": "kWh"})); err == nil ||
 		!strings.Contains(err.Error(), "in kWh, not %") {
 		t.Errorf("energy sensor: err = %v", err)
 	}
-	if r, err := ParseSoC(entity("40", map[string]any{}), "", amsterdam); err != nil || r.Percent != 40 {
+	if r, err := ParseSoC(entity("40", map[string]any{})); err != nil || r.Percent != 40 {
 		t.Errorf("no unit = %+v %v", r, err)
 	}
 }
 
-func TestParseSoCObservedAttribute(t *testing.T) {
-	attrs := func(v any) map[string]any { return map[string]any{"unit_of_measurement": "%", "updated_on": v} }
+func TestReadingTimeSensor(t *testing.T) {
+	ts := func(state string) EntityState {
+		return EntityState{EntityID: "sensor.leaf_last_update", State: state, Attributes: map[string]any{"device_class": "timestamp"}}
+	}
 	carTime := reported.Add(-40 * time.Minute)
-	for _, raw := range []any{
+	for _, state := range []string{
 		carTime.Format(time.RFC3339Nano),
 		carTime.In(amsterdam).Format("2006-01-02T15:04:05"), // no zone: planner time
 		carTime.In(amsterdam).Format("2006-01-02 15:04:05"),
 	} {
-		r, err := ParseSoC(entity("61", attrs(raw)), "updated_on", amsterdam)
-		if err != nil || !r.ObservedAt.Equal(carTime) || !r.ChangedAt.Equal(carTime) {
-			t.Errorf("%v: observed = %v %v, want %v", raw, r.ObservedAt, err, carTime)
+		got, err := ParseTimestamp(ts(state), amsterdam)
+		if err != nil || !got.Equal(carTime) {
+			t.Errorf("%s: %v %v, want %v", state, got, err, carTime)
 		}
 	}
-	// Never later than Home Assistant received it.
-	if r, _ := ParseSoC(entity("61", attrs(reported.Add(time.Hour).Format(time.RFC3339))), "updated_on", amsterdam); !r.ObservedAt.Equal(reported) {
-		t.Errorf("future car time = %v, want %v", r.ObservedAt, reported)
+	for _, state := range []string{"unavailable", "yesterday"} {
+		if _, err := ParseTimestamp(ts(state), amsterdam); err == nil || !strings.Contains(err.Error(), "sensor.leaf_last_update") {
+			t.Errorf("%s: err = %v", state, err)
+		}
 	}
-	if _, err := ParseSoC(entity("61", nil), "updated_on", amsterdam); err == nil || !strings.Contains(err.Error(), "no attribute updated_on") {
-		t.Errorf("missing attribute: err = %v", err)
+
+	r, _ := ParseSoC(entity("61", nil))
+	r.SetCarTime(carTime)
+	if !r.ObservedAt.Equal(carTime) || !r.ChangedAt.Equal(carTime) {
+		t.Errorf("car time = %+v", r)
 	}
-	if _, err := ParseSoC(entity("61", attrs(12)), "updated_on", amsterdam); err == nil || !strings.Contains(err.Error(), "not a time") {
-		t.Errorf("number attribute: err = %v", err)
+	// Never later than Home Assistant received the SoC.
+	r, _ = ParseSoC(entity("61", nil))
+	r.SetCarTime(reported.Add(time.Hour))
+	if !r.ObservedAt.Equal(reported) || !r.ChangedAt.Equal(reported) {
+		t.Errorf("future car time = %+v, want %v", r, reported)
 	}
 }
 
@@ -121,6 +130,8 @@ func TestHTTPClient(t *testing.T) {
 		switch r.URL.Path {
 		case "/api/states/sensor.leaf_battery":
 			json.NewEncoder(w).Encode(entity("72", nil))
+		case "/api/states/sensor.leaf_last_update":
+			w.Write([]byte(`{"entity_id":"sensor.leaf_last_update","state":"2026-11-11T07:30:00+00:00","attributes":{"device_class":"timestamp"}}`))
 		case "/api/states/sensor.leaf_range":
 			w.Write([]byte(`{"entity_id":"sensor.leaf_range","state":"190","attributes":{"unit_of_measurement":"km"}}`))
 		case "/api/states/sensor.missing":
@@ -143,6 +154,17 @@ func TestHTTPClient(t *testing.T) {
 	if strings.Join(paths, ",") != "/api/states/sensor.leaf_battery,/api/states/sensor.leaf_range" {
 		t.Errorf("paths = %v", paths)
 	}
+
+	// The reading-time sensor dates the reading; a missing one fails it.
+	c.UpdatedEntity = "sensor.leaf_last_update"
+	if r, err := c.SoC(ctx); err != nil || !r.ObservedAt.Equal(reported.Add(-40*time.Minute)) {
+		t.Errorf("with reading-time sensor = %+v %v", r, err)
+	}
+	c.UpdatedEntity = "sensor.missing"
+	if _, err := c.SoC(ctx); !errors.Is(err, ErrNotFound) {
+		t.Errorf("missing reading-time sensor: err = %v", err)
+	}
+	c.UpdatedEntity = ""
 
 	// A broken range entity only drops the range.
 	c.RangeEntity = "sensor.missing"
@@ -183,20 +205,21 @@ func TestCandidates(t *testing.T) {
 		{EntityID: "sensor.leaf_battery_kwh", State: "40", Attributes: map[string]any{"device_class": "energy_storage", "unit_of_measurement": "kWh"}},
 		{EntityID: "binary_sensor.leaf_plugged", State: "on", Attributes: map[string]any{"device_class": "plug"}},
 		{EntityID: "sensor.trip", State: "12", Attributes: map[string]any{"unit_of_measurement": "mi"}},
+		{EntityID: "sensor.leaf_last_update", State: "2026-11-11T07:30:00+00:00", Attributes: map[string]any{"device_class": "timestamp"}},
 	}
 	got := Candidates(states)
 	var ids []string
 	for _, c := range got {
 		ids = append(ids, c.EntityID+":"+c.Kind)
 	}
-	if strings.Join(ids, ",") != "sensor.leaf_battery:battery,sensor.leaf_range:range,sensor.phone_battery:battery,sensor.trip:range" {
+	if strings.Join(ids, ",") != "sensor.leaf_battery:battery,sensor.leaf_last_update:timestamp,sensor.leaf_range:range,sensor.phone_battery:battery,sensor.trip:range" {
 		t.Errorf("candidates = %v", ids)
 	}
 	if got[0].Name != "Leaf battery" || got[0].State != "72" || got[0].Unit != "%" {
 		t.Errorf("first = %+v", got[0])
 	}
 	stub, _ := Stub{Now: time.Now, Car: func() (float64, float64) { return 38, 122 }}.Sensors(context.Background())
-	if len(stub) != 2 || stub[0].EntityID != StubEntity || stub[0].State != "38" || stub[1].Kind != KindRange {
+	if len(stub) != 3 || stub[0].EntityID != StubEntity || stub[0].State != "38" || stub[1].Kind != KindTimestamp || stub[2].Kind != KindRange {
 		t.Errorf("stub sensors = %+v", stub)
 	}
 }

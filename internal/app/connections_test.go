@@ -215,14 +215,20 @@ func TestHomeAssistantConfiguredFromSettings(t *testing.T) {
 			"entity_id": "sensor.leaf_battery", "state": "72", "last_reported": "2026-11-09T17:50:00Z",
 			"attributes": map[string]any{"unit_of_measurement": "%", "device_class": "battery", "friendly_name": "Leaf battery"},
 		}
+		updated := map[string]any{
+			"entity_id": "sensor.leaf_last_update", "state": "2026-11-09T17:40:00+00:00",
+			"attributes": map[string]any{"device_class": "timestamp"},
+		}
 		switch r.URL.Path {
 		case "/api/states":
-			json.NewEncoder(w).Encode([]any{battery, map[string]any{
+			json.NewEncoder(w).Encode([]any{battery, updated, map[string]any{
 				"entity_id": "sensor.leaf_range", "state": "190",
 				"attributes": map[string]any{"unit_of_measurement": "km", "device_class": "distance"},
 			}})
 		case "/api/states/sensor.leaf_battery":
 			json.NewEncoder(w).Encode(battery)
+		case "/api/states/sensor.leaf_last_update":
+			json.NewEncoder(w).Encode(updated)
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -252,7 +258,7 @@ func TestHomeAssistantConfiguredFromSettings(t *testing.T) {
 	}
 	var sensors []struct{ EntityID, Kind string }
 	ta.json("GET", "/api/homeassistant/sensors", nil, http.StatusOK, &sensors)
-	if len(sensors) != 2 || sensors[0].EntityID != "sensor.leaf_battery" || sensors[1].Kind != "range" {
+	if len(sensors) != 3 || sensors[0].EntityID != "sensor.leaf_battery" || sensors[1].Kind != "timestamp" || sensors[2].Kind != "range" {
 		t.Fatalf("sensors = %+v", sensors)
 	}
 
@@ -269,8 +275,17 @@ func TestHomeAssistantConfiguredFromSettings(t *testing.T) {
 	if !found {
 		t.Errorf("connections after save = %+v", saved.Connections)
 	}
-	if s := ta.soc(); s.Source != "homeassistant" || *s.Percent != 72 {
+	if s := ta.soc(); s.Source != "homeassistant" || *s.Percent != 72 || !s.ObservedAt.Equal(local("2026-11-09T18:50:00+01:00")) {
 		t.Errorf("soc = %+v", s)
+	}
+	// The reading-time sensor dates the reading to when the car reported.
+	edit.HAUpdatedEntity = "sensor.leaf_last_update"
+	ta.json("PUT", "/api/settings/connections", edit, http.StatusOK, nil)
+	if status, detail := ta.connection("Home Assistant"); status != "ok" || !strings.HasSuffix(detail, "reported Mon 9 Nov 18:40") {
+		t.Errorf("with reading-time sensor = %s %q", status, detail)
+	}
+	if s := ta.soc(); !s.ObservedAt.Equal(local("2026-11-09T18:40:00+01:00")) {
+		t.Errorf("soc with reading-time sensor = %+v", s)
 	}
 	raw, _ := json.Marshal(ta.activity("?limit=500"))
 	if strings.Contains(string(raw), token) || strings.Contains(string(raw), ha.URL) {

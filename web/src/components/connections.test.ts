@@ -21,7 +21,7 @@ const defaults: ConnectionSettings = {
   haUrl: 'http://127.0.0.1:8123',
   haSocEntity: '',
   haRangeEntity: '',
-  haObservedAttribute: '',
+  haUpdatedEntity: '',
   haPollIntervalMin: 10,
   haTimeoutSec: 10,
   calendarSyncIntervalMin: 60,
@@ -55,6 +55,13 @@ describe('ConnectionSettingsForm', () => {
     api.homeAssistantSensors.mockResolvedValue([
       { entityId: 'sensor.leaf_battery', name: 'Leaf battery', state: '72', unit: '%', kind: 'battery' },
       { entityId: 'sensor.leaf_range', name: 'Leaf range', state: '190', unit: 'km', kind: 'range' },
+      {
+        entityId: 'sensor.leaf_last_update',
+        name: 'Leaf last update',
+        state: '2026-11-11T07:30:00+00:00',
+        unit: '',
+        kind: 'timestamp',
+      },
     ])
   })
 
@@ -79,6 +86,10 @@ describe('ConnectionSettingsForm', () => {
     ])
     expect(w.findAll('#ha-sensors-range option').map((o) => o.attributes('value'))).toEqual([
       'sensor.leaf_range',
+    ])
+    expect(w.get('[data-testid=connection-haUpdatedEntity]').attributes('list')).toBe('ha-sensors-timestamp')
+    expect(w.findAll('#ha-sensors-timestamp option').map((o) => o.attributes('value'))).toEqual([
+      'sensor.leaf_last_update',
     ])
   })
 

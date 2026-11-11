@@ -20,12 +20,12 @@ type ConnectionSettings struct {
 	EVCCPollIntervalSec int    `json:"evccPollIntervalSec"`
 	EVCCTimeoutSec      int    `json:"evccTimeoutSec"`
 
-	HAURL               string `json:"haUrl"`         // receives HA_TOKEN
-	HASoCEntity         string `json:"haSocEntity"`   // battery level sensor (%)
-	HARangeEntity       string `json:"haRangeEntity"` // optional range sensor (km or mi)
-	HAObservedAttribute string `json:"haObservedAttribute"`
-	HAPollIntervalMin   int    `json:"haPollIntervalMin"`
-	HATimeoutSec        int    `json:"haTimeoutSec"`
+	HAURL             string `json:"haUrl"`           // receives HA_TOKEN
+	HASoCEntity       string `json:"haSocEntity"`     // battery level sensor (%)
+	HARangeEntity     string `json:"haRangeEntity"`   // optional range sensor (km or mi)
+	HAUpdatedEntity   string `json:"haUpdatedEntity"` // optional timestamp sensor: when the car last reported
+	HAPollIntervalMin int    `json:"haPollIntervalMin"`
+	HATimeoutSec      int    `json:"haTimeoutSec"`
 
 	CalendarSyncIntervalMin int `json:"calendarSyncIntervalMin"`
 
@@ -76,7 +76,9 @@ func (c ConnectionSettings) Validate() error {
 			return fmt.Errorf("%s: %w", u.name, err)
 		}
 	}
-	for _, e := range []struct{ name, v string }{{"SoC sensor", c.HASoCEntity}, {"range sensor", c.HARangeEntity}} {
+	for _, e := range []struct{ name, v string }{
+		{"SoC sensor", c.HASoCEntity}, {"range sensor", c.HARangeEntity}, {"reading-time sensor", c.HAUpdatedEntity},
+	} {
 		if e.v != "" && !EntityID.MatchString(e.v) {
 			return fmt.Errorf("%s must be an entity ID such as sensor.leaf_battery_level", e.name)
 		}
