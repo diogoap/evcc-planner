@@ -11,6 +11,7 @@ import (
 	"github.com/diogoap/evcc-planner/internal/audit"
 	"github.com/diogoap/evcc-planner/internal/config"
 	"github.com/diogoap/evcc-planner/internal/evcc"
+	"github.com/diogoap/evcc-planner/internal/localtime"
 	"github.com/diogoap/evcc-planner/internal/model"
 	"github.com/diogoap/evcc-planner/internal/store"
 )
@@ -162,7 +163,10 @@ type SendPlanInput struct {
 	SoC     int       `json:"soc"`
 	Time    time.Time `json:"time"`
 	TripKey string    `json:"tripKey"`
-	Confirm bool      `json:"confirm"`
+	// Through is the last local date whose trips the target covers, when
+	// it was chosen to cover more than the next departure.
+	Through string `json:"through"`
+	Confirm bool   `json:"confirm"`
 }
 
 // SendPlan writes the vehicle's one-off SoC plan to EVCC. EVCC keeps one
@@ -173,6 +177,11 @@ func (s *Service) SendPlan(ctx context.Context, in SendPlanInput) (*EVCCPlanView
 	}
 	if in.SoC < 1 || in.SoC > 100 {
 		return nil, invalid("target SoC must be 1 to 100")
+	}
+	if in.Through != "" {
+		if _, err := localtime.ParseDate(s.loc(), in.Through); err != nil {
+			return nil, invalid("through must be a date (YYYY-MM-DD)")
+		}
 	}
 	now := s.now()
 	if !in.Time.After(now) {
@@ -194,6 +203,9 @@ func (s *Service) SendPlan(ctx context.Context, in SendPlanInput) (*EVCCPlanView
 	if in.TripKey != "" {
 		ev.Related = "trip:" + in.TripKey
 	}
+	if in.Through != "" {
+		ev.Summary += ", covering trips through " + s.dateText(in.Through)
+	}
 	prev := s.planText(0, time.Time{}, false)
 	if veh.Plan != nil {
 		prev = s.planText(veh.Plan.Soc, veh.Plan.Time, true)
@@ -206,7 +218,11 @@ func (s *Service) SendPlan(ctx context.Context, in SendPlanInput) (*EVCCPlanView
 		s.record(ctx, ev)
 		return nil, err
 	}
-	ev.Detail = audit.Marshal(map[string]any{"tripKey": in.TripKey, "evccResponse": resp})
+	detail := map[string]any{"tripKey": in.TripKey, "evccResponse": resp}
+	if in.Through != "" {
+		detail["coversThrough"] = in.Through
+	}
+	ev.Detail = audit.Marshal(detail)
 	if err := s.change(ctx, ev, func(tx *store.Store, e *model.AuditEvent) error {
 		_, err := tx.AddPlanWrite(model.PlanWrite{
 			Vehicle: veh.Name, SoC: in.SoC, TargetTime: at, TripKey: in.TripKey, WrittenAt: now,

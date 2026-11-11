@@ -517,3 +517,53 @@ func TestPastTripsHiddenAndDayTargetMatchesFirstDeparture(t *testing.T) {
 		t.Errorf("Sunday target = %v (%v), want the morning trip's %.0f%%", sun.TargetSoC, sun.RequiredSoC, math.Ceil(morning))
 	}
 }
+
+func TestSendOptionsCoverMoreDays(t *testing.T) {
+	ta := newTestApp(t, "")
+	var p struct {
+		Next *struct {
+			TargetSoC int    `json:"targetSoc"`
+			DepartAt  string `json:"departAt"`
+		} `json:"next"`
+		SendOptions []struct {
+			Days       int      `json:"days"`
+			From       string   `json:"from"`
+			Through    string   `json:"through"`
+			ReadyBy    string   `json:"readyBy"`
+			TargetSoC  int      `json:"targetSoc"`
+			TripKeys   []string `json:"tripKeys"`
+			DistanceKm float64  `json:"distanceKm"`
+			Exceeds    bool     `json:"exceeds"`
+		} `json:"sendOptions"`
+	}
+	ta.json("GET", "/api/plan", nil, http.StatusOK, &p)
+	if len(p.SendOptions) != 3 {
+		t.Fatalf("options = %+v", p.SendOptions)
+	}
+	// Tuesday's 100 km on one charge: 15% reserve + 30.5% = 46%, more than
+	// the 42% minimum, which counts on charging between the trips.
+	want := []struct {
+		through string
+		soc     int
+		trips   int
+	}{{"2026-11-10", 46, 3}, {"2026-11-11", 67, 5}, {"2026-11-12", 76, 8}}
+	for i, o := range p.SendOptions {
+		w := want[i]
+		if o.Days != i+1 || o.From != "2026-11-10" || o.Through != w.through || o.TargetSoC != w.soc ||
+			len(o.TripKeys) != w.trips || o.ReadyBy != p.Next.DepartAt || o.TripKeys[0] != "recurring:1:2026-11-10" || o.Exceeds {
+			t.Errorf("option %d = %+v, want through %s, %d%%, %d trips", i+1, o, w.through, w.soc, w.trips)
+		}
+	}
+	if p.Next.TargetSoC != 42 || p.SendOptions[0].DistanceKm != 100 {
+		t.Errorf("next = %+v, option 1 = %+v", p.Next, p.SendOptions[0])
+	}
+
+	ta.json("POST", "/api/evcc/plan", map[string]any{"soc": 67, "time": p.Next.DepartAt, "tripKey": "recurring:1:2026-11-10",
+		"through": "11-11-2026", "confirm": true}, http.StatusBadRequest, nil)
+	ta.json("POST", "/api/evcc/plan", map[string]any{"soc": 67, "time": p.Next.DepartAt, "tripKey": "recurring:1:2026-11-10",
+		"through": "2026-11-11", "confirm": true}, http.StatusOK, nil)
+	e := ta.activity("?subject=plan").Events[0]
+	if e.Summary != "Sent plan 67% by Tue 10 Nov, 07:48 to EVCC, covering trips through Wed 11 Nov" || e.Detail["coversThrough"] != "2026-11-11" {
+		t.Errorf("recorded = %+v", e)
+	}
+}

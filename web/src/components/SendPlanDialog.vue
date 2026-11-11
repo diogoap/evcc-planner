@@ -1,19 +1,28 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { api } from '../api/client'
-import type { Block, Preview, Settings } from '../api/types'
-import { clock, dateTime, duration, kwh, localDate, zonedToISO } from '../lib/format'
+import type { Block, Preview, SendOption, Settings } from '../api/types'
+import { clock, dateTime, duration, km, kwh, localDate, zonedToISO } from '../lib/format'
+import { dayName, sendOptionLabel } from '../lib/status'
 import ModalDialog from './ModalDialog.vue'
 import PriceChart from './PriceChart.vue'
 
-const props = defineProps<{ block: Block; settings: Settings }>()
+// option: a target covering more days of trips instead of the next
+// departure's own; it is ready by the same departure.
+const props = defineProps<{ block: Block; settings: Settings; option?: SendOption; now?: string }>()
 const emit = defineEmits<{ close: []; sent: [message: string] }>()
 
 const form = reactive({
-  soc: props.block.targetSoc,
-  date: localDate(props.block.departAt),
-  time: clock(props.block.departAt),
+  soc: props.option?.targetSoc ?? props.block.targetSoc,
+  date: localDate(props.option?.readyBy ?? props.block.departAt),
+  time: clock(props.option?.readyBy ?? props.block.departAt),
 })
+const title = computed(() => {
+  if (!props.option || !props.now) return `Send plan to EVCC — ${props.block.firstTitle}`
+  const label = sendOptionLabel(props.option, props.now)
+  return `Send plan to EVCC — ${label.charAt(0).toLowerCase()}${label.slice(1)}`
+})
+const through = computed(() => (props.option && props.now ? dayName(props.option.through, props.now) : ''))
 const preview = ref<Preview | null>(null)
 const loading = ref(false)
 const sending = ref(false)
@@ -63,8 +72,12 @@ async function send() {
   sending.value = true
   error.value = ''
   try {
-    const p = await api.sendPlan(form.soc, readyBy.value, props.block.tripKeys[0] ?? '')
-    emit('sent', `Plan sent to EVCC: ${p.soc}% by ${dateTime(p.time)}`)
+    const o = props.option
+    const p = await api.sendPlan(form.soc, readyBy.value, props.block.tripKeys[0] ?? '', o?.through)
+    emit(
+      'sent',
+      `Plan sent to EVCC: ${p.soc}% by ${dateTime(p.time)}${o ? `, for trips through ${through.value}` : ''}`,
+    )
   } catch (e) {
     error.value = (e as Error).message
   } finally {
@@ -74,7 +87,7 @@ async function send() {
 </script>
 
 <template>
-  <ModalDialog :title="`Send plan to EVCC — ${block.firstTitle}`" @close="emit('close')">
+  <ModalDialog :title="title" @close="emit('close')">
     <form class="stack" style="gap: 14px" @submit.prevent="send">
       <div class="form-grid">
         <label class="field">
@@ -99,7 +112,21 @@ async function send() {
           <input v-model="form.time" type="time" required />
         </label>
       </div>
-      <p class="small muted" style="margin: 0">
+      <template v-if="option">
+        <p class="small muted" style="margin: 0" data-testid="plan-covers">
+          Enough for {{ option.tripKeys.length }}
+          {{ option.tripKeys.length === 1 ? 'trip' : 'trips' }} through {{ through }} ({{
+            km(option.distanceKm)
+          }}: {{ option.titles.join(', ') }}) with no charging in between, arriving home with a
+          {{ settings.arrivalReservePct }}% reserve. Planner target: {{ option.targetSoc }}%; the next
+          departure alone needs {{ block.targetSoc }}% if the car charges between trips.
+        </p>
+        <p v-if="option.exceeds" class="small text-warn" style="margin: 0">
+          These trips need more than a full battery, so the target stops at 100%: the car still has to charge
+          between them.
+        </p>
+      </template>
+      <p v-else class="small muted" style="margin: 0">
         Covers {{ block.titles.join(', ') }} with a {{ settings.arrivalReservePct }}% arrival reserve. Planner
         target: {{ block.targetSoc }}%.
       </p>

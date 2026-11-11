@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { Block, Day } from '../api/types'
-import { blockLabel, dayLabel } from './status'
+import type { Block, Day, SendOption } from '../api/types'
+import { blockLabel, dayLabel, dayName, onDay, sendOptionLabel } from './status'
 
 const day = (over: Partial<Day>): Day => ({
   date: '2026-11-10',
@@ -73,5 +73,39 @@ describe('status labels', () => {
     expect(blockLabel(block({ status: 'ready' })).tone).toBe('ok')
     expect(blockLabel(block({ status: 'shortfall', shortfall: 4.2 })).text).toContain('5% short')
     expect(blockLabel(block({ status: 'unknown' })).text).toContain('plug in')
+  })
+})
+
+describe('send options', () => {
+  const opt = (days: number, from: string, through: string): SendOption => ({
+    days,
+    from,
+    through,
+    readyBy: '2026-11-10T06:48:00Z',
+    requiredSoc: 45.5,
+    targetSoc: 46,
+    tripKeys: [],
+    titles: [],
+    distanceKm: 100,
+    energyKWh: 18,
+    exceeds: false,
+  })
+  const monday = '2026-11-09T18:00:00Z' // 19:00 in Amsterdam
+
+  it('names days relative to now', () => {
+    expect(dayName('2026-11-09', monday)).toBe('today')
+    expect(dayName('2026-11-10', monday)).toBe('tomorrow')
+    expect(dayName('2026-11-12', monday)).toBe('Thu 12 Nov')
+    expect(onDay('2026-11-10', monday)).toBe('tomorrow')
+    expect(onDay('2026-11-12', monday)).toBe('on Thu 12 Nov')
+  })
+
+  it('labels each horizon from the day of the next departure', () => {
+    expect(sendOptionLabel(opt(1, '2026-11-09', '2026-11-09'), monday)).toBe('Trips today')
+    expect(sendOptionLabel(opt(2, '2026-11-09', '2026-11-10'), monday)).toBe('Today and tomorrow')
+    expect(sendOptionLabel(opt(3, '2026-11-09', '2026-11-11'), monday)).toBe('Today to Wed 11 Nov')
+    expect(sendOptionLabel(opt(1, '2026-11-10', '2026-11-10'), monday)).toBe('Trips tomorrow')
+    expect(sendOptionLabel(opt(2, '2026-11-10', '2026-11-11'), monday)).toBe('Tomorrow and Wed 11 Nov')
+    expect(sendOptionLabel(opt(1, '2026-11-12', '2026-11-12'), monday)).toBe('Trips on Thu 12 Nov')
   })
 })

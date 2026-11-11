@@ -163,6 +163,43 @@ test('send a plan to EVCC only after confirmation', async ({ page }) => {
   await expect(page.getByTestId('evcc-plan')).toContainText('Set by planner')
 })
 
+test('send a plan covering more days from the menu', async ({ page }) => {
+  await page.goto('/')
+  const more = page.getByRole('button', { name: 'More plans: cover more days' })
+  await more.click()
+  await expect(more).toHaveAttribute('aria-expanded', 'true')
+  // Tuesday's 100 km on one charge needs 46%; the minimum plan (42%)
+  // counts on charging between the trips.
+  await expect(page.getByTestId('send-option-1')).toContainText('Trips tomorrow')
+  await expect(page.getByTestId('send-option-1')).toContainText('46%')
+  await expect(page.getByTestId('send-option-2')).toContainText('Tomorrow and Wed 11 Nov')
+  await expect(page.getByTestId('send-option-2')).toContainText('67%')
+  await expect(page.getByTestId('send-option-3')).toContainText('Tomorrow to Thu 12 Nov')
+  const box = (await page.getByTestId('send-option-1').locator('..').boundingBox())!
+  expect(box.x).toBeGreaterThanOrEqual(15)
+  expect(box.x + box.width).toBeLessThanOrEqual(page.viewportSize()!.width - 15)
+  await shot(page, 'send-plan-menu')
+  await page.keyboard.press('Escape')
+  await expect(page.getByTestId('send-option-1')).toBeHidden()
+  await expect(more).toBeFocused()
+
+  await more.click()
+  await page.getByTestId('send-option-2').click()
+  const dialog = page.getByRole('dialog', { name: 'Send plan to EVCC — tomorrow and Wed 11 Nov' })
+  await expect(page.getByTestId('plan-soc')).toHaveValue('67')
+  await expect(dialog.getByTestId('plan-covers')).toContainText('Enough for 5 trips through Wed 11 Nov')
+  await dialog.getByRole('button', { name: 'Confirm and send' }).click()
+  await expect(
+    page.getByText('Plan sent to EVCC: 67% by Tue 10 Nov, 07:48, for trips through Wed 11 Nov'),
+  ).toBeVisible()
+  await expect(page.getByTestId('evcc-plan')).toContainText('67% by Tue 10 Nov, 07:48')
+
+  await page.getByTestId('plan-history').click()
+  await expect(page.locator('li.activity').first()).toContainText(
+    'Sent plan 67% by Tue 10 Nov, 07:48 to EVCC, covering trips through Wed 11 Nov',
+  )
+})
+
 test('installable as an app: manifest and icons', async ({ page, request }) => {
   await page.goto('/')
   await expect(page.locator('link[rel="manifest"]')).toHaveAttribute('href', '/manifest.webmanifest')

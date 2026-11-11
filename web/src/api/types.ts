@@ -126,6 +126,21 @@ export interface Block {
   shortfall: number
 }
 
+/** A plan by the next departure covering every trip through a day, with no charging in between. */
+export interface SendOption {
+  days: number
+  from: string
+  through: string
+  readyBy: string
+  requiredSoc: number
+  targetSoc: number
+  tripKeys: string[]
+  titles: string[]
+  distanceKm: number
+  energyKWh: number
+  exceeds: boolean
+}
+
 export interface TimelinePoint {
   at: string
   soc: number
@@ -145,6 +160,8 @@ export interface Plan {
   days: Day[]
   blocks: Block[]
   next: Block | null
+  /** Plans for the next departure that also cover one to three days of trips. */
+  sendOptions: SendOption[]
   timeline: TimelinePoint[]
   warnings: string[]
   advice: AdviceView

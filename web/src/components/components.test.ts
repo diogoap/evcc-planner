@@ -1,8 +1,9 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
-import type { AuditEvent, Day, SoCView, Status, Trip } from '../api/types'
+import type { AuditEvent, Day, SendOption, SoCView, Status, Trip } from '../api/types'
 import ActivityItem from './ActivityItem.vue'
 import DaysTable from './DaysTable.vue'
+import SendPlanButton from './SendPlanButton.vue'
 import TripRow from './TripRow.vue'
 import VehicleCard from './VehicleCard.vue'
 
@@ -259,5 +260,69 @@ describe('ActivityItem', () => {
     expect(w.get('[data-testid=event-error]').text()).toBe('HTTP 500 Internal Server Error')
     expect(w.find('[data-testid=event-changes]').exists()).toBe(false)
     expect(w.get('details').text()).toContain('Endpoint')
+  })
+})
+
+describe('SendPlanButton', () => {
+  const option = (
+    days: number,
+    through: string,
+    trips: number,
+    km: number,
+    targetSoc: number,
+  ): SendOption => ({
+    days,
+    from: '2026-11-10',
+    through,
+    readyBy: '2026-11-10T06:48:00Z',
+    requiredSoc: targetSoc,
+    targetSoc,
+    tripKeys: Array.from({ length: trips }, (_, i) => `t${i}`),
+    titles: [],
+    distanceKm: km,
+    energyKWh: 0,
+    exceeds: false,
+  })
+  const options = [
+    option(1, '2026-11-10', 3, 100, 46),
+    option(2, '2026-11-11', 3, 100, 46),
+    option(3, '2026-11-12', 6, 132, 56),
+  ]
+  const now = '2026-11-09T18:00:00Z'
+
+  it('sends the next departure, or a plan covering more days from the menu', async () => {
+    const w = mount(SendPlanButton, { props: { options, now, disabled: false }, attachTo: document.body })
+    await w.get('.split-main').trigger('click')
+    expect(w.emitted('send')).toEqual([[]])
+
+    const toggle = w.get('[data-testid=send-more]')
+    expect(toggle.attributes('aria-expanded')).toBe('false')
+    await toggle.trigger('click')
+    expect(toggle.attributes('aria-expanded')).toBe('true')
+    expect(w.get('[data-testid=send-option-1]').text()).toContain('Trips tomorrow')
+    expect(w.get('[data-testid=send-option-1]').text()).toContain('46%')
+    expect(w.get('[data-testid=send-option-1]').text()).toContain('3 trips · 100 km')
+    // Wednesday adds no trips: nothing to choose.
+    const wed = w.get('[data-testid=send-option-2]')
+    expect(wed.attributes('disabled')).toBeDefined()
+    expect(wed.text()).toContain('No trips on Wed 11 Nov')
+    expect(w.get('[data-testid=send-option-3]').text()).toContain('Tomorrow to Thu 12 Nov')
+
+    await w.get('[data-testid=send-option-3]').trigger('click')
+    expect(w.emitted('send')?.[1]).toEqual([options[2]])
+    expect(w.find('[data-testid=send-option-1]').exists()).toBe(false)
+    w.unmount()
+  })
+
+  it('closes with Escape and stays off while EVCC is unreachable', async () => {
+    const w = mount(SendPlanButton, { props: { options, now, disabled: false }, attachTo: document.body })
+    await w.get('[data-testid=send-more]').trigger('click')
+    await w.get('.split').trigger('keydown', { key: 'Escape' })
+    expect(w.find('[data-testid=send-option-1]').exists()).toBe(false)
+    w.unmount()
+
+    const off = mount(SendPlanButton, { props: { options, now, disabled: true } })
+    expect(off.get('.split-main').attributes('disabled')).toBeDefined()
+    expect(off.get('[data-testid=send-more]').attributes('disabled')).toBeDefined()
   })
 })

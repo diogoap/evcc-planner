@@ -15,21 +15,22 @@ import (
 
 // PlanView is the seven-day plan shown by the overview and trips pages.
 type PlanView struct {
-	Now         time.Time       `json:"now"`
-	Timezone    string          `json:"timezone"`
-	From        time.Time       `json:"from"`
-	To          time.Time       `json:"to"`
-	Settings    model.Settings  `json:"settings"`
-	HomeMissing bool            `json:"homeMissing"`
-	SoC         SoCView         `json:"soc"`
-	Trips       []TripView      `json:"trips"`
-	Ignored     []IgnoredView   `json:"ignored"`
-	Days        []DayView       `json:"days"`
-	Blocks      []BlockView     `json:"blocks"`
-	Next        *BlockView      `json:"next"`
-	Timeline    []planner.Point `json:"timeline"`
-	Warnings    []string        `json:"warnings"`
-	Advice      *AdviceView     `json:"advice"`
+	Now         time.Time        `json:"now"`
+	Timezone    string           `json:"timezone"`
+	From        time.Time        `json:"from"`
+	To          time.Time        `json:"to"`
+	Settings    model.Settings   `json:"settings"`
+	HomeMissing bool             `json:"homeMissing"`
+	SoC         SoCView          `json:"soc"`
+	Trips       []TripView       `json:"trips"`
+	Ignored     []IgnoredView    `json:"ignored"`
+	Days        []DayView        `json:"days"`
+	Blocks      []BlockView      `json:"blocks"`
+	Next        *BlockView       `json:"next"`
+	SendOptions []SendOptionView `json:"sendOptions"`
+	Timeline    []planner.Point  `json:"timeline"`
+	Warnings    []string         `json:"warnings"`
+	Advice      *AdviceView      `json:"advice"`
 }
 
 // SoCView describes the SoC used for planning and how fresh it is.
@@ -131,6 +132,58 @@ type BlockView struct {
 	ChargeFrom        *time.Time `json:"chargeFrom"`
 	LatestChargeStart *time.Time `json:"latestChargeStart"`
 	Shortfall         float64    `json:"shortfall"`
+}
+
+// SendOptionView is a plan for the next departure that also covers every
+// trip until the end of a later day, driven without charging in between.
+type SendOptionView struct {
+	Days        int       `json:"days"`    // 1 = the day of the next departure
+	From        string    `json:"from"`    // local date of the next departure
+	Through     string    `json:"through"` // last local date covered
+	ReadyBy     time.Time `json:"readyBy"` // the next departure
+	RequiredSoC float64   `json:"requiredSoc"`
+	TargetSoC   int       `json:"targetSoc"` // whole percent to send to EVCC
+	TripKeys    []string  `json:"tripKeys"`
+	Titles      []string  `json:"titles"`
+	DistanceKm  float64   `json:"distanceKm"`
+	EnergyKWh   float64   `json:"energyKWh"`
+	Exceeds     bool      `json:"exceeds"` // needs more than a full battery
+}
+
+// sendOptionDays is how many days ahead plans are offered.
+const sendOptionDays = 3
+
+// sendOptions lists plans covering one to three days of trips, from the day
+// of the next departure on.
+func (s *Service) sendOptions(res planner.Result, p planner.Params, blocks []BlockView) []SendOptionView {
+	out := []SendOptionView{}
+	if res.Next < 0 {
+		return out
+	}
+	next := blocks[res.Next]
+	first := localtime.StartOfDay(next.DepartAt, s.loc())
+	for d := 1; d <= sendOptionDays; d++ {
+		c, ok := planner.CoverUntil(res, p, localtime.AddDays(first, d))
+		if !ok {
+			break
+		}
+		o := SendOptionView{
+			Days: d, From: localtime.Date(first, s.loc()), Through: localtime.Date(localtime.AddDays(first, d-1), s.loc()),
+			ReadyBy: next.DepartAt, RequiredSoC: round(c.RequiredSoC, 1),
+			TargetSoC: int(math.Min(100, math.Ceil(c.RequiredSoC-1e-6))), Exceeds: c.Exceeds,
+			TripKeys: []string{}, Titles: []string{},
+		}
+		for _, i := range c.Blocks {
+			b := blocks[i]
+			o.TripKeys = append(o.TripKeys, b.TripKeys...)
+			o.Titles = append(o.Titles, b.Titles...)
+			o.DistanceKm += b.DistanceKm
+			o.EnergyKWh += b.EnergyKWh
+		}
+		o.DistanceKm, o.EnergyKWh = round(o.DistanceKm, 1), round(o.EnergyKWh, 2)
+		out = append(out, o)
+	}
+	return out
 }
 
 // tripRoute is a trip's resolved route and timing.
@@ -241,6 +294,7 @@ func (s *Service) Plan(ctx context.Context) (*PlanView, error) {
 	if result.Next >= 0 {
 		view.Next = &view.Blocks[result.Next]
 	}
+	view.SendOptions = s.sendOptions(result, params, view.Blocks)
 
 	for i, t := range list {
 		r := resolved[i]

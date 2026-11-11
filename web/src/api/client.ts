@@ -96,8 +96,8 @@ export const api = {
 
   preview: (soc: number, time: string) =>
     request<Preview>('GET', `/api/evcc/preview?soc=${soc}&time=${enc(time)}`),
-  sendPlan: (soc: number, time: string, tripKey: string) =>
-    request<EVCCPlan>('POST', '/api/evcc/plan', { soc, time, tripKey, confirm: true }),
+  sendPlan: (soc: number, time: string, tripKey: string, through?: string) =>
+    request<EVCCPlan>('POST', '/api/evcc/plan', { soc, time, tripKey, through, confirm: true }),
 
   connections: () => request<Connection[]>('GET', '/api/connections'),
   syncCalendar: () => request<Connection[]>('POST', '/api/calendar/sync', {}),

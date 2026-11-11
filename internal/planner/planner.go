@@ -248,3 +248,32 @@ func chargeablePct(d time.Duration, p Params) float64 {
 func hours(h float64) time.Duration { return time.Duration(h * float64(time.Hour)) }
 
 func ptr[T any](v T) *T { return &v }
+
+// Cover is a departure target that lets the car drive several away blocks
+// without charging in between.
+type Cover struct {
+	Blocks      []int   // indexes of the covered blocks, from Result.Next on
+	EnergyPct   float64 // their energy as SoC points
+	RequiredSoC float64 // SoC needed at the next departure, capped at 100
+	Exceeds     bool    // more than a full battery would be needed
+}
+
+// CoverUntil returns the SoC the next departure needs so that every block
+// departing before until is driven on that charge alone, arriving home from
+// the last with the reserve. It is never below the next departure's own
+// required SoC, which may also count blocks after until. ok is false when
+// there is no next departure.
+func CoverUntil(res Result, p Params, until time.Time) (Cover, bool) {
+	if res.Next < 0 || res.Next >= len(res.Blocks) {
+		return Cover{}, false
+	}
+	c := Cover{}
+	for i := res.Next; i < len(res.Blocks) && (i == res.Next || res.Blocks[i].DepartAt.Before(until)); i++ {
+		c.Blocks = append(c.Blocks, i)
+		c.EnergyPct += res.Blocks[i].EnergyPct
+	}
+	need := math.Max(c.EnergyPct+p.ReservePct, res.Blocks[res.Next].RequiredSoC)
+	c.Exceeds = need > 100+eps || res.Blocks[res.Next].Status == StatusExceeds
+	c.RequiredSoC = math.Min(need, 100)
+	return c, true
+}

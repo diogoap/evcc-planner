@@ -187,3 +187,51 @@ func TestInProgressBlockDelaysCharging(t *testing.T) {
 		t.Errorf("charging starts %s, want at return %s", got, now.Add(time.Hour))
 	}
 }
+
+func TestCoverUntilDrivesSeveralBlocksOnOneCharge(t *testing.T) {
+	p := Params{CapacityKWh: 59, ConsumptionKWhPer100Km: 18, ReservePct: 15, EfficiencyPct: 90, ChargePowerKW: 3.68, ChargeBuffer: 30 * time.Minute}
+	now := time.Date(2026, 11, 9, 19, 0, 0, 0, time.UTC)
+	day := func(d, h int) time.Time { return time.Date(2026, 11, d, h, 0, 0, 0, time.UTC) }
+	res := Plan(now, p, SoC{Percent: 38, Known: true, ObservedAt: now}, []Trip{
+		{Key: "done", DepartAt: day(9, 8), ReturnAt: day(9, 9), DistanceKm: 20},
+		{Key: "tue-am", DepartAt: day(10, 7), ReturnAt: day(10, 8), DistanceKm: 50},
+		{Key: "tue-pm", DepartAt: day(10, 15), ReturnAt: day(10, 16), DistanceKm: 50},
+		{Key: "thu", DepartAt: day(12, 7), ReturnAt: day(12, 8), DistanceKm: 100},
+	})
+	pct := func(km float64) float64 { return km * 0.18 / 59 * 100 }
+
+	one, ok := CoverUntil(res, p, day(11, 0))
+	if !ok || len(one.Blocks) != 2 || one.Blocks[0] != res.Next {
+		t.Fatalf("one day = %+v", one)
+	}
+	if want := 15 + pct(100); math.Abs(one.RequiredSoC-want) > 1e-9 || one.RequiredSoC <= res.Blocks[res.Next].RequiredSoC {
+		t.Errorf("one day needs %.2f, want %.2f (more than the minimum %.2f, which charges in between)",
+			one.RequiredSoC, want, res.Blocks[res.Next].RequiredSoC)
+	}
+	two, _ := CoverUntil(res, p, day(12, 0))
+	if len(two.Blocks) != 2 || two.RequiredSoC != one.RequiredSoC {
+		t.Errorf("a day without trips adds nothing: %+v", two)
+	}
+	three, _ := CoverUntil(res, p, day(13, 0))
+	if want := 15 + pct(200); len(three.Blocks) != 3 || math.Abs(three.RequiredSoC-want) > 1e-9 || three.Exceeds {
+		t.Errorf("three days = %+v, want %.2f", three, want)
+	}
+
+	// The next departure is always covered, even when it leaves after until.
+	early, _ := CoverUntil(res, p, day(10, 0))
+	if len(early.Blocks) != 1 || early.RequiredSoC < res.Blocks[res.Next].RequiredSoC {
+		t.Errorf("early = %+v", early)
+	}
+
+	// More than a full battery is capped and flagged.
+	long := Plan(now, p, SoC{}, []Trip{
+		{Key: "a", DepartAt: day(10, 7), ReturnAt: day(10, 9), DistanceKm: 200},
+		{Key: "b", DepartAt: day(11, 7), ReturnAt: day(11, 9), DistanceKm: 200},
+	})
+	if c, _ := CoverUntil(long, p, day(12, 0)); c.RequiredSoC != 100 || !c.Exceeds {
+		t.Errorf("two long days = %+v", c)
+	}
+	if _, ok := CoverUntil(Plan(now, p, SoC{}, nil), p, day(12, 0)); ok {
+		t.Error("no next departure, no cover")
+	}
+}

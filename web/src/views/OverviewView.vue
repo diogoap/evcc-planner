@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../api/client'
-import type { AdjustmentKind, Place } from '../api/types'
+import type { AdjustmentKind, Place, SendOption } from '../api/types'
 import AdviceCard from '../components/AdviceCard.vue'
 import DaysTable from '../components/DaysTable.vue'
 import EnergyCard from '../components/EnergyCard.vue'
@@ -20,7 +20,9 @@ import { mutate, notify, refresh, state } from '../store'
 const router = useRouter()
 const plan = computed(() => state.plan)
 const status = computed(() => state.status)
-const sending = ref(false)
+// The plan being sent: the next departure's own target, or an option
+// covering more days.
+const sending = ref<{ option?: SendOption } | null>(null)
 const adding = ref(false)
 const places = ref<Place[]>([])
 
@@ -49,7 +51,7 @@ async function openAdd() {
 
 function onSaved(message: string) {
   adding.value = false
-  sending.value = false
+  sending.value = null
   proposing.value = null
   notify(message)
   refresh()
@@ -75,7 +77,13 @@ function cancelAdjustment(id: number) {
       <div class="grid-2">
         <VehicleCard :soc="plan.soc" :status="status" :now="plan.now" :target="plan.next?.targetSoc" />
         <EnergyCard :status="status" :now="plan.now" />
-        <NextDepartureCard :block="plan.next" :now="plan.now" :can-send="canSend" @send="sending = true" />
+        <NextDepartureCard
+          :block="plan.next"
+          :now="plan.now"
+          :can-send="canSend"
+          :options="plan.sendOptions"
+          @send="(option?: SendOption) => (sending = { option })"
+        />
         <section class="card" aria-labelledby="control-title">
           <div id="control-title" class="card-title">Control</div>
           <dl class="kv">
@@ -180,7 +188,9 @@ function cancelAdjustment(id: number) {
       v-if="sending && plan?.next"
       :block="plan.next"
       :settings="plan.settings"
-      @close="sending = false"
+      :option="sending.option"
+      :now="plan.now"
+      @close="sending = null"
       @sent="onSaved"
     />
     <ProposalDialog

@@ -1,11 +1,12 @@
 <script setup lang="ts">
 // Small line icons drawn on a 24×24 grid. Decorative unless given a label.
-export type IconName = 'bolt' | 'clock' | 'check' | 'dash' | 'sun' | 'wind'
+export type IconName = 'bolt' | 'chevron' | 'clock' | 'check' | 'dash' | 'sun' | 'wind'
 
 defineProps<{ name: IconName; label?: string }>()
 
 const paths: Record<IconName, string[]> = {
   bolt: ['M13 2 4 14h7l-1 8 9-12h-7l1-8z'],
+  chevron: ['M6 9l6 6 6-6'],
   clock: ['M12 3a9 9 0 1 0 0 18 9 9 0 1 0 0-18z', 'M12 7v5l3 2'],
   check: ['M5 12.5l4.5 4.5L19 7'],
   dash: ['M6 12h12'],

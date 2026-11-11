@@ -1,5 +1,5 @@
-import type { Block, BlockStatus, Day } from '../api/types'
-import { clock, duration, pct } from './format'
+import type { Block, BlockStatus, Day, SendOption } from '../api/types'
+import { clock, duration, pct, relativeDay } from './format'
 
 export type Tone = 'ok' | 'warn' | 'bad' | 'muted' | 'info'
 
@@ -72,4 +72,24 @@ export function blockLabel(b: Block): { text: string; tone: Tone } {
     default:
       return { text: '', tone: 'muted' }
   }
+}
+
+/** "today", "tomorrow", or "Thu 12 Nov" for a local date. */
+export function dayName(date: string, now: string) {
+  const d = relativeDay(`${date}T12:00:00Z`, now)
+  return d === 'Today' || d === 'Tomorrow' ? d.toLowerCase() : d
+}
+
+/** "on Thu 12 Nov", or just "today" / "tomorrow". */
+export function onDay(date: string, now: string) {
+  const d = dayName(date, now)
+  return d === 'today' || d === 'tomorrow' ? d : `on ${d}`
+}
+
+const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
+
+/** "Trips today", "Today and tomorrow", "Tomorrow to Thu 12 Nov". */
+export function sendOptionLabel(o: SendOption, now: string) {
+  if (o.days === 1) return `Trips ${onDay(o.from, now)}`
+  return capitalize(`${dayName(o.from, now)} ${o.days === 2 ? 'and' : 'to'} ${dayName(o.through, now)}`)
 }

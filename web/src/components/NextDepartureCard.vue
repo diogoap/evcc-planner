@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
-import type { Block } from '../api/types'
+import type { Block, SendOption } from '../api/types'
 import { clock, localDate, relativeDay } from '../lib/format'
 import { blockLabel } from '../lib/status'
+import SendPlanButton from './SendPlanButton.vue'
 
-const props = defineProps<{ block: Block | null; now: string; canSend: boolean }>()
-const emit = defineEmits<{ send: [] }>()
+const props = defineProps<{ block: Block | null; now: string; canSend: boolean; options?: SendOption[] }>()
+const emit = defineEmits<{ send: [option?: SendOption] }>()
 
 const label = computed(() => (props.block ? blockLabel(props.block) : null))
 const later = computed(() => props.block?.titles.slice(1) ?? [])
@@ -37,9 +38,12 @@ const later = computed(() => props.block?.titles.slice(1) ?? [])
         <RouterLink class="btn" :to="{ path: '/trips', hash: `#day-${localDate(block.firstArriveAt)}` }"
           >View trips</RouterLink
         >
-        <button class="btn primary" type="button" :disabled="!canSend" @click="emit('send')">
-          Send plan to EVCC
-        </button>
+        <SendPlanButton
+          :options="options ?? []"
+          :now="now"
+          :disabled="!canSend"
+          @send="(o?: SendOption) => emit('send', o)"
+        />
       </div>
     </template>
     <template v-else>
