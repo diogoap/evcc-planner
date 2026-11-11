@@ -73,7 +73,9 @@ Background EVCC preferences: cheap-grid charging and solar/export-price priority
 
 Example: 100 km total at 18 kWh/100 km, 59 kWh usable capacity, and a configurable 15% arrival reserve requires about **46% departure SoC**.
 
-**V1 — Trip UI and plan previews.**
+**V1 — Trip UI and plan previews.** ✅
+
+✅ **Done** (2026-11-09).
 
 - Connect Calendar (secret iCal) and EVCC; add manual trips and a **Recurring trips** section to create/edit/disable schedules such as school runs.
 - Add UI settings for home address, trip defaults, and recurring-trip management; save personal data privately in SQLite.
@@ -81,7 +83,9 @@ Example: 100 km total at 18 kWh/100 km, 59 kWh usable capacity, and a configurab
 - UI: EVCC status (SoC, connection, charging power), seven-day agenda, and plan previews. When unplugged, show the last known SoC with a small tip that it is not current and when it was read. Trip cards show source, arrival and departure times, route, distance **(km)**, estimated energy **(kWh)**, and edit/disable controls. Add a demand/SoC timeline where useful.
 - **Send plan to EVCC** is user-triggered and needs confirmation. The confirmation shows the target SoC, deadline, EVCC preview, and any existing EVCC plan it replaces. EVCC holds one plan per vehicle, so V1 sends the next departure's target. Record app-written plans; never change repeating plans or limits. Automatic plan sync stays in V5.
 
-**V2 — Daily forecast ingestion and seven-day advice.**
+**V2 — Daily forecast ingestion and seven-day advice.** ✅
+
+✅ **Done** (2026-11-10).
 
 - **Tibber, once daily:** fetch the unstructured [weekly outlook](https://tibber.com/nl/stroomprijsprognose), extract the article, and call **OpenRouter** with a schema-supporting model to produce a fixed, versioned JSON payload. The article updates weekly; preserve its report period separately from fetch time.
 - **Payload contract:** source URL, issue/fetch times, validity period, weekly outlook, dated daily estimates/trends, wind/solar signals, confidence, and supporting text. Usable prices must be retail €/kWh including VAT, with verified conversion provenance. Require strict JSON Schema output and server-side validation; missing values stay null, without invented daily/hourly prices.
@@ -109,7 +113,9 @@ As implemented (2026-11-10):
 - Daily price level: published day average, else the day's estimate, else the weekly average (only usable as a comparison, never as a day's own basis). Recommendations need an 8% gap; confidence follows the weaker compared basis, lowered for stale or contradicting inputs; confidence 1 offers no plan action.
 - **Create extra plan** writes a one-off SoC plan (at least the next departure's target, ready before it leaves) and **Review postponement** (today only) removes EVCC's loadpoint smart cost limit (cheap-grid charging) until the cheaper day. Both record the value they replaced and restore it at expiry unless it changed in EVCC meanwhile.
 
-**V3 — Audit trail.**
+**V3 — Audit trail.** ✅
+
+✅ **Done** (2026-11-10).
 
 - Record every action as an append-only audit event: time, source (UI, scheduled job, calendar sync, automation), action, subject (trip, schedule, place, setting, plan), before/after values, and outcome (success or failure with the error). Write the event in the same transaction as the change where possible.
 - **App actions:** EVCC plan submissions (target, deadline, the plan it replaced, EVCC's response), manual trips added/edited/deleted, trips or dates disabled/re-enabled/edited/reset, calendar trips confirmed, recurring schedules created/edited/paused/deleted, places and settings changes, and later advice and automation decisions.
@@ -131,9 +137,16 @@ As implemented (2026-11-10):
 
 - **Always-on SoC:** read the Leaf's SoC from Home Assistant, which has it even when the car is unplugged, using the HA token in `.env`. Fall back to EVCC, and show the source and freshness of every SoC value.
 
-**V5 — Automatic plans and interaction.**
+**V5 — Automatic plans and interaction.** 🚧
 
-- **Foundational rule: plan on plug-in** (implemented early, 2026-11-11). When the car goes from unplugged to plugged in, send the next departure's own target to EVCC once, ready by that departure. Keep a plan already in EVCC with an equal or higher SoC, even when its ready-by time is after the next departure: someone chose that plan, so the planner respects it (decided 2026-11-11). Replace only a plan with a lower SoC than the departure needs, and send nothing when the current charge already covers the departure. The last seen connection state is stored, so a restart while plugged in does not count, and a car plugged in while the app was down does. On by default, switchable in Settings; each decision is in the activity log (source: automation). This covers only the most basic need; the rest of V5 can refine the target, e.g. adding charge when prices are cheap or for trips soon after the first one (horizon planning below).
+🚧 **In progress.**
+
+Done:
+
+- ✅ **Foundational rule: plan on plug-in** (implemented early, 2026-11-11). When the car goes from unplugged to plugged in, send the next departure's own target to EVCC once, ready by that departure. Keep a plan already in EVCC with an equal or higher SoC, even when its ready-by time is after the next departure: someone chose that plan, so the planner respects it (decided 2026-11-11). Replace only a plan with a lower SoC than the departure needs, and send nothing when the current charge already covers the departure. The last seen connection state is stored, so a restart while plugged in does not count, and a car plugged in while the app was down does. On by default, switchable in Settings; each decision is in the activity log (source: automation). This covers only the most basic need; the rest of V5 can refine the target, e.g. adding charge when prices are cheap or for trips soon after the first one (horizon planning below).
+
+To do:
+
 - Update managed trip plans after hourly calendar sync, new prices, connection changes, and manual edits. Keep trip automation separate from advice auto-apply; daily advice remains manual unless its own setting is explicitly enabled.
 - **Horizon planning:** while published prices (typically 24–36 hours after the ~14:00 update), the trips, and the solar forecast cover the coming day, plan for all trips in that horizon, not only the next one. For each later trip, compare charging its energy before the first departure (e.g. a cheap night block) with the cheapest feasible home window before that trip, including forecast solar surplus after household use; add it to the earlier target when that is cheaper.
 - EVCC keeps one plan per vehicle, so the managed plan is one SoC target by the first departure (EVCC picks the cheapest slots before it); it may exceed the 80% limit. Re-plan as the day unfolds. Beyond the published-price horizon, keep the minimum per-trip targets; V2 estimates stay advisory.
