@@ -33,7 +33,7 @@ const groups: Group[] = [
         key: 'evccUrl',
         label: 'Address',
         kind: 'text',
-        hint: 'EVCC as the planner reaches it, e.g. http://192.0.2.10:7070. EVCC_URL only sets the starting value; once saved here it is no longer needed.',
+        hint: 'EVCC as the planner reaches it, e.g. http://192.0.2.10:7070.',
       },
       {
         key: 'evccLoadpoint',
@@ -71,7 +71,7 @@ const groups: Group[] = [
         key: 'haUrl',
         label: 'Address',
         kind: 'text',
-        hint: 'Home Assistant as the planner reaches it, e.g. http://192.0.2.20:8123; HA_URL only sets the starting value. The access token is sent here, so keep the planner reachable only by people you trust.',
+        hint: 'Home Assistant as the planner reaches it, e.g. http://192.0.2.20:8123. The access token is sent here, so keep the planner reachable only by people you trust.',
       },
       {
         key: 'haSocEntity',

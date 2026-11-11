@@ -53,7 +53,7 @@ deletes it.
 | `make verify` | Go format/vet/tests, web format/lint/types/tests, production build, browser tests. Must pass before pushing. |
 | `make test` | Fast Go and web unit tests only. |
 | `make e2e` | Build, then run the Playwright browser tests (desktop and phone). |
-| `make test-live` | Read-only checks against your real EVCC (state and, when plugged in, a plan preview), Home Assistant (the SoC entity, or a list of battery sensors to pick from), and the forecast sources (Tibber page; KNMI with a key; OpenRouter only with `LIVE_OPENROUTER=1`). |
+| `make test-live` | Read-only checks against your real EVCC (state and, when plugged in, a plan preview), Home Assistant (its battery, range, and timestamp sensors), and the forecast sources (Tibber page; KNMI with a key; OpenRouter only with `LIVE_OPENROUTER=1`). It does not read the app's database, so give it the addresses: `EVCC_URL=http://… HA_URL=http://… make test-live` (or put them in `.env`; the app itself ignores them). |
 | `make docker-smoke` | Build the production image, start it, check health/UI/API, report image size and idle memory. |
 | `make run` | Production build, run locally with your real config. |
 | `make fmt` / `make lint` / `make clean` | Format, lint, remove build output. |
@@ -63,7 +63,7 @@ deletes it.
 | Location | Contents | In Git |
 | --- | --- | --- |
 | `config.yaml` | System settings: port, timezone, live or stub mode per integration, the names of the secret variables, the API base URLs that receive keys, the Home Assistant address default (loopback), planning defaults. | Yes |
-| `.env` | Deployment values and secrets: `GOOGLE_CALENDAR_ICAL_URL`, `GOOGLE_MAPS_API_KEY`, and optionally `OPENROUTER_API_KEY`, `KNMI_API_KEY`, `HA_TOKEN`; `EVCC_URL` and `HA_URL` only as starting addresses. Copy `.env.example`. Real environment variables win. | No |
+| `.env` | Secrets: `GOOGLE_CALENDAR_ICAL_URL`, `GOOGLE_MAPS_API_KEY`, and optionally `OPENROUTER_API_KEY`, `KNMI_API_KEY`, `HA_TOKEN`. Copy `.env.example`. Real environment variables win. | No |
 | `config.local.yaml` | Optional overrides of `config.yaml` values, and saved places to seed. Copy `config.local.example.yaml`. | No |
 | `data/` | SQLite database with everything edited in the UI, including the connection settings. | No |
 
@@ -80,10 +80,8 @@ Integration settings that hold no secret are edited in the UI, stored in the
 database, and applied at once, without a restart:
 
 - **EVCC:** address, loadpoint, vehicle, poll interval (60 s), timeout.
-  `EVCC_URL` only sets the starting address, until the form is saved.
 - **Home Assistant:** address, the car's SoC, range, and reading-time
-  sensors, poll interval (10 min), timeout. `HA_URL` only
-  sets the starting address.
+  sensors, poll interval (10 min), timeout.
 - **Google Calendar:** sync interval (1 h). **Google Routes:** traffic-aware
   routes, route cache (1 week), free calls per month (5,000).
 - **Daily forecasts:** Tibber outlook page, OpenRouter model and timeout, KNMI
@@ -91,12 +89,10 @@ database, and applied at once, without a restart:
   (21%).
 - **History:** how many days to keep (90).
 
-Each field shows its default; **Reset to defaults** fills them in again.
-Saving stores every value that differs from the built-in defaults, including
-addresses that came from `EVCC_URL` and `HA_URL`: after one save, those
-variables are no longer needed by the app (`make test-live` still reads them
-from `.env`).
-Fields left at their built-in values keep following them. Saving checks EVCC
+Each field shows its default (the addresses default to `127.0.0.1`, so
+enter yours on first start); **Reset to defaults** fills them in again.
+Saving stores every value that differs from the defaults; fields left at
+their defaults keep following them. Saving checks EVCC
 and Home Assistant again and is recorded in the activity log. Changing the EVCC
 address, loadpoint, or vehicle waits until an active extra plan or
 postponement has ended, because each one restores EVCC's previous setting
@@ -216,8 +212,7 @@ from one design: `cd web && pnpm icons`.
 2. Provide `GOOGLE_CALENDAR_ICAL_URL` and `GOOGLE_MAPS_API_KEY` (optionally
    `OPENROUTER_API_KEY`, `KNMI_API_KEY`, and `HA_TOKEN`) as environment
    variables, then `docker compose up -d --build`. Enter the EVCC and Home
-   Assistant addresses and everything else in Settings → Connections
-   (`EVCC_URL` and `HA_URL` can provide the starting addresses).
+   Assistant addresses and everything else in Settings → Connections.
 3. Point a reverse proxy at port 7201. To put the container on the proxy's
    existing Docker network instead, also set `EVCC_PLANNER_NETWORK` to that
    network's name and `EVCC_PLANNER_NETWORK_EXTERNAL=true`; the proxy then

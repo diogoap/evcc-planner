@@ -33,7 +33,7 @@ places:
   - name: School
     address: "School 2, Town"
 `)
-	envFile := write(t, dir, ".env", "# secrets\nGOOGLE_MAPS_API_KEY=\"from-file\"\nexport EVCC_URL=http://192.0.2.10:7070\n")
+	envFile := write(t, dir, ".env", "# secrets\nGOOGLE_MAPS_API_KEY=\"from-file\"\nexport EVCC_PLANNER_LISTEN=0.0.0.0:7301\n")
 	cfg, err := Load(Options{Path: base, LocalPath: local, EnvFile: envFile, Getenv: env(map[string]string{
 		"GOOGLE_CALENDAR_ICAL_URL": "https://cal.example/ical/a/private-s1/basic.ics",
 		"OPENROUTER_API_KEY":       " or-key ", "KNMI_API_KEY": "knmi-key",
@@ -41,8 +41,8 @@ places:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.EVCC.URL != "http://192.0.2.10:7070" || cfg.ConnectionDefaults().EVCCURL != "http://192.0.2.10:7070" {
-		t.Errorf("EVCC_URL from .env not applied: %s", cfg.EVCC.URL)
+	if cfg.Server.Listen != "0.0.0.0:7301" {
+		t.Errorf("EVCC_PLANNER_LISTEN from .env not applied: %s", cfg.Server.Listen)
 	}
 	if len(cfg.Warnings) != 0 {
 		t.Errorf("warnings = %v", cfg.Warnings)
@@ -70,9 +70,9 @@ places:
 	}
 
 	// Real environment variables win over .env.
-	cfg, _ = Load(Options{Path: base, EnvFile: envFile, Getenv: env(map[string]string{"EVCC_URL": "http://real:7070"})})
-	if cfg.EVCC.URL != "http://real:7070" {
-		t.Errorf("real environment must win over .env: %s", cfg.EVCC.URL)
+	cfg, _ = Load(Options{Path: base, EnvFile: envFile, Getenv: env(map[string]string{"EVCC_PLANNER_LISTEN": "0.0.0.0:7401"})})
+	if cfg.Server.Listen != "0.0.0.0:7401" {
+		t.Errorf("real environment must win over .env: %s", cfg.Server.Listen)
 	}
 }
 
@@ -97,14 +97,14 @@ func TestEnvOverridesAndDemo(t *testing.T) {
 	dir := t.TempDir()
 	base := write(t, dir, "config.yaml", "evcc:\n  mode: live\n")
 	cfg, err := Load(Options{Path: base, Getenv: env(map[string]string{
-		"EVCC_PLANNER_LISTEN": "0.0.0.0:7201", "EVCC_URL": "http://evcc:7070", "EVCC_PLANNER_DEMO": "true",
+		"EVCC_PLANNER_LISTEN": "0.0.0.0:7201", "EVCC_PLANNER_DEMO": "true",
 		"EVCC_PLANNER_FIXED_TIME": "2026-11-09T19:00:00+01:00", "EVCC_PLANNER_DATA_DIR": "/data",
 	})})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Server.Listen != "0.0.0.0:7201" || cfg.EVCC.URL != "http://evcc:7070" {
-		t.Errorf("env overrides not applied: %+v %+v", cfg.Server, cfg.EVCC)
+	if cfg.Server.Listen != "0.0.0.0:7201" {
+		t.Errorf("env overrides not applied: %+v", cfg.Server)
 	}
 	if cfg.EVCC.Mode != ModeStub || cfg.Calendar.Mode != ModeStub || cfg.Routes.Mode != ModeStub {
 		t.Errorf("demo must force stubs: %s %s %s", cfg.EVCC.Mode, cfg.Calendar.Mode, cfg.Routes.Mode)
@@ -140,11 +140,6 @@ func TestValidation(t *testing.T) {
 	if _, err := Load(Options{Path: filepath.Join(t.TempDir(), "missing.yaml"), Getenv: env(nil)}); err == nil {
 		t.Fatal("missing config.yaml must fail")
 	}
-	p := write(t, t.TempDir(), "config.yaml", "")
-	if _, err := Load(Options{Path: p, Getenv: env(map[string]string{"EVCC_URL": "evcc:7070"})}); err == nil ||
-		!strings.Contains(err.Error(), "EVCC_URL") {
-		t.Fatalf("a bad EVCC_URL must fail naming the variable: %v", err)
-	}
 }
 
 func TestMovedKeysWarnInsteadOfFailing(t *testing.T) {
@@ -173,9 +168,6 @@ defaults:
 		!strings.Contains(strings.Join(cfg.Warnings, "\n"), "Settings → Connections") {
 		t.Errorf("warnings = %q", cfg.Warnings)
 	}
-	if cfg.ConnectionDefaults().EVCCURL != "http://127.0.0.1:7070" || cfg.ConnectionDefaults().EVCCPollIntervalSec != 60 {
-		t.Errorf("moved keys must not seed settings: %+v", cfg.ConnectionDefaults())
-	}
 }
 
 func TestHomeAssistantFromEnv(t *testing.T) {
@@ -184,15 +176,15 @@ func TestHomeAssistantFromEnv(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ha := cfg.HomeAssistant; ha.Mode != ModeLive || cfg.ConnectionDefaults().HAURL != "http://127.0.0.1:8123" || ha.Token != "" {
+	if ha := cfg.HomeAssistant; ha.Mode != ModeLive || ha.Token != "" {
 		t.Errorf("defaults = %+v", ha)
 	}
 
-	cfg, err = Load(Options{Path: p, Getenv: env(map[string]string{"HA_URL": "http://ha:8123", "HA_TOKEN": " secret-token\n"})})
+	cfg, err = Load(Options{Path: p, Getenv: env(map[string]string{"HA_TOKEN": " secret-token\n"})})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ha := cfg.HomeAssistant; cfg.ConnectionDefaults().HAURL != "http://ha:8123" || ha.Token != "secret-token" {
+	if ha := cfg.HomeAssistant; ha.Token != "secret-token" {
 		t.Errorf("env = %+v", ha)
 	}
 	found := false
@@ -229,10 +221,8 @@ func TestRepositoryConfigLoads(t *testing.T) {
 	if err != nil {
 		t.Fatalf("config.yaml must load: %v", err)
 	}
-	d := cfg.ConnectionDefaults()
-	if cfg.Server.Listen != "127.0.0.1:7201" || !strings.HasPrefix(d.EVCCURL, "http://127.0.0.1:") ||
-		!strings.HasPrefix(d.HAURL, "http://127.0.0.1:") {
-		t.Errorf("committed config must use loopback addresses: %+v %s %s", cfg.Server, d.EVCCURL, d.HAURL)
+	if cfg.Server.Listen != "127.0.0.1:7201" {
+		t.Errorf("committed config must use loopback addresses: %+v", cfg.Server)
 	}
 	if len(cfg.Warnings) != 0 {
 		t.Errorf("config.yaml has keys the config ignores: %v", cfg.Warnings)

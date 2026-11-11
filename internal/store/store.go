@@ -325,8 +325,8 @@ func (s *Store) Settings(defaults model.Settings) (model.Settings, bool, error) 
 func (s *Store) SaveSettings(v model.Settings) error { return s.putSetting(settingsKey, v) }
 
 // ConnectionSettings returns the saved connection settings merged onto
-// defaults. Only fields that differ from the built-in values are saved, so
-// the others follow later default changes.
+// defaults. Only fields that differ from the defaults are saved, so the
+// others follow later default changes.
 func (s *Store) ConnectionSettings(defaults model.ConnectionSettings) (model.ConnectionSettings, error) {
 	v := defaults
 	if _, err := s.setting(connectionsKey, &v); err != nil {
@@ -335,7 +335,7 @@ func (s *Store) ConnectionSettings(defaults model.ConnectionSettings) (model.Con
 	return v, nil
 }
 
-// SaveConnectionSettings stores the fields that differ from the built-in values.
+// SaveConnectionSettings stores the fields that differ from the defaults.
 func (s *Store) SaveConnectionSettings(changed map[string]any) error {
 	return s.putSetting(connectionsKey, changed)
 }

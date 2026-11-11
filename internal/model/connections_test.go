@@ -11,6 +11,9 @@ func TestConnectionSettingsValidate(t *testing.T) {
 	if err := d.Validate(); err != nil {
 		t.Fatalf("defaults must be valid: %v", err)
 	}
+	if !strings.HasPrefix(d.EVCCURL, "http://127.0.0.1:") || !strings.HasPrefix(d.HAURL, "http://127.0.0.1:") {
+		t.Errorf("default addresses must be loopback: %s %s", d.EVCCURL, d.HAURL)
+	}
 	if d.EVCCPollInterval() != time.Minute || d.HAPollInterval() != 10*time.Minute || d.RoutesCacheTTL() != 168*time.Hour {
 		t.Errorf("durations = %v %v %v", d.EVCCPollInterval(), d.HAPollInterval(), d.RoutesCacheTTL())
 	}

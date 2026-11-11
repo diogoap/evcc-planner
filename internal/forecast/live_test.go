@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/diogoap/evcc-planner/internal/config"
+	"github.com/diogoap/evcc-planner/internal/model"
 )
 
 // TestLiveForecasts reads the real Tibber outlook and, with a key, KNMI's
@@ -23,7 +24,7 @@ func TestLiveForecasts(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The default connection settings (Settings → Connections is not read).
-	conn := cfg.ConnectionDefaults()
+	conn := model.DefaultConnectionSettings()
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	now := time.Now()

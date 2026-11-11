@@ -6,15 +6,17 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 	"testing"
 	"time"
 
 	"github.com/diogoap/evcc-planner/internal/config"
+	"github.com/diogoap/evcc-planner/internal/model"
 )
 
 // TestLiveHomeAssistant lists the real Home Assistant's battery, range, and
-// timestamp sensors (HA_URL, HA_TOKEN from the environment or .env; Settings
-// → Connections is not read) and reads each battery sensor as the planner
+// timestamp sensors (HA_URL, only read by this test, and HA_TOKEN from the
+// environment or .env) and reads each battery sensor as the planner
 // would. It only reads. The car's sensors are chosen under Settings →
 // Connections.
 func TestLiveHomeAssistant(t *testing.T) {
@@ -29,9 +31,10 @@ func TestLiveHomeAssistant(t *testing.T) {
 		t.Skip("homeassistant.mode is not live")
 	}
 	if ha.Token == "" {
-		t.Skipf("set %s to a long-lived access token (and HA_URL), e.g. in .env", ha.TokenEnv)
+		t.Skipf("set %s to a long-lived access token, e.g. in .env", ha.TokenEnv)
 	}
-	conn := cfg.ConnectionDefaults()
+	conn := model.DefaultConnectionSettings()
+	conn.HAURL = liveAddress(t, "HA_URL", "http://192.0.2.20:8123")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	c := &HTTPClient{BaseURL: conn.HAURL, Token: ha.Token, HTTP: &http.Client{Timeout: conn.HATimeout()}, Location: cfg.Location}
@@ -68,4 +71,22 @@ func TestLiveHomeAssistant(t *testing.T) {
 	if len(sensors) == 0 {
 		t.Error("no battery (%), distance, or timestamp sensors found")
 	}
+}
+
+// liveAddress reads an address to check from the environment or .env. The
+// app reads addresses from Settings → Connections (its database), which live
+// tests do not open.
+func liveAddress(t *testing.T, key, example string) string {
+	t.Helper()
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	env, err := config.ReadEnvFile("../../.env")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if env[key] == "" {
+		t.Skipf("set %s to the address to check, e.g. %s=%s make test-live", key, key, example)
+	}
+	return env[key]
 }

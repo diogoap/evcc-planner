@@ -7,8 +7,7 @@
 #
 # Secrets come from environment variables (or an ignored .env file locally):
 # GOOGLE_CALENDAR_ICAL_URL, GOOGLE_MAPS_API_KEY, OPENROUTER_API_KEY,
-# KNMI_API_KEY, HA_TOKEN. EVCC_URL and HA_URL only seed the EVCC and Home
-# Assistant addresses until they are saved in Settings. Also:
+# KNMI_API_KEY, HA_TOKEN. Also:
 # EVCC_PLANNER_LISTEN, EVCC_PLANNER_DATA_DIR, EVCC_PLANNER_WEB_DIR,
 # EVCC_PLANNER_DEMO. Optional overrides of this file go in config.local.yaml
 # (ignored).
@@ -53,8 +52,7 @@ knmi:
 # Always-on SoC: Home Assistant has the car's SoC also while it is unplugged
 # (EVCC only reads it while plugged in). Read-only REST API with a long-lived
 # access token from the environment; the address and sensors are edited in
-# Settings → Connections (HA_URL seeds the address). Calls to Home Assistant
-# are not in the activity log.
+# Settings → Connections. Calls to Home Assistant are not in the activity log.
 homeassistant:
   mode: live               # live | stub
   token_env: HA_TOKEN

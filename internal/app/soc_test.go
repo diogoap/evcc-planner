@@ -136,7 +136,7 @@ func TestSoCFromHomeAssistantWhileUnplugged(t *testing.T) {
 func TestHomeAssistantNotConfigured(t *testing.T) {
 	ta := newTestApp(t, "")
 	ta.app.Service.UseIntegrations(func(i *service.Integrations) {
-		i.HA, i.HASensors, i.HANote = nil, nil, "Set HA_TOKEN (and HA_URL) to read the SoC while the car is unplugged"
+		i.HA, i.HASensors, i.HANote = nil, nil, "Set HA_TOKEN to read the SoC while the car is unplugged"
 	})
 	if err := ta.app.Service.PollHomeAssistant(context.Background()); err != nil {
 		t.Fatal(err)

@@ -4,14 +4,16 @@ package evcc
 
 import (
 	"context"
+	"os"
 	"testing"
 	"time"
 
 	"github.com/diogoap/evcc-planner/internal/config"
+	"github.com/diogoap/evcc-planner/internal/model"
 )
 
-// TestLiveEVCC reads the real EVCC (EVCC_URL from the environment or .env)
-// and checks the contract the planner relies on. It never writes: the plan
+// TestLiveEVCC reads the real EVCC (EVCC_URL from the environment or .env;
+// only this test reads it) and checks the contract the planner relies on. It never writes: the plan
 // preview is a simulation.
 func TestLiveEVCC(t *testing.T) {
 	cfg, err := config.Load(config.Options{
@@ -23,15 +25,15 @@ func TestLiveEVCC(t *testing.T) {
 	if cfg.EVCC.Mode != config.ModeLive {
 		t.Skip("evcc.mode is not live")
 	}
-	// Settings saved in the UI are not read: EVCC_URL gives the address.
-	conn := cfg.ConnectionDefaults()
+	conn := model.DefaultConnectionSettings()
+	conn.EVCCURL = liveAddress(t, "EVCC_URL", "http://192.0.2.10:7070")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	c := NewHTTPClient(conn.EVCCURL, conn.EVCCTimeout())
 
 	st, err := c.State(ctx)
 	if err != nil {
-		t.Fatalf("read %s/api/state: %v (set EVCC_URL, e.g. in .env)", conn.EVCCURL, err)
+		t.Fatalf("read %s/api/state: %v", conn.EVCCURL, err)
 	}
 	lp, ok := st.Loadpoint(conn.EVCCLoadpoint)
 	if !ok {
@@ -76,4 +78,22 @@ func TestLiveEVCC(t *testing.T) {
 		t.Fatalf("preview: %v", err)
 	}
 	t.Logf("preview to %d%% by %s: %d min in %d slots", target, at.Format(time.RFC3339), p.Duration/60, len(p.Slots))
+}
+
+// liveAddress reads an address to check from the environment or .env. The
+// app reads addresses from Settings → Connections (its database), which live
+// tests do not open.
+func liveAddress(t *testing.T, key, example string) string {
+	t.Helper()
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	env, err := config.ReadEnvFile("../../.env")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if env[key] == "" {
+		t.Skipf("set %s to the address to check, e.g. %s=%s make test-live", key, key, example)
+	}
+	return env[key]
 }

@@ -60,10 +60,9 @@ type ServerConfig struct {
 }
 
 // EVCCConfig selects live or stub EVCC. Its address and polling are edited
-// in Settings → Connections; EVCC_URL seeds the address.
+// in Settings → Connections.
 type EVCCConfig struct {
 	Mode string `yaml:"mode"`
-	URL  string `yaml:"-"` // EVCC_URL
 }
 
 // CalendarConfig names the environment variable holding one or more secret
@@ -117,12 +116,10 @@ type KNMIConfig struct {
 
 // HomeAssistantConfig reads the car's SoC from Home Assistant, which has it
 // even while the car is unplugged. The token comes from the environment; the
-// address and sensors are edited in Settings → Connections, and HA_URL seeds
-// the address.
+// address and sensors are edited in Settings → Connections.
 type HomeAssistantConfig struct {
 	Mode     string `yaml:"mode"`
 	TokenEnv string `yaml:"token_env"`
-	URL      string `yaml:"-"` // HA_URL
 	Token    string `yaml:"-"`
 }
 
@@ -194,20 +191,6 @@ type Options struct {
 	LocalPath string // config.local.yaml; optional
 	EnvFile   string // .env; optional, never overrides real environment variables
 	Getenv    func(string) string
-}
-
-// ConnectionDefaults are the Settings → Connections values used until
-// others are saved there: built-in values with deployment seeds (EVCC_URL,
-// HA_URL).
-func (c *Config) ConnectionDefaults() model.ConnectionSettings {
-	d := model.DefaultConnectionSettings()
-	if c.EVCC.URL != "" {
-		d.EVCCURL = c.EVCC.URL
-	}
-	if c.HomeAssistant.URL != "" {
-		d.HAURL = c.HomeAssistant.URL
-	}
-	return d
 }
 
 // Load reads and validates configuration.
@@ -291,8 +274,6 @@ func (c *Config) applyEnv(getenv func(string) string) error {
 	set("EVCC_PLANNER_WEB_DIR", &c.Server.WebDir)
 	set("EVCC_PLANNER_DATA_DIR", &c.DataDir)
 	set("EVCC_PLANNER_FIXED_TIME", &c.FixedTime)
-	set("EVCC_URL", &c.EVCC.URL)
-	set("HA_URL", &c.HomeAssistant.URL)
 	if v := getenv("EVCC_PLANNER_DEMO"); v != "" {
 		demo, err := strconv.ParseBool(v)
 		if err != nil {
@@ -393,9 +374,6 @@ func (c *Config) finish() error {
 		return fmt.Errorf("knmi.mode must be %q or %q", ModeLive, ModeStub)
 	case c.HomeAssistant.Mode != ModeLive && c.HomeAssistant.Mode != ModeStub:
 		return fmt.Errorf("homeassistant.mode must be %q or %q", ModeLive, ModeStub)
-	}
-	if err := c.ConnectionDefaults().Validate(); err != nil {
-		return fmt.Errorf("EVCC_URL or HA_URL: %w", err)
 	}
 	if err := c.Defaults.Settings().Validate(); err != nil {
 		return fmt.Errorf("defaults: %w", err)

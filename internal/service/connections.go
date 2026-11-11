@@ -76,7 +76,7 @@ func (s *Service) LoadSettings() error {
 	s.evccState, s.evccErr, s.evccAt, s.evccOKAt = nil, nil, time.Time{}, time.Time{}
 	s.haReading, s.haErr, s.haOKAt = nil, nil, time.Time{}
 	s.mu.Unlock()
-	defaults := s.Cfg.ConnectionDefaults()
+	defaults := model.DefaultConnectionSettings()
 	v, err := s.Store.ConnectionSettings(defaults)
 	if err != nil {
 		return err
@@ -151,7 +151,7 @@ type EnvView struct {
 func (s *Service) ConnectionSettings() ConnectionSettingsView {
 	c := s.Cfg
 	return ConnectionSettingsView{
-		Settings: s.Conn(), Defaults: c.ConnectionDefaults(),
+		Settings: s.Conn(), Defaults: model.DefaultConnectionSettings(),
 		Env: []EnvView{
 			{Name: "Calendar addresses (secret iCal)", Env: c.Calendar.URLEnv, Set: len(c.Calendar.Sources) > 0},
 			{Name: "Google Routes API key", Env: c.Routes.APIKeyEnv, Set: c.Routes.APIKey != ""},
@@ -164,7 +164,7 @@ func (s *Service) ConnectionSettings() ConnectionSettingsView {
 
 // SaveConnections validates and stores connection settings, applies them
 // at once, and checks EVCC and Home Assistant with them. Fields that differ
-// from the built-in defaults are stored; the others keep following them.
+// from the defaults are stored; the others keep following them.
 func (s *Service) SaveConnections(ctx context.Context, v model.ConnectionSettings) (ConnectionSettingsView, error) {
 	for _, f := range []*string{&v.EVCCURL, &v.EVCCVehicle, &v.HAURL, &v.HASoCEntity, &v.HARangeEntity, &v.HAUpdatedEntity,
 		&v.TibberURL, &v.OpenRouterModel, &v.KNMIDataset, &v.KNMIVersion, &v.ForecastDailyAt} {
@@ -205,16 +205,14 @@ func (s *Service) saveConnections(ctx context.Context, v model.ConnectionSetting
 			}
 		}
 	}
-	defaults := s.Cfg.ConnectionDefaults()
+	defaults := model.DefaultConnectionSettings()
 	ev := model.AuditEvent{Action: "settings.update", SubjectType: "settings", SubjectID: "connections"}
 	err := s.change(ctx, ev, func(tx *store.Store, e *model.AuditEvent) error {
 		before, err := tx.ConnectionSettings(defaults)
 		if err != nil {
 			return err
 		}
-		// Compared with the built-in values, so an address that came from
-		// EVCC_URL is kept once saved and the variable can be removed.
-		if err := tx.SaveConnectionSettings(differences(model.DefaultConnectionSettings(), v)); err != nil {
+		if err := tx.SaveConnectionSettings(differences(defaults, v)); err != nil {
 			return err
 		}
 		// Another loadpoint or EVCC: learn its plug state before acting on

@@ -48,8 +48,7 @@ type ConnectionSettings struct {
 	RetentionDays int `json:"retentionDays"`
 }
 
-// DefaultConnectionSettings are the built-in values; deployment seeds (such
-// as EVCC_URL) are applied on top by the config.
+// DefaultConnectionSettings are the values used until others are saved.
 func DefaultConnectionSettings() ConnectionSettings {
 	return ConnectionSettings{
 		EVCCURL: "http://127.0.0.1:7070", EVCCLoadpoint: 1, EVCCPollIntervalSec: 60, EVCCTimeoutSec: 10,

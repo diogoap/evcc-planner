@@ -85,7 +85,7 @@ func TestConnectionSettingsAreEditedInTheUI(t *testing.T) {
 	}
 
 	// Only changed fields are stored: the others follow the defaults they
-	// are read with (such as a new EVCC_URL).
+	// are read with.
 	seeded := model.DefaultConnectionSettings()
 	seeded.EVCCURL = "http://192.0.2.10:7070"
 	stored, err := ta.app.Store.ConnectionSettings(seeded)
@@ -244,7 +244,7 @@ func TestHomeAssistantConfiguredFromSettings(t *testing.T) {
 		"openrouter:\n  mode: stub\nknmi:\n  mode: stub\n"
 	cfgPath := filepath.Join(dir, "config.yaml")
 	os.WriteFile(cfgPath, []byte(yaml), 0o600)
-	env := map[string]string{"HA_URL": ha.URL, "HA_TOKEN": token}
+	env := map[string]string{"HA_TOKEN": token}
 	cfg, err := config.Load(config.Options{Path: cfgPath, Getenv: func(k string) string { return env[k] }})
 	if err != nil {
 		t.Fatal(err)
@@ -259,13 +259,16 @@ func TestHomeAssistantConfiguredFromSettings(t *testing.T) {
 	if status, detail := ta.connection("Home Assistant"); status != "not_configured" || !strings.Contains(detail, "Choose the car's SoC sensor") {
 		t.Fatalf("before = %s %q", status, detail)
 	}
+	// The address first, then the sensors it lists.
+	edit := ta.connectionSettings().Settings
+	edit.HAURL = ha.URL
+	ta.json("PUT", "/api/settings/connections", edit, http.StatusOK, nil)
 	var sensors []struct{ EntityID, Kind string }
 	ta.json("GET", "/api/homeassistant/sensors", nil, http.StatusOK, &sensors)
 	if len(sensors) != 3 || sensors[0].EntityID != "sensor.leaf_battery" || sensors[1].Kind != "timestamp" || sensors[2].Kind != "range" {
 		t.Fatalf("sensors = %+v", sensors)
 	}
 
-	edit := ta.connectionSettings().Settings
 	edit.HASoCEntity = "sensor.leaf_battery"
 	var saved connectionSettingsView
 	ta.json("PUT", "/api/settings/connections", edit, http.StatusOK, &saved)
@@ -291,8 +294,10 @@ func TestHomeAssistantConfiguredFromSettings(t *testing.T) {
 		t.Errorf("soc with reading-time sensor = %+v", s)
 	}
 	raw, _ := json.Marshal(ta.activity("?limit=500"))
-	if strings.Contains(string(raw), token) || strings.Contains(string(raw), ha.URL) {
-		t.Errorf("the activity log contains the Home Assistant token or address: %s", raw)
+	// The address is a setting like EVCC's (its change is logged); the token
+	// never appears.
+	if strings.Contains(string(raw), token) {
+		t.Errorf("the activity log contains the Home Assistant token: %s", raw)
 	}
 }
 
@@ -319,31 +324,5 @@ func TestEveryFollowsTheInterval(t *testing.T) {
 	wg.Wait()
 	if n := runs.Load(); n < 3 {
 		t.Errorf("runs = %d after shortening the interval", n)
-	}
-}
-
-func TestSavedAddressesOutliveTheirEnvVars(t *testing.T) {
-	ta := newTestApp(t, "")
-	svc := ta.app.Service
-	// Started with EVCC_URL and HA_URL set.
-	ta.app.Cfg.EVCC.URL, ta.app.Cfg.HomeAssistant.URL = "http://192.0.2.10:7070", "http://192.0.2.20:8123"
-	if err := svc.LoadSettings(); err != nil {
-		t.Fatal(err)
-	}
-	if got := ta.connectionSettings().Settings.EVCCURL; got != "http://192.0.2.10:7070" {
-		t.Fatalf("seeded address = %s", got)
-	}
-	// Saving the form as shown keeps the addresses, so the variables can go.
-	ta.json("PUT", "/api/settings/connections", ta.connectionSettings().Settings, http.StatusOK, nil)
-	ta.app.Cfg.EVCC.URL, ta.app.Cfg.HomeAssistant.URL = "", ""
-	if err := svc.LoadSettings(); err != nil {
-		t.Fatal(err)
-	}
-	if c := svc.Conn(); c.EVCCURL != "http://192.0.2.10:7070" || c.HAURL != "http://192.0.2.20:8123" {
-		t.Errorf("addresses after removing EVCC_URL and HA_URL = %s %s", c.EVCCURL, c.HAURL)
-	}
-	// Fields left at their built-in values still follow the defaults.
-	if svc.Conn().RetentionDays != 90 || ta.connectionSettings().Defaults.EVCCURL != "http://127.0.0.1:7070" {
-		t.Errorf("defaults = %+v", ta.connectionSettings().Defaults)
 	}
 }

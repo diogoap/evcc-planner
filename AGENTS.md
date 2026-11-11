@@ -11,7 +11,7 @@ make setup        # once: prerequisites, locked dependencies, Playwright Chromiu
 make dev          # app with demo data and stubs: UI http://127.0.0.1:7201, API 127.0.0.1:7202
 make test         # fast: go test ./... and vitest
 make verify       # everything: formatting, lint, types, unit/API/component tests, build, browser tests
-make test-live    # read-only checks against the real EVCC and Home Assistant (EVCC_URL, HA_URL, HA_TOKEN in .env)
+make test-live    # read-only checks against the real EVCC and Home Assistant (test inputs EVCC_URL, HA_URL, HA_TOKEN)
 make docker-smoke # production image build and smoke test (Docker required)
 ```
 
