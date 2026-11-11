@@ -73,7 +73,8 @@ Background EVCC preferences: cheap-grid charging and solar/export-price priority
 
 Example: 100 km total at 18 kWh/100 km, 59 kWh usable capacity, and a configurable 15% arrival reserve requires about **46% departure SoC**.
 
-**V1 — Trip UI and plan previews.** ✅
+<details>
+<summary><b>V1 — Trip UI and plan previews</b> ✅</summary>
 
 ✅ **Done** (2026-11-09).
 
@@ -83,7 +84,10 @@ Example: 100 km total at 18 kWh/100 km, 59 kWh usable capacity, and a configurab
 - UI: EVCC status (SoC, connection, charging power), seven-day agenda, and plan previews. When unplugged, show the last known SoC with a small tip that it is not current and when it was read. Trip cards show source, arrival and departure times, route, distance **(km)**, estimated energy **(kWh)**, and edit/disable controls. Add a demand/SoC timeline where useful.
 - **Send plan to EVCC** is user-triggered and needs confirmation. The confirmation shows the target SoC, deadline, EVCC preview, and any existing EVCC plan it replaces. EVCC holds one plan per vehicle, so V1 sends the next departure's target. Record app-written plans; never change repeating plans or limits. Automatic plan sync stays in V5.
 
-**V2 — Daily forecast ingestion and seven-day advice.** ✅
+</details>
+
+<details>
+<summary><b>V2 — Daily forecast ingestion and seven-day advice</b> ✅</summary>
 
 ✅ **Done** (2026-11-10).
 
@@ -113,7 +117,10 @@ As implemented (2026-11-10):
 - Daily price level: published day average, else the day's estimate, else the weekly average (only usable as a comparison, never as a day's own basis). Recommendations need an 8% gap; confidence follows the weaker compared basis, lowered for stale or contradicting inputs; confidence 1 offers no plan action.
 - **Create extra plan** writes a one-off SoC plan (at least the next departure's target, ready before it leaves) and **Review postponement** (today only) removes EVCC's loadpoint smart cost limit (cheap-grid charging) until the cheaper day. Both record the value they replaced and restore it at expiry unless it changed in EVCC meanwhile.
 
-**V3 — Audit trail.** ✅
+</details>
+
+<details>
+<summary><b>V3 — Audit trail</b> ✅</summary>
 
 ✅ **Done** (2026-11-10).
 
@@ -133,11 +140,17 @@ As implemented (2026-11-10):
 - History: an event's subject (`trip:<key>`, `schedule:<id>`, `place:<id>`, `plan`) plus a related subject (a date's edits belong to its schedule's history; plan sends to their trip's; extra plans to the plan's).
 - Retention: `retention.days` (90) in `config.yaml`; one daily cleanup also deletes ended manual trips, per-date edits of past dates (and of calendar events that are gone), cached routes, older plan records, advice dismissals, and ended EVCC changes. Google Routes' free allowance for the usage card: `routes.monthly_free_calls` (5,000).
 
-**V4 — Always-on SoC.**
+</details>
+
+<details open>
+<summary><b>V4 — Always-on SoC</b></summary>
 
 - **Always-on SoC:** read the Leaf's SoC from Home Assistant, which has it even when the car is unplugged, using the HA token in `.env`. Fall back to EVCC, and show the source and freshness of every SoC value.
 
-**V5 — Automatic plans and interaction.** 🚧
+</details>
+
+<details open>
+<summary><b>V5 — Automatic plans and interaction</b> 🚧</summary>
 
 🚧 **In progress.**
 
@@ -161,7 +174,10 @@ To do:
 - Persist snoozes/decisions and deduplicate notifications. Expose notification enablement, available destinations, early/urgent reminder timing, quiet hours/urgent handling, and snoozing in UI settings.
 - UI: target, charging windows, readiness/plug-in deadline, pause/resume, and notification actions. Graph published prices and planned charging.
 
-**V6 — UI polish.**
+</details>
+
+<details open>
+<summary><b>V6 — UI polish</b></summary>
 
 - Refine the visual design: typography scale, spacing, color tokens, dark-mode parity, icons, and empty, loading, and error states.
 - Better graphs: an interactive SoC timeline with trip markers and charging windows, a price chart with planned charging and confirmed vs estimated prices, day drill-downs, and tap-friendly tooltips on phones.
@@ -169,9 +185,21 @@ To do:
 - Phone and installed-app polish: touch targets, bottom navigation on small screens, safe areas, pull-to-refresh, splash and theme colors.
 - Accessibility: contrast, focus order, screen-reader labels, reduced motion. Keep screenshot checks of key screens at desktop and phone sizes.
 
-**V7 — Reliability.** Extend the tests already built from V1; harden recovery, credential renewal, stale-data handling, and notification delivery. UI: sync/health status and recovery actions.
+</details>
 
-**V8 — Optimization and conversation.** Validate EVCC optimizer control for solar/grid scheduling; its regular planner selects tariff slots and uses available solar. Optional OpenClaw interface using the same core. UI: schedule comparisons/explanations.
+<details open>
+<summary><b>V7 — Reliability</b></summary>
+
+Extend the tests already built from V1; harden recovery, credential renewal, stale-data handling, and notification delivery. UI: sync/health status and recovery actions.
+
+</details>
+
+<details open>
+<summary><b>V8 — Optimization and conversation</b></summary>
+
+Validate EVCC optimizer control for solar/grid scheduling; its regular planner selects tariff slots and uses available solar. Optional OpenClaw interface using the same core. UI: schedule comparisons/explanations.
+
+</details>
 
 **Costs.** Existing hosting adds little cost. Calendar/Telegram and personal routing should fit free allowances. V2 adds daily OpenRouter extraction usage; model choice determines cost. KNMI open datasets are free.
 
