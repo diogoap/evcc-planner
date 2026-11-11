@@ -135,6 +135,10 @@ func New(cfg *config.Config, log *slog.Logger) (*App, error) {
 			if err := svc.PollEVCC(ctx); err != nil {
 				return err
 			}
+			// Learn that the demo car is unplugged, so plugging it in counts.
+			if err := svc.PlanOnPlugIn(ctx); err != nil {
+				return err
+			}
 			return svc.RefreshForecasts(ctx, true)
 		}
 	}
@@ -197,10 +201,10 @@ func knmiLabel(r *http.Request) string {
 // auto-apply are checked.
 const forecastCheck = 15 * time.Minute
 
-// StartJobs runs EVCC polling (with restoring temporary EVCC changes),
-// calendar sync, the daily forecasts, and the daily history cleanup until
-// ctx ends; wait blocks until they have stopped. Each job marks its work
-// with its source for the activity log.
+// StartJobs runs EVCC polling (restoring temporary EVCC changes and
+// planning when the car is plugged in), calendar sync, the daily forecasts,
+// and the daily history cleanup until ctx ends; wait blocks until they have
+// stopped. Each job marks its work with its source for the activity log.
 func (a *App) StartJobs(ctx context.Context) (wait func()) {
 	var wg sync.WaitGroup
 	jobCtx := audit.WithSource(ctx, model.SourceJob)
@@ -211,6 +215,9 @@ func (a *App) StartJobs(ctx context.Context) (wait func()) {
 		}
 		if err := a.Service.CheckAdjustments(jobCtx); err != nil && ctx.Err() == nil {
 			a.Log.Warn("checking temporary evcc changes failed", "err", err)
+		}
+		if err := a.Service.PlanOnPlugIn(jobCtx); err != nil && ctx.Err() == nil {
+			a.Log.Warn("plan on plug-in failed", "err", err)
 		}
 	})
 	every(ctx, &wg, forecastCheck, func() {

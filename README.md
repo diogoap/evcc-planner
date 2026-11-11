@@ -174,6 +174,12 @@ to `main` deploy automatically, run `make verify` before pushing.
   per vehicle) after you confirm. It never changes limits or repeating plans;
   EVCC's planner charges past the charge limit during planned slots. EVCC can
   only preview a plan while the car is plugged in.
+- **When the car is plugged in** (unplugged before), the planner sends the
+  next departure's target to EVCC once, unless EVCC already has a plan with
+  an equal or higher SoC (kept even if it is ready later than the departure:
+  someone chose it) or the charge already covers the departure. It is on
+  by default (Settings → Home & vehicle); later changes in EVCC are left alone
+  until the car is plugged in again.
 - The arrow next to **Send plan to EVCC** offers plans that cover more days
   from the next departure's day: that day's trips, plus the next day, plus
   two days. Each target is enough to drive all those trips with no charging

@@ -18,6 +18,8 @@ export interface Settings {
   departureBufferMin: number
   chargeBufferMin: number
   defaultStayMin: number
+  /** Send the next departure's plan to EVCC when the car is plugged in. */
+  autoPlanOnPlugIn: boolean
 }
 
 export interface SoCView {

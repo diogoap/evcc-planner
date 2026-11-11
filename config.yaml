@@ -78,3 +78,4 @@ defaults:
   departure_buffer_min: 15
   charge_buffer_min: 30
   default_stay_min: 15
+  auto_plan_on_plug_in: true   # send the next departure's plan to EVCC when the car is plugged in

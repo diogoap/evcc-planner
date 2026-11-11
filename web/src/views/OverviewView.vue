@@ -88,7 +88,9 @@ function cancelAdjustment(id: number) {
           <div id="control-title" class="card-title">Control</div>
           <dl class="kv">
             <dt>Trip plans</dt>
-            <dd>Send manually</dd>
+            <dd data-testid="trip-plans">
+              {{ plan.settings.autoPlanOnPlugIn ? 'Sent when plugged in' : 'Send manually' }}
+            </dd>
             <dt>EVCC plan</dt>
             <dd data-testid="evcc-plan">
               <template v-if="status?.plan">

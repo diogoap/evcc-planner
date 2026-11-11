@@ -146,6 +146,7 @@ type Defaults struct {
 	DepartureBufferMin     int     `yaml:"departure_buffer_min"`
 	ChargeBufferMin        int     `yaml:"charge_buffer_min"`
 	DefaultStayMin         int     `yaml:"default_stay_min"`
+	AutoPlanOnPlugIn       bool    `yaml:"auto_plan_on_plug_in"`
 }
 
 // PlaceSeed bootstraps a saved place on first start.
@@ -165,6 +166,7 @@ func (d Defaults) Settings() model.Settings {
 		DepartureBufferMin:     d.DepartureBufferMin,
 		ChargeBufferMin:        d.ChargeBufferMin,
 		DefaultStayMin:         d.DefaultStayMin,
+		AutoPlanOnPlugIn:       d.AutoPlanOnPlugIn,
 	}
 }
 
@@ -198,7 +200,7 @@ func Default() Config {
 		Defaults: Defaults{
 			UsableCapacityKWh: 59, ChargePowerKW: 3.68, ConsumptionKWhPer100Km: 18,
 			ArrivalReservePct: 15, ChargingEfficiencyPct: 90,
-			DepartureBufferMin: 15, ChargeBufferMin: 30, DefaultStayMin: 15,
+			DepartureBufferMin: 15, ChargeBufferMin: 30, DefaultStayMin: 15, AutoPlanOnPlugIn: true,
 		},
 	}
 }

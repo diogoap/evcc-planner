@@ -65,6 +65,7 @@ const fieldLabels: Record<string, string> = {
   departureBufferMin: 'Departure buffer (min)',
   chargeBufferMin: 'Charging time buffer (min)',
   defaultStayMin: 'Default stay (min)',
+  autoPlanOnPlugIn: 'Plan when plugged in',
   autoApply: 'Automatic plans',
   autoMinConfidence: 'Minimum confidence',
   targetLittle: 'Target for little (%)',

@@ -212,6 +212,38 @@ test('send a plan covering more days from the menu', async ({ page, request }) =
   await expect(page.getByRole('dialog')).toContainText('The current charge already covers these trips')
 })
 
+test('plugging in the car sends the next departure plan once', async ({ page }) => {
+  await page.goto('/')
+  await expect(page.getByTestId('trip-plans')).toHaveText('Sent when plugged in')
+  await expect(page.getByTestId('evcc-plan')).toHaveText('None')
+
+  await page.goto('/settings')
+  await page.getByRole('link', { name: 'Connections' }).click()
+  await page.getByLabel('Plugged in').check()
+  // Below the 42% target: at 42% or more the charge already covers it.
+  await page.getByLabel('SoC').fill('30')
+  await page.getByRole('button', { name: 'Apply' }).click()
+  await expect(page.getByText('Demo car plugged in')).toBeVisible()
+
+  await page.goto('/')
+  await expect(page.getByTestId('evcc-plan')).toContainText('42% by Tue 10 Nov, 07:48')
+  await expect(page.getByTestId('evcc-plan')).toContainText('Set by planner')
+  await page.getByTestId('plan-history').click()
+  const sent = page.locator('li.activity').first()
+  await expect(sent).toContainText('Car plugged in: sent plan 42% by Tue 10 Nov, 07:48 to EVCC')
+  await expect(sent).toContainText('Automation')
+
+  // The switch lives in Settings and turns it off.
+  await page.goto('/settings')
+  const toggle = page.getByTestId('setting-autoPlanOnPlugIn')
+  await expect(toggle).toHaveAttribute('aria-checked', 'true')
+  await toggle.click()
+  await page.getByRole('button', { name: 'Save settings' }).click()
+  await expect(page.getByText('Settings saved')).toBeVisible()
+  await page.goto('/')
+  await expect(page.getByTestId('trip-plans')).toHaveText('Send manually')
+})
+
 test('installable as an app: manifest and icons', async ({ page, request }) => {
   await page.goto('/')
   await expect(page.locator('link[rel="manifest"]')).toHaveAttribute('href', '/manifest.webmanifest')

@@ -48,11 +48,14 @@ func (s *Service) change(ctx context.Context, ev model.AuditEvent, fn func(tx *s
 	return err
 }
 
-// record stores an action that changed nothing in the database, typically
-// a failed EVCC write.
+// record stores an action that changed nothing in the database: a failed
+// EVCC write, or an automatic decision to leave things as they are.
 func (s *Service) record(ctx context.Context, ev model.AuditEvent) {
 	if ev.Type == "" {
 		ev.Type = model.EventAction
+	}
+	if ev.Outcome == "" {
+		ev.Outcome = model.OutcomeSuccess
 	}
 	if ev.At.IsZero() {
 		ev.At = s.now()
@@ -219,7 +222,8 @@ var settingLabels = map[string]string{
 	"consumptionKWhPer100Km": "consumption", "arrivalReservePct": "arrival reserve",
 	"chargingEfficiencyPct": "charging efficiency", "departureBufferMin": "departure buffer",
 	"chargeBufferMin": "charging time buffer", "defaultStayMin": "default stay",
-	"enabled": "daily advice", "autoApply": "automatic plans", "autoMinConfidence": "minimum confidence",
+	"autoPlanOnPlugIn": "plan when plugged in",
+	"enabled":          "daily advice", "autoApply": "automatic plans", "autoMinConfidence": "minimum confidence",
 	"targetLittle": "target for little", "targetMedium": "target for medium", "targetHigh": "target for high",
 	"readyBy": "ready-by time", "expiryHours": "expiry", "autoPostpone": "automatic postponement",
 }

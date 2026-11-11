@@ -610,6 +610,10 @@ func (s *Server) demoVehicle(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
+	// What the EVCC job does after its next poll.
+	if err := s.Svc.PlanOnPlugIn(r.Context()); err != nil {
+		s.Log.Warn("plan on plug-in failed", "err", err)
+	}
 	writeJSON(w, http.StatusOK, s.Svc.Status())
 }
 

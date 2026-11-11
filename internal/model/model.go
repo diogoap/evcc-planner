@@ -20,6 +20,9 @@ type Settings struct {
 	DepartureBufferMin     int     `json:"departureBufferMin"`
 	ChargeBufferMin        int     `json:"chargeBufferMin"`
 	DefaultStayMin         int     `json:"defaultStayMin"`
+	// AutoPlanOnPlugIn sends the next departure's plan to EVCC when the car
+	// goes from unplugged to plugged in.
+	AutoPlanOnPlugIn bool `json:"autoPlanOnPlugIn"`
 }
 
 // Validate reports the first out-of-range field.

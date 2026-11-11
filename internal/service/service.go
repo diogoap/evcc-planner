@@ -55,6 +55,7 @@ type Service struct {
 
 	forecastMu sync.Mutex
 	adjustMu   sync.Mutex
+	autoPlanMu sync.Mutex
 
 	mu        sync.RWMutex
 	evccState *evcc.State

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/diogoap/evcc-planner/internal/audit"
@@ -167,6 +168,8 @@ type SendPlanInput struct {
 	// it was chosen to cover more than the next departure.
 	Through string `json:"through"`
 	Confirm bool   `json:"confirm"`
+	// Reason prefixes the activity entry of an automatic send.
+	Reason string `json:"-"`
 }
 
 // SendPlan writes the vehicle's one-off SoC plan to EVCC. EVCC keeps one
@@ -199,6 +202,9 @@ func (s *Service) SendPlan(ctx context.Context, in SendPlanInput) (*EVCCPlanView
 	ev := model.AuditEvent{
 		Action: "plan.send", SubjectType: "plan", SubjectID: veh.Name,
 		Summary: fmt.Sprintf("Sent plan %d%% by %s to EVCC", in.SoC, dateTimeText(at, s.loc())),
+	}
+	if in.Reason != "" {
+		ev.Summary = in.Reason + ": s" + strings.TrimPrefix(ev.Summary, "S")
 	}
 	if in.TripKey != "" {
 		ev.Related = "trip:" + in.TripKey

@@ -4,6 +4,7 @@ import { api } from '../api/client'
 import type { Connection, Place, Settings } from '../api/types'
 import AdviceSettingsForm from '../components/AdviceSettingsForm.vue'
 import ForecastDetails from '../components/ForecastDetails.vue'
+import ToggleSwitch from '../components/ToggleSwitch.vue'
 import { ago } from '../lib/format'
 import { mutate, notify, refresh, state } from '../store'
 
@@ -236,6 +237,22 @@ async function applyDemo() {
             <span :id="`hint-${f.key}`" class="field-hint">{{ f.hint }}</span>
           </label>
         </div>
+        <div class="row" style="align-items: flex-start; flex-wrap: nowrap">
+          <ToggleSwitch
+            v-model="settings.autoPlanOnPlugIn"
+            label="Plan the next departure when the car is plugged in"
+            aria-describedby="hint-autoplan"
+            data-testid="setting-autoPlanOnPlugIn"
+          />
+          <div class="small">
+            <strong>Plan the next departure when the car is plugged in</strong>
+            <div id="hint-autoplan" class="field-hint">
+              When the car goes from unplugged to plugged in, the planner sends the next departure's target to
+              EVCC, once; you can still change or remove it in EVCC. A plan already in EVCC with the same or a
+              higher target is kept, and nothing is sent when the charge already covers the departure.
+            </div>
+          </div>
+        </div>
         <p class="small muted" style="margin: 0">
           Saved privately in the planner's database. Config files only seed the vehicle and buffer values on
           first use.
@@ -243,7 +260,7 @@ async function applyDemo() {
         <div><button class="btn primary" type="submit" :disabled="saving">Save settings</button></div>
       </form>
       <p class="small muted" style="margin: 16px 0 0">
-        Automatic trip plans and notifications arrive in a later version (V5).
+        Fully automatic trip plans and notifications arrive in a later version (V5).
       </p>
     </section>
 
