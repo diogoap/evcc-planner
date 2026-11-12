@@ -359,8 +359,10 @@ select {
   width: 100%;
 }
 
-input[type='checkbox'] {
+input[type='checkbox'],
+input[type='radio'] {
   width: auto;
+  flex: none;
 }
 
 .form-grid {

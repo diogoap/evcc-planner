@@ -97,7 +97,7 @@ Materialize the rolling seven-day window and extend it daily. Preserve per-date 
 
 ```text
 Settings
-Home & vehicle | Planning | Advice | Notifications | Connections
+Home & vehicle | Planning | Places | Advice | Notifications | Connections
 
 HOME & VEHICLE [V1]
 Home address          [Your address / saved location]
@@ -115,19 +115,28 @@ Automatically create plans from advice    [OFF]
 Manual mode: review a proposal and confirm each change.
 Automatic mode requires configured targets and expiry rules.
 
-PLANNING [V5]
-Trip plan control                  [Preview / Automatic]
-Paused after a manual EVCC change?  [Resume]
+PLANNING [V5]                       (rules: AUTOMATION.md)
+Trip plans            [Manual / On plug-in / Automatic]
+Charge ahead for later trips       [On]
+Minimum saving        [0.05] €/kWh
+Highest target when charging ahead [90] %
+Household use during the day       [0.4] kW
+Tax not paid on own solar          [0.11] €/kWh
+Automatic plans: Paused — plan chosen in EVCC Tue 20:14 (80% by Wed 07:00)  [Resume]
 
 NOTIFICATIONS [V5]
-Enabled                [Off — provider setup pending]
-Destination            [Select after setup]
-Early reminder         [Before useful charging window]
-Urgent reminder        [30] minutes before latest plug-in
-Quiet hours            [22:00] to [07:00]
-Urgent during quiet    [User preference]
+Notifications          [Off]
+Phones                 [x] notify.mobile_app_phone   (from Home Assistant)
+Link address           [address your phone uses to open the planner]
+Car location sensor    [optional]
+Early reminders        [On]  [30] minutes before the cheapest window
+Urgent reminder        [30] minutes before the latest plug-in time
+Quiet hours            [23:00] to [07:00]
+Urgent in quiet hours  [Send]
 Snooze                 [30] minutes
-[Save preferences]
+Charging problems [On]   Questions about calendar events [On]   Ready messages [Off]
+[Save]  [Send test notification]
+Recent notifications   Plug in by 10:20 · sent 09:50 · snoozed until 10:20
 
 CONNECTIONS — configured on the server
 EVCC              [Stub: demo feed]  [Check connection]

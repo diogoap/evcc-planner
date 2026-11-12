@@ -394,9 +394,10 @@ func (s *Service) CheckAdjustments(ctx context.Context) error {
 func (s *Service) settle(ctx context.Context, a *model.Adjustment, cancel bool) error {
 	now := s.now()
 	snap := s.snapshot()
-	// end stores the outcome, a restored plan's record, and the activity
-	// entry together. before and after are the EVCC values.
-	end := func(status, note string, before, after map[string]string, write *model.PlanWrite) error {
+	// end stores the outcome, a restored plan's record (or the automatic
+	// plan state), and the activity entry together. before and after are
+	// the EVCC values.
+	end := func(status, note string, before, after map[string]string, write *model.PlanWrite, ctl *model.PlanControl) error {
 		a.Status, a.Note, a.EndedAt = status, note, &now
 		s.Log.Info("evcc adjustment ended", "id", a.ID, "status", status, "note", note)
 		ev := model.AuditEvent{
@@ -414,6 +415,11 @@ func (s *Service) settle(ctx context.Context, a *model.Adjustment, cancel bool) 
 					return err
 				}
 			}
+			if ctl != nil {
+				if err := tx.SavePlanControl(*ctl); err != nil {
+					return err
+				}
+			}
 			return tx.UpdateAdjustment(*a)
 		})
 	}
@@ -427,18 +433,45 @@ func (s *Service) settle(ctx context.Context, a *model.Adjustment, cancel bool) 
 		if v, ok := snap.state.Vehicles[a.Vehicle]; ok {
 			cur = v.Plan
 		}
-		ours := cur != nil && a.Plan != nil && int(math.Round(cur.Soc)) == int(math.Round(a.Plan.SoC)) &&
-			absDuration(cur.Time.Sub(a.Plan.Time)) < time.Minute
+		var curPlan *model.PlanValue
+		if cur != nil {
+			curPlan = &model.PlanValue{SoC: cur.Soc, Time: cur.Time}
+		}
+		ours := samePlan(curPlan, a.Plan)
+		// In automatic mode the trip plan check may have merged the extra
+		// plan into its own.
+		settings, err := s.Settings()
+		if err != nil {
+			return err
+		}
+		automatic := settings.TripPlans == model.TripPlansAutomatic
+		ctl, err := s.Store.PlanControl()
+		if err != nil {
+			return err
+		}
+		if automatic && cur != nil && samePlan(curPlan, ctl.Managed) {
+			ours = true
+		}
 		set := map[string]string{"evccPlan": s.adjustPlanText(a.Plan)}
 		switch {
 		case cur != nil && !ours:
 			return end(model.AdjustKept, "The plan was changed in EVCC; your change is kept.", set,
-				map[string]string{"evccPlan": s.planText(cur.Soc, cur.Time, true)}, nil)
+				map[string]string{"evccPlan": s.planText(cur.Soc, cur.Time, true)}, nil, nil)
 		case cur == nil && !s.planFinished(a, now):
 			return end(model.AdjustKept, "The plan was removed in EVCC; left as is.", set,
-				map[string]string{"evccPlan": s.adjustPlanText(nil)}, nil)
+				map[string]string{"evccPlan": s.adjustPlanText(nil)}, nil, nil)
 		case !cancel && now.Before(a.ExpiresAt):
 			return nil
+		}
+		// In automatic mode the check takes over the plan left in EVCC (it
+		// updates or removes it), unless a chosen plan has paused it.
+		handBack := func(left *model.PlanValue) *model.PlanControl {
+			if !automatic || ctl.Paused() {
+				return nil
+			}
+			ctl.Managed, ctl.Ahead = left, nil
+			s.Kick()
+			return &ctl
 		}
 		switch {
 		case a.PrevPlan != nil && a.PrevPlan.Time.After(now):
@@ -448,16 +481,16 @@ func (s *Service) settle(ctx context.Context, a *model.Adjustment, cancel bool) 
 			}
 			write := &model.PlanWrite{Vehicle: a.Vehicle, SoC: soc, TargetTime: a.PrevPlan.Time, TripKey: "restore", WrittenAt: now}
 			return end(done, fmt.Sprintf("Restored the previous plan: %d%% by %s.", soc, dateTimeText(a.PrevPlan.Time, s.loc())),
-				set, map[string]string{"evccPlan": s.adjustPlanText(a.PrevPlan)}, write)
+				set, map[string]string{"evccPlan": s.adjustPlanText(a.PrevPlan)}, write, handBack(a.PrevPlan))
 		case ours:
 			if err := s.Clients().EVCC.DeleteSocPlan(ctx, a.Vehicle); err != nil {
 				return s.restoreFailed(ctx, a, err)
 			}
 			return end(done, "Removed the extra plan; there was no earlier plan to restore.", set,
-				map[string]string{"evccPlan": s.adjustPlanText(nil)}, nil)
+				map[string]string{"evccPlan": s.adjustPlanText(nil)}, nil, handBack(nil))
 		default:
 			return end(done, "The extra plan reached its target; there was no earlier plan to restore.", set,
-				map[string]string{"evccPlan": s.adjustPlanText(nil)}, nil)
+				map[string]string{"evccPlan": s.adjustPlanText(nil)}, nil, handBack(nil))
 		}
 	case model.AdjustPostpone:
 		var cur *float64
@@ -467,7 +500,7 @@ func (s *Service) settle(ctx context.Context, a *model.Adjustment, cancel bool) 
 		set := map[string]string{"cheapChargingLimit": limitText(a.SmartCostLimit)}
 		if !sameLimit(cur, a.SmartCostLimit) {
 			return end(model.AdjustKept, "The cheap-charging limit was changed in EVCC; your change is kept.", set,
-				map[string]string{"cheapChargingLimit": limitText(cur)}, nil)
+				map[string]string{"cheapChargingLimit": limitText(cur)}, nil, nil)
 		}
 		if !cancel && now.Before(a.ExpiresAt) {
 			return nil
@@ -479,7 +512,7 @@ func (s *Service) settle(ctx context.Context, a *model.Adjustment, cancel bool) 
 		if a.PrevSmartCostLimit != nil {
 			note = fmt.Sprintf("Cheap-grid charging restored at €%.2f/kWh.", *a.PrevSmartCostLimit)
 		}
-		return end(done, note, set, map[string]string{"cheapChargingLimit": limitText(a.PrevSmartCostLimit)}, nil)
+		return end(done, note, set, map[string]string{"cheapChargingLimit": limitText(a.PrevSmartCostLimit)}, nil, nil)
 	}
 	return nil
 }

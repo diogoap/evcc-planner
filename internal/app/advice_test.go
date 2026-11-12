@@ -16,6 +16,7 @@ import (
 	"github.com/diogoap/evcc-planner/internal/clock"
 	"github.com/diogoap/evcc-planner/internal/config"
 	"github.com/diogoap/evcc-planner/internal/evcc"
+	"github.com/diogoap/evcc-planner/internal/model"
 	"github.com/diogoap/evcc-planner/internal/service"
 )
 
@@ -158,6 +159,7 @@ func TestDemoAdviceUsesPublishedPricesFirst(t *testing.T) {
 
 func TestExtraPlanNeedsConfirmationAndRestores(t *testing.T) {
 	ta := newTestApp(t, "")
+	ta.tripPlans(model.TripPlansManual) // extra plans restore the earlier plan
 	// A plan the extra plan will replace and later restore.
 	ta.json("POST", "/api/evcc/plan", map[string]any{"soc": 50, "time": "2026-11-11T06:00:00Z", "confirm": true}, http.StatusOK, nil)
 
@@ -231,6 +233,7 @@ func TestExtraPlanNeedsConfirmationAndRestores(t *testing.T) {
 
 func TestExtraPlanWithoutPreviousPlanIsRemoved(t *testing.T) {
 	ta := newTestApp(t, "")
+	ta.tripPlans(model.TripPlansManual) // extra plans restore the earlier plan
 	ta.json("POST", "/api/adjustments", map[string]any{
 		"kind": "extra_plan", "date": "2026-11-10", "soc": 60, "confirm": true,
 		"readyBy": "2026-11-10T07:00:00+01:00", "expiresAt": "2026-11-10T07:30:00+01:00",
@@ -258,6 +261,7 @@ func TestExtraPlanWithoutPreviousPlanIsRemoved(t *testing.T) {
 
 func TestPlanFinishedByEVCCStillRestores(t *testing.T) {
 	ta := newTestApp(t, "")
+	ta.tripPlans(model.TripPlansManual) // extra plans restore the earlier plan
 	ctx := context.Background()
 	ta.json("POST", "/api/evcc/plan", map[string]any{"soc": 50, "time": "2026-11-11T06:00:00Z", "confirm": true}, http.StatusOK, nil)
 	extra := map[string]any{

@@ -4,7 +4,7 @@ import type { Rate } from '../api/types'
 import { Chart, cssVar, hourTicks, timeTick } from '../lib/chart'
 import { clock, price } from '../lib/format'
 
-const props = defineProps<{ slots: Rate[]; planned?: Rate[]; height?: number }>()
+const props = defineProps<{ slots: Rate[]; planned?: Rate[]; plannedLabel?: string; height?: number }>()
 
 const canvas = ref<HTMLCanvasElement | null>(null)
 let chart: Chart | null = null
@@ -50,7 +50,7 @@ function render() {
           pointRadius: 0,
         },
         {
-          label: 'Planned charging',
+          label: props.plannedLabel ?? 'Planned charging',
           data: plannedSteps(),
           stepped: false,
           borderColor: accent,

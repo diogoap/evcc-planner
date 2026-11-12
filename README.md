@@ -5,7 +5,8 @@ Google Calendar events, recurring trips (such as school runs), and manual trips;
 calculates routes, energy, and the state of charge (SoC) needed at each
 departure; and sends a charging plan to [EVCC](https://evcc.io), which does the
 charging. See [PLAN.md](PLAN.md) for the roadmap and [UI-MOCKUP.md](UI-MOCKUP.md)
-for the UI direction.
+for the UI direction, and [AUTOMATION.md](AUTOMATION.md) for every rule of
+the automatic plans and notifications.
 
 **V1:** trip UI, recurring schedules, calendar and EVCC connections,
 route-based energy and SoC targets, feasibility, plan previews, and a
@@ -23,11 +24,18 @@ values), history links from trips, schedules, and the EVCC plan, monthly
 external API usage, CSV/JSON export, and a daily cleanup of history older than
 90 days.
 
-**V4 (this version):** an always-on SoC. Home Assistant has the car's state
+**V4:** an always-on SoC. Home Assistant has the car's state
 of charge also while it is unplugged; the planner reads it (optional) and
 shows where every SoC value comes from and how old it is. Integration
 settings without secrets (addresses, sensors, intervals, model, retention)
 are edited under Settings → Connections instead of config files.
+
+**V5 (in progress):** automatic trip plans that keep EVCC's plan matched to
+your trips, pause for a plan you choose yourself, and charge later trips
+ahead when the night is clearly cheaper (solar first); phone notifications
+through the Home Assistant Companion app: plug-in reminders, charging
+problems, and questions about unclear calendar events, with buttons that act
+on the planner.
 
 ## Quick start
 
@@ -168,7 +176,8 @@ unplugged. It only reads, through Home Assistant's REST API.
 1. In Home Assistant, create a long-lived access token: your profile (bottom
    left) → **Security** → **Long-lived access tokens** → **Create token**.
    Tokens cannot be limited to reading, so consider a separate, non-admin
-   user just for the planner. Set `HA_TOKEN` to it.
+   user just for the planner. Set `HA_TOKEN` to it. The same token sends
+   phone notifications (below).
 2. In **Settings → Connections**, enter Home Assistant's address as the
    planner reaches it, e.g. `http://192.0.2.20:8123`, and save.
 3. Then choose the car's battery level sensor (in %) as the SoC sensor, e.g. `sensor.leaf_battery_level`; the field
@@ -189,6 +198,28 @@ latest one or the error. Wrong tokens are refused with 401; if Home
 Assistant bans IPs after failed logins (`ip_ban_enabled`), fix the token
 quickly or the planner's address gets banned. Calls to Home Assistant are on
 your network and are not in the activity log.
+
+### Phone notifications (optional)
+
+Notifications go to the Home Assistant Companion app with the same
+`HA_TOKEN`; nothing needs to be set up in Home Assistant itself.
+
+1. Install the Companion app on your phone and sign in to Home Assistant; it
+   then offers a `notify.mobile_app_<phone>` service.
+2. In **Settings → Notifications**, tick the phone, turn notifications on,
+   and save. **Send test notification** checks the setup.
+3. Optionally set the **Link address** (the planner's address as the phone
+   reaches it) for the **View plan** button, and a car location sensor
+   (state `home` while the car is home) so plug-in reminders wait while the
+   car is away.
+
+Button presses (Remind later, Skip trip, Count it, Not a trip) come back over
+Home Assistant's websocket connection, which the planner opens to Home
+Assistant; Home Assistant never has to reach the planner. Settings →
+Connections shows whether that connection is up. Every message sent and
+every button press is in the activity log. The rules for each message, quiet
+hours (23:00–07:00 by default), and snoozing are in
+[AUTOMATION.md](AUTOMATION.md).
 
 ## Install on your phone
 
@@ -254,12 +285,25 @@ to `main` deploy automatically, run `make verify` before pushing.
   per vehicle) after you confirm. It never changes limits or repeating plans;
   EVCC's planner charges past the charge limit during planned slots. EVCC can
   only preview a plan while the car is plugged in.
-- **When the car is plugged in** (unplugged before), the planner sends the
-  next departure's target to EVCC once, unless EVCC already has a plan with
-  an equal or higher SoC (kept even if it is ready later than the departure:
-  someone chose it) or the charge already covers the departure. It is on
-  by default (Settings → Home & vehicle); later changes in EVCC are left alone
-  until the car is plugged in again.
+- **Trip plans** (Settings → Planning) reach EVCC in one of three modes
+  ([AUTOMATION.md](AUTOMATION.md) has every rule):
+  - **Automatic** (default): while the car is plugged in, the planner keeps
+    EVCC's plan matched to the trips after every EVCC check, trip or setting
+    change, and calendar sync, and removes its own plan when nothing needs it.
+    A plan you choose yourself (set in EVCC or sent with **Send plan to EVCC**)
+    pauses it while that plan covers the next departure; one with less is
+    replaced. It resumes on its own when that plan finishes, or with
+    **Resume**.
+  - **On plug-in:** sends the next departure's target once when the car is
+    plugged in, unless EVCC already has a plan with an equal or higher SoC or
+    the charge already covers the departure.
+  - **Manual:** only **Send plan to EVCC**.
+- **Charge ahead** (Automatic mode): within the published prices, later trips
+  are added to the target when charging for them before the next departure
+  is at least €0.05/kWh cheaper than at home just before them. Solar comes
+  first: a solar kWh counts as the grid price minus the tax not paid on it
+  (€0.11/kWh by default). The Overview explains each trip it adds, and the
+  price chart shades the planner's estimate of the charging slots.
 - The arrow next to **Send plan to EVCC** offers plans that cover more days
   from the next departure's day: that day's trips, plus the next day, plus
   two days. Each target is enough to drive all those trips with no charging
@@ -319,7 +363,9 @@ The **Activity** page lists, newest first, everything the planner did:
   changed (before → after) and is saved in the same database transaction as
   the change. Failed EVCC writes are recorded too; rejected input is not.
 - **Source:** the UI, a scheduled job (e.g. restoring an EVCC setting at
-  expiry), the calendar sync, or automation (plans created from advice).
+  expiry), the calendar sync, automation (automatic trip plans, plans created
+  from advice, notifications sent), or a notification (a button pressed on
+  the phone).
 - **External API calls:** every request to Google Routes (route and time slot;
   cache hits make no call), the calendar feeds, the Tibber page, OpenRouter,
   and KNMI, with HTTP status, duration, and size. Calls to EVCC and Home
@@ -336,7 +382,7 @@ Once a day the planner deletes history older than the retention in Settings →
 Connections (90 days by
 default): activity entries, manual trips that have ended, per-date edits of
 past dates, cached routes, plan records (keeping the latest), advice
-dismissals, and ended EVCC changes. Schedules, places, and settings are kept;
+dismissals, ended EVCC changes, and notifications. Schedules, places, and settings are kept;
 calendar events only ever cover the next eight days.
 
 ## Diagnostics

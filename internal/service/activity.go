@@ -40,12 +40,35 @@ func (s *Service) change(ctx context.Context, ev model.AuditEvent, fn func(tx *s
 		_, err := tx.AddAuditEvent(s.Audit.Prepare(ctx, ev))
 		return err
 	})
+	if err == nil && kickSubjects[ev.SubjectType] {
+		s.Kick()
+	}
 	var ve ValidationError
 	if err != nil && !errors.As(err, &ve) && !IsNotFound(err) {
 		ev.Outcome, ev.Error = model.OutcomeFailure, err.Error()
 		s.record(ctx, ev)
 	}
 	return err
+}
+
+// kickSubjects are the changes that can alter trip plans.
+var kickSubjects = map[string]bool{"trip": true, "schedule": true, "place": true, "settings": true}
+
+// Kick asks for an automatic plan check soon (see app.StartJobs); repeated
+// kicks before it runs count once.
+func (s *Service) Kick() {
+	select {
+	case s.kicks() <- struct{}{}:
+	default:
+	}
+}
+
+// Kicked delivers a value after each Kick.
+func (s *Service) Kicked() <-chan struct{} { return s.kicks() }
+
+func (s *Service) kicks() chan struct{} {
+	s.kickOnce.Do(func() { s.kick = make(chan struct{}, 1) })
+	return s.kick
 }
 
 // record stores an action that changed nothing in the database: a failed
@@ -222,8 +245,10 @@ var settingLabels = map[string]string{
 	"consumptionKWhPer100Km": "consumption", "arrivalReservePct": "arrival reserve",
 	"chargingEfficiencyPct": "charging efficiency", "departureBufferMin": "departure buffer",
 	"chargeBufferMin": "charging time buffer", "defaultStayMin": "default stay",
-	"autoPlanOnPlugIn": "plan when plugged in",
-	"enabled":          "daily advice", "autoApply": "automatic plans", "autoMinConfidence": "minimum confidence",
+	"tripPlans": "trip plans", "chargeAhead": "charge ahead", "chargeAheadMinSaving": "minimum saving",
+	"chargeAheadMaxSoc": "highest target when charging ahead", "householdKW": "household use",
+	"solarTaxSaving": "tax not paid on own solar",
+	"enabled":        "daily advice", "autoApply": "automatic plans", "autoMinConfidence": "minimum confidence",
 	"targetLittle": "target for little", "targetMedium": "target for medium", "targetHigh": "target for high",
 	"readyBy": "ready-by time", "expiryHours": "expiry", "autoPostpone": "automatic postponement",
 	// Connection settings.
@@ -260,10 +285,12 @@ func limitText(v *float64) string {
 var activityTypes = map[string][]string{
 	"trip": {"trip"}, "schedule": {"schedule"}, "place": {"place"}, "settings": {"settings"},
 	"evcc": {"plan", "adjustment"}, "advice": {"advice"}, "api": {"api"}, "system": {"system"},
+	"notification": {"notification"},
 }
 
 var activitySources = map[string]bool{
 	model.SourceUI: true, model.SourceJob: true, model.SourceCalendarSync: true, model.SourceAutomation: true,
+	model.SourceNotification: true,
 }
 
 var subjectRe = regexp.MustCompile(`^[a-z]+(:[A-Za-z0-9:_.-]{1,120})?$`)
@@ -465,7 +492,8 @@ var cleanupLabels = map[string][2]string{
 	"trip_edits":  {"per-date trip edit", "per-date trip edits"},
 	"routes":      {"cached route", "cached routes"},
 	"plan_writes": {"plan record", "plan records"}, "dismissals": {"advice dismissal", "advice dismissals"},
-	"adjustments": {"ended EVCC change", "ended EVCC changes"},
+	"adjustments":   {"ended EVCC change", "ended EVCC changes"},
+	"notifications": {"notification", "notifications"},
 }
 
 // Cleanup deletes history older than the retention period (whole local

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { Block, Day, SendOption } from '../api/types'
-import { blockLabel, dayLabel, dayName, onDay, sendOptionLabel } from './status'
+import type { Block, ControlView, Day, SendOption } from '../api/types'
+import { aheadText, blockLabel, controlLabel, dayLabel, dayName, onDay, sendOptionLabel } from './status'
 
 const day = (over: Partial<Day>): Day => ({
   date: '2026-11-10',
@@ -108,5 +108,76 @@ describe('send options', () => {
     expect(sendOptionLabel(opt(1, '2026-11-10', '2026-11-10'), monday)).toBe('Trips tomorrow')
     expect(sendOptionLabel(opt(2, '2026-11-10', '2026-11-11'), monday)).toBe('Tomorrow and Wed 11 Nov')
     expect(sendOptionLabel(opt(1, '2026-11-12', '2026-11-12'), monday)).toBe('Trips on Thu 12 Nov')
+  })
+})
+
+describe('controlLabel', () => {
+  const target = {
+    soc: 42,
+    minSoc: 42,
+    readyBy: '2026-11-10T06:48:00Z',
+    tripKey: 'recurring:1:2026-11-10',
+    title: 'School drop-off',
+    covered: false,
+    ahead: [],
+    savingEur: 0,
+    charging: [],
+  }
+  const control = (over: Partial<ControlView>): ControlView => ({
+    mode: 'automatic',
+    paused: false,
+    target,
+    ...over,
+  })
+
+  it('names manual modes without detail', () => {
+    expect(controlLabel(control({ mode: 'manual' }), true)).toEqual({
+      mode: 'Send manually',
+      detail: '',
+      tone: 'muted',
+    })
+    expect(controlLabel(control({ mode: 'plug_in' }), true).mode).toBe('Sent when plugged in')
+  })
+
+  it('says what automatic plans send', () => {
+    expect(controlLabel(control({}), false).detail).toBe('Sends 42% by Tue 10 Nov, 07:48 when plugged in.')
+    expect(controlLabel(control({}), true).detail).toBe('Target 42% by Tue 10 Nov, 07:48.')
+    expect(controlLabel(control({ target: { ...target, covered: true } }), true)).toMatchObject({
+      detail: '42% by Tue 10 Nov, 07:48: the charge already covers it.',
+      tone: 'ok',
+    })
+    expect(controlLabel(control({ target: null }), true).detail).toBe('No upcoming trip needs a plan.')
+  })
+
+  it('explains a pause', () => {
+    const paused = control({ paused: true, pausedPlan: { soc: 80, time: '2026-11-11T06:00:00Z' } })
+    expect(controlLabel(paused, true)).toEqual({
+      mode: 'Automatic · paused',
+      detail: 'Paused while the chosen plan (80% by Wed 11 Nov, 07:00) is in EVCC; resumes when it finishes.',
+      tone: 'warn',
+    })
+  })
+})
+
+describe('aheadText', () => {
+  const trip = {
+    tripKey: 'manual:1',
+    title: 'Utrecht',
+    departAt: '2026-11-12T16:00:00Z',
+    energyPct: 37,
+    priceAhead: 0.23,
+    priceLater: 0.31,
+    savingEur: 1.94,
+  }
+  it('compares the prices', () => {
+    expect(aheadText(trip)).toBe(
+      'Includes Utrecht (Thu 12 17:00): €0.23/kWh before the next departure vs €0.31/kWh before it, saves about €1.94.',
+    )
+    expect(aheadText({ ...trip, savingEur: 0.01 })).not.toContain('saves')
+  })
+  it('explains a trip with too little time at home before it', () => {
+    expect(aheadText({ ...trip, priceLater: null })).toBe(
+      'Includes Utrecht (Thu 12 17:00): too little time at home before it to charge.',
+    )
   })
 })

@@ -161,27 +161,17 @@ As implemented (2026-11-11):
 <details open>
 <summary><b>V5 — Automatic plans and interaction</b> 🚧</summary>
 
-🚧 **In progress.**
+🚧 **In progress.** Every rule, with diagrams and examples: [AUTOMATION.md](AUTOMATION.md). Implemented 2026-11-12 except Telegram; still to validate live: automatic writes with the real EVCC, notification delivery and button presses with the real Home Assistant.
 
-Done:
-
-- ✅ **Foundational rule: plan on plug-in** (implemented early, 2026-11-11). When the car goes from unplugged to plugged in, send the next departure's own target to EVCC once, ready by that departure. Keep a plan already in EVCC with an equal or higher SoC, even when its ready-by time is after the next departure: someone chose that plan, so the planner respects it (decided 2026-11-11). Replace only a plan with a lower SoC than the departure needs, and send nothing when the current charge already covers the departure. The last seen connection state is stored, so a restart while plugged in does not count, and a car plugged in while the app was down does. On by default, switchable in Settings; each decision is in the activity log (source: automation). This covers only the most basic need; the rest of V5 can refine the target, e.g. adding charge when prices are cheap or for trips soon after the first one (horizon planning below).
-
-To do:
-
-- Update managed trip plans after hourly calendar sync, new prices, connection changes, and manual edits. Keep trip automation separate from advice auto-apply; daily advice remains manual unless its own setting is explicitly enabled.
-- **Horizon planning:** while published prices (typically 24–36 hours after the ~14:00 update), the trips, and the solar forecast cover the coming day, plan for all trips in that horizon, not only the next one. For each later trip, compare charging its energy before the first departure (e.g. a cheap night block) with the cheapest feasible home window before that trip, including forecast solar surplus after household use; add it to the earlier target when that is cheaper.
-- EVCC keeps one plan per vehicle, so the managed plan is one SoC target by the first departure (EVCC picks the cheapest slots before it); it may exceed the 80% limit. Re-plan as the day unfolds. Beyond the published-price horizon, keep the minimum per-trip targets; V2 estimates stay advisory.
-- UI: explain a target that is higher than the next trip needs, e.g. "includes tomorrow's afternoon trips: night €0.21/kWh vs €0.32/kWh before them".
-- Manual changes made in EVCC pause app control for that vehicle until explicit **Resume**. Preserve plans/settings the app does not own.
-- Track temporary app-managed settings and restore their previous background values on expiry/completion/cancellation, provided the user has not subsequently changed them.
-- Prefer Home Assistant Companion notifications; Telegram is an alternative.
-- HA flow: planner calls HA's mobile notification service; phone buttons emit HA events, and an HA automation calls back to the planner. Uses the HA connection from V4 (address and token in `.env`); configure the notification target. HA must reach the callback address; local-only development can stub callbacks or use a configurable LAN bind for integration checks.
-- Request connection before useful cheap/solar windows; escalate near the latest feasible plug-in time.
-- Actions: **Remind in 30 minutes**, **Skip trip**, **View plan**. Support trip edits and clarification requests.
-- Confirm connection through EVCC, cancel reminders, and flag interruptions/missed targets; readiness confirmations are optional.
-- Persist snoozes/decisions and deduplicate notifications. Expose notification enablement, available destinations, early/urgent reminder timing, quiet hours/urgent handling, and snoozing in UI settings.
-- UI: target, charging windows, readiness/plug-in deadline, pause/resume, and notification actions. Graph published prices and planned charging.
+- ✅ **Plan on plug-in** (2026-11-11): send the next departure's target once when the car is plugged in; keep an equal or higher plan, replace a lower one.
+- ✅ **Automatic trip plans** (default mode; Manual and On plug-in remain): keep EVCC's one plan matched to the trips while plugged in, after every EVCC check, trip or setting change, and calendar sync. Write only real changes; remove the planner's plan when nothing needs it.
+- ✅ **Chosen plans pause it:** a plan set in EVCC or sent by hand pauses automatic changes while it covers the next departure; a lower one is replaced. Resumes on its own when that plan finishes, or with **Resume**.
+- ✅ **Extra plans from advice** share EVCC's plan: the higher SoC by the earlier time. At expiry they restore as in V2, and the automatic check takes the restored plan over.
+- ✅ **Charge ahead:** within published prices, add later trips to the target when charging before the next departure is at least €0.05/kWh cheaper than at home before that trip; capped at 90%. Solar comes first: a solar kWh counts as the grid price minus the tax not paid on it (default €0.11/kWh). The UI explains a higher target.
+- ✅ **Notifications** through the Home Assistant Companion app; button presses come back over Home Assistant's websocket (no YAML). Telegram may follow.
+- ✅ **Plug-in reminders:** early (cheapest window), urgent (latest plug-in time), and too late; Remind in 30 min, Skip trip, View plan. Quiet hours 23:00–07:00; deduplicated and cleared on plug-in.
+- ✅ **Problems and questions:** charging stopped, unplugged early, charging off, missed target, Needs-review calendar events, optional ready message.
+- Decisions (2026-11-12): Automatic for existing installs; replace lower chosen plans in Automatic and On plug-in; pauses end on their own; websocket for button presses; €0.05/kWh minimum saving; quiet hours 23:00–07:00; solar valued at the grid price minus €0.11/kWh tax.
 
 </details>
 

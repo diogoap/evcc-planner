@@ -67,6 +67,7 @@ func New(cfg *config.Config, log *slog.Logger) (*App, error) {
 	if cfg.EVCC.Mode == config.ModeStub {
 		stub = evcc.NewStub(clk, cfg.Location)
 	}
+	phone := &homeassistant.NotifyStub{}
 
 	var source calendar.Source = calendar.HTTPSource{
 		HTTP: client(service.APICalendar, 30*time.Second, func(t *audit.Transport) { t.HideURL = true }),
@@ -100,6 +101,7 @@ func New(cfg *config.Config, log *slog.Logger) (*App, error) {
 		}
 		i.Forecasts = forecasts(cfg, cs, clk, client)
 		i.HA, i.HASensors, i.HANote = homeAssistant(cfg, cs, stub, func() time.Time { return svc.Clock.Now() })
+		i.Notify, i.Actions, i.NotifyNote = notifier(cfg, cs, phone)
 		return i
 	}
 	if cfg.Demo {
@@ -142,7 +144,10 @@ func New(cfg *config.Config, log *slog.Logger) (*App, error) {
 				return err
 			}
 			// Learn that the demo car is unplugged, so plugging it in counts.
-			if err := svc.PlanOnPlugIn(ctx); err != nil {
+			if err := svc.SyncPlan(ctx); err != nil {
+				return err
+			}
+			if err := svc.CheckNotifications(ctx); err != nil {
 				return err
 			}
 			return svc.RefreshForecasts(ctx, true)
@@ -246,6 +251,22 @@ func homeAssistant(cfg *config.Config, cs model.ConnectionSettings, car *evcc.St
 	return c, c, ""
 }
 
+// notifier sends phone notifications through Home Assistant, or explains
+// why it cannot. The stub records them and has no button listener (demo
+// mode presses its buttons in the UI).
+func notifier(cfg *config.Config, cs model.ConnectionSettings, phone *homeassistant.NotifyStub) (
+	homeassistant.Notifier, homeassistant.ActionListener, string) {
+	ha := cfg.HomeAssistant
+	if ha.Mode == config.ModeStub {
+		return phone, nil, ""
+	}
+	if ha.Token == "" {
+		return nil, nil, "Set " + ha.TokenEnv + " to send notifications through Home Assistant"
+	}
+	c := &homeassistant.HTTPClient{BaseURL: cs.HAURL, Token: ha.Token, HTTP: &http.Client{Timeout: cs.HATimeout()}}
+	return c, c, ""
+}
+
 // knmiLabel names the three requests of a KNMI fetch.
 func knmiLabel(r *http.Request) string {
 	switch {
@@ -278,12 +299,45 @@ func (a *App) StartJobs(ctx context.Context) (wait func()) {
 		if err := a.Service.CheckAdjustments(jobCtx); err != nil && ctx.Err() == nil {
 			a.Log.Warn("checking temporary evcc changes failed", "err", err)
 		}
-		if err := a.Service.PlanOnPlugIn(jobCtx); err != nil && ctx.Err() == nil {
-			a.Log.Warn("plan on plug-in failed", "err", err)
+		if err := a.Service.SyncPlan(jobCtx); err != nil && ctx.Err() == nil {
+			a.Log.Warn("automatic plan check failed", "err", err)
+		}
+		if err := a.Service.CheckNotifications(jobCtx); err != nil && ctx.Err() == nil {
+			a.Log.Warn("notification check failed", "err", err)
 		}
 	})
+	// Changes to trips and settings run the automatic plan check once
+	// they settle.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-svc.Kicked():
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(kickDelay):
+			}
+			select {
+			case <-svc.Kicked():
+			default:
+			}
+			if err := a.Service.SyncPlan(jobCtx); err != nil && ctx.Err() == nil {
+				a.Log.Warn("automatic plan check failed", "err", err)
+			}
+		}
+	}()
 	// Runs even while Home Assistant is not configured: a sensor can be
 	// chosen later.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		svc.ListenNotificationActions(jobCtx)
+	}()
 	every(ctx, &wg, func() time.Duration { return svc.Conn().HAPollInterval() }, func() {
 		if err := a.Service.PollHomeAssistant(jobCtx); err != nil && ctx.Err() == nil {
 			a.Log.Warn("home assistant poll failed", "err", err)
@@ -302,6 +356,7 @@ func (a *App) StartJobs(ctx context.Context) (wait func()) {
 		if err := a.Syncer.SyncAll(calCtx); err != nil && ctx.Err() == nil {
 			a.Log.Warn("calendar sync incomplete", "err", err)
 		}
+		svc.Kick()
 	})
 	every(ctx, &wg, fixed(24*time.Hour), func() {
 		if err := a.Service.Cleanup(jobCtx); err != nil && ctx.Err() == nil {
@@ -317,6 +372,9 @@ func (a *App) Close() error { return a.Store.Close() }
 // everyCheck is how often jobs check whether their interval has passed, so
 // a changed interval applies within it.
 var everyCheck = time.Second
+
+// kickDelay lets a burst of edits settle before the automatic plan check.
+var kickDelay = 3 * time.Second
 
 // every runs fn now and then each time interval() has passed since the last
 // run, until ctx ends.

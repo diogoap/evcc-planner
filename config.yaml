@@ -68,4 +68,9 @@ defaults:
   departure_buffer_min: 15
   charge_buffer_min: 30
   default_stay_min: 15
-  auto_plan_on_plug_in: true   # send the next departure's plan to EVCC when the car is plugged in
+  trip_plans: automatic        # manual | plug_in | automatic (see AUTOMATION.md)
+  charge_ahead: true           # automatic: charge later trips before the next departure when cheaper
+  charge_ahead_min_saving: 0.05  # EUR/kWh cheaper ahead than at home before the trip
+  charge_ahead_max_soc: 90     # charge ahead never raises the target above this
+  household_kw: 0.4            # subtracted from the solar forecast
+  solar_tax_saving: 0.11       # EUR/kWh of tax not paid on own solar: solar counts as the grid price minus this

@@ -186,6 +186,16 @@ var migrations = []string{
 	// When a reading's value last changed (Home Assistant), so a value that
 	// is reported again but predates EVCC's last reading does not replace it.
 	`ALTER TABLE soc_readings ADD COLUMN changed_at TEXT;`,
+	// V5: phone notifications, one row per key so each is sent once.
+	`CREATE TABLE notifications (
+		id INTEGER PRIMARY KEY,
+		key TEXT NOT NULL UNIQUE,
+		kind TEXT NOT NULL,
+		state TEXT NOT NULL,
+		created_at TEXT NOT NULL,
+		data TEXT NOT NULL
+	);
+	CREATE INDEX notifications_state ON notifications(state);`,
 }
 
 // Open opens (creating if needed) the database at path and migrates it.
@@ -276,9 +286,10 @@ func boolInt(b bool) int {
 
 // Settings rows hold JSON objects, keyed by kind.
 const (
-	settingsKey    = "planning"
-	adviceKey      = "advice"
-	connectionsKey = "connections"
+	settingsKey      = "planning"
+	adviceKey        = "advice"
+	connectionsKey   = "connections"
+	notificationsKey = "notifications"
 )
 
 // setting decodes a saved settings row over v, which holds the defaults, and
@@ -315,8 +326,23 @@ func (s *Store) putSetting(key string, v any) error {
 func (s *Store) Settings(defaults model.Settings) (model.Settings, bool, error) {
 	v := defaults
 	saved, err := s.setting(settingsKey, &v)
-	if err != nil {
+	if err != nil || !saved {
+		return v, saved, err
+	}
+	// Settings saved before trip plan modes had an on/off switch for
+	// planning on plug-in: on becomes automatic, off manual.
+	var legacy struct {
+		TripPlans        *string `json:"tripPlans"`
+		AutoPlanOnPlugIn *bool   `json:"autoPlanOnPlugIn"`
+	}
+	if _, err := s.setting(settingsKey, &legacy); err != nil {
 		return defaults, false, err
+	}
+	if legacy.TripPlans == nil && legacy.AutoPlanOnPlugIn != nil {
+		v.TripPlans = model.TripPlansManual
+		if *legacy.AutoPlanOnPlugIn {
+			v.TripPlans = model.TripPlansAutomatic
+		}
 	}
 	return v, saved, nil
 }
@@ -1121,6 +1147,7 @@ func (s *Store) Cleanup(cutoff time.Time, loc *time.Location) (map[string]int64,
 		{"plan_writes", `DELETE FROM plan_writes WHERE written_at < ? AND id < (SELECT MAX(id) FROM plan_writes)`, []any{at}},
 		{"dismissals", `DELETE FROM advice_dismissals WHERE date < ?`, []any{date}},
 		{"adjustments", `DELETE FROM evcc_adjustments WHERE status != ? AND advice_date < ?`, []any{model.AdjustActive, date}},
+		{"notifications", `DELETE FROM notifications WHERE created_at < ?`, []any{at}},
 	}
 	out := map[string]int64{}
 	err := s.InTx(func(tx *Store) error {
@@ -1144,7 +1171,7 @@ func (s *Store) Cleanup(cutoff time.Time, loc *time.Location) (map[string]int64,
 func (s *Store) Reset() error {
 	for _, table := range []string{"settings", "places", "recurring_templates", "manual_trips", "trip_overrides",
 		"calendar_events", "calendar_sync", "soc_readings", "plan_writes", "forecast_sources", "advice_dismissals",
-		"evcc_adjustments", "audit_events"} {
+		"evcc_adjustments", "audit_events", "notifications"} {
 		if _, err := s.q.Exec("DELETE FROM " + table); err != nil {
 			return err
 		}
@@ -1176,6 +1203,131 @@ func (s *Store) SetMeta(key, value string) error {
 		ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
 		"meta."+key, value, fmtTime(time.Now()))
 	return err
+}
+
+// ---- notifications ----
+
+// NotificationSettings returns the saved notification settings merged onto
+// defaults.
+func (s *Store) NotificationSettings(defaults model.NotificationSettings) (model.NotificationSettings, error) {
+	v := defaults
+	if _, err := s.setting(notificationsKey, &v); err != nil {
+		return defaults, err
+	}
+	if v.Phones == nil {
+		v.Phones = []string{}
+	}
+	return v, nil
+}
+
+// SaveNotificationSettings stores the notification settings.
+func (s *Store) SaveNotificationSettings(v model.NotificationSettings) error {
+	return s.putSetting(notificationsKey, v)
+}
+
+// SaveNotification inserts a notification (ID 0) or updates it.
+func (s *Store) SaveNotification(n model.Notification) (model.Notification, error) {
+	if n.Verbs == nil {
+		n.Verbs = []string{}
+	}
+	data, err := json.Marshal(n)
+	if err != nil {
+		return n, err
+	}
+	if n.ID == 0 {
+		res, err := s.q.Exec(`INSERT INTO notifications (key, kind, state, created_at, data) VALUES (?, ?, ?, ?, ?)`,
+			n.Key, n.Kind, n.State, fmtTime(n.CreatedAt), string(data))
+		if err != nil {
+			return n, uniqueErr(err, "a notification with this key exists")
+		}
+		n.ID, err = res.LastInsertId()
+		return n, err
+	}
+	res, err := s.q.Exec(`UPDATE notifications SET state = ?, data = ? WHERE id = ?`, n.State, string(data), n.ID)
+	if err != nil {
+		return n, err
+	}
+	return n, expectRow(res)
+}
+
+// Notification returns a notification by ID.
+func (s *Store) Notification(id int64) (model.Notification, error) {
+	list, err := s.notifications(`WHERE id = ?`, id)
+	if err != nil {
+		return model.Notification{}, err
+	}
+	if len(list) == 0 {
+		return model.Notification{}, ErrNotFound
+	}
+	return list[0], nil
+}
+
+// NotificationByKey returns the notification with a key, or nil.
+func (s *Store) NotificationByKey(key string) (*model.Notification, error) {
+	list, err := s.notifications(`WHERE key = ?`, key)
+	if err != nil || len(list) == 0 {
+		return nil, err
+	}
+	return &list[0], nil
+}
+
+// OpenNotifications lists notifications that are sent or snoozed, oldest
+// first.
+func (s *Store) OpenNotifications() ([]model.Notification, error) {
+	return s.notifications(`WHERE state IN (?, ?) ORDER BY id`, model.NotifySent, model.NotifySnoozed)
+}
+
+// RecentNotifications lists the newest notifications.
+func (s *Store) RecentNotifications(limit int) ([]model.Notification, error) {
+	return s.notifications(`ORDER BY id DESC LIMIT ?`, limit)
+}
+
+func (s *Store) notifications(where string, args ...any) ([]model.Notification, error) {
+	rows, err := s.q.Query(`SELECT id, data FROM notifications `+where, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []model.Notification{}
+	for rows.Next() {
+		var id int64
+		var data string
+		if err := rows.Scan(&id, &data); err != nil {
+			return nil, err
+		}
+		var n model.Notification
+		if err := json.Unmarshal([]byte(data), &n); err != nil {
+			return nil, fmt.Errorf("decode notification %d: %w", id, err)
+		}
+		n.ID = id
+		out = append(out, n)
+	}
+	return out, rows.Err()
+}
+
+// planControlMeta holds the automatic trip plan state.
+const planControlMeta = "plan.control"
+
+// PlanControl returns the automatic trip plan state.
+func (s *Store) PlanControl() (model.PlanControl, error) {
+	var c model.PlanControl
+	raw, err := s.Meta(planControlMeta)
+	if err != nil || raw == "" {
+		return c, err
+	}
+	if err := json.Unmarshal([]byte(raw), &c); err != nil {
+		return model.PlanControl{}, fmt.Errorf("decode plan control: %w", err)
+	}
+	return c, nil
+}
+
+// SavePlanControl stores the automatic trip plan state.
+func (s *Store) SavePlanControl(c model.PlanControl) error {
+	raw, err := json.Marshal(c)
+	if err != nil {
+		return err
+	}
+	return s.SetMeta(planControlMeta, string(raw))
 }
 
 func expectRow(res sql.Result) error {

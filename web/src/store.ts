@@ -2,6 +2,7 @@ import { reactive } from 'vue'
 import { api } from './api/client'
 import type { Meta, Plan, Status } from './api/types'
 import { setTimeZone } from './lib/format'
+import { planText } from './lib/status'
 
 interface Toast {
   id: number
@@ -78,4 +79,18 @@ export async function mutate(action: () => Promise<unknown>, success?: string) {
     notify((e as Error).message, 'error')
     return false
   }
+}
+
+/** Asks for confirmation, then hands the plan in EVCC back to automatic plans. */
+export async function resumeAutomaticPlans() {
+  const target = state.plan?.control.target
+  const current = state.status?.plan ? planText(state.status.plan) : 'the current plan'
+  const next = target ? planText({ soc: target.soc, time: target.readyBy }) : 'the trip target'
+  if (
+    !confirm(
+      `Resume automatic plans? The planner replaces ${current} in EVCC with ${next}, or removes it when nothing needs it.`,
+    )
+  )
+    return false
+  return mutate(() => api.resumeControl(), 'Automatic plans resumed')
 }

@@ -31,6 +31,7 @@ type PlanView struct {
 	Timeline    []planner.Point  `json:"timeline"`
 	Warnings    []string         `json:"warnings"`
 	Advice      *AdviceView      `json:"advice"`
+	Control     ControlView      `json:"control"`
 }
 
 // SoCView describes the SoC used for planning, where it came from, and how
@@ -319,6 +320,11 @@ func (s *Service) Plan(ctx context.Context) (*PlanView, error) {
 		view.Next = &view.Blocks[result.Next]
 	}
 	view.SendOptions = s.sendOptions(result, params, view.Blocks)
+	ctl, err := s.Store.PlanControl()
+	if err != nil {
+		return nil, err
+	}
+	view.Control = s.controlView(settings, ctl, result, params, view.Blocks)
 
 	for i, t := range list {
 		r := resolved[i]
@@ -373,6 +379,11 @@ func (s *Service) Plan(ctx context.Context) (*PlanView, error) {
 	view.Trips = upcoming
 	if view.HomeMissing {
 		view.Warnings = append(view.Warnings, "Set your home address in Settings to calculate routes.")
+	}
+	if snap := s.snapshot(); snap.state != nil && view.Next != nil && settings.TripPlans != model.TripPlansManual {
+		if lp, ok := s.loadpoint(snap.state); ok && lp.Mode == "off" {
+			view.Warnings = append(view.Warnings, "Charging is off in EVCC, so plans for your trips won't run.")
+		}
 	}
 	if view.Advice, err = s.buildAdvice(view, result, socIn.Known); err != nil {
 		return nil, err

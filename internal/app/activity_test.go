@@ -263,7 +263,9 @@ func TestEveryChangeRecordsOneEvent(t *testing.T) {
 
 func TestAdviceChangesAreRecordedWithTheirSource(t *testing.T) {
 	ta := newTestApp(t, "")
+	ta.tripPlans(model.TripPlansManual) // extra plans restore the earlier plan
 	log := &eventLog{ta: ta}
+	log.fresh()
 	ta.json("POST", "/api/evcc/plan", map[string]any{"soc": 50, "time": "2026-11-11T06:00:00Z", "confirm": true}, http.StatusOK, nil)
 	log.one("plan.send", model.SourceUI)
 

@@ -1,5 +1,14 @@
-import type { Block, BlockStatus, Day, SendOption } from '../api/types'
-import { clock, duration, pct, relativeDay } from './format'
+import type {
+  AheadTrip,
+  Block,
+  BlockStatus,
+  ControlView,
+  Day,
+  PlanValue,
+  SendOption,
+  TripPlans,
+} from '../api/types'
+import { clock, dateTime, dayShort, duration, localDate, pct, price, relativeDay } from './format'
 
 export type Tone = 'ok' | 'warn' | 'bad' | 'muted' | 'info'
 
@@ -92,4 +101,46 @@ const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 export function sendOptionLabel(o: SendOption, now: string) {
   if (o.days === 1) return `Trips ${onDay(o.from, now)}`
   return capitalize(`${dayName(o.from, now)} ${o.days === 2 ? 'and' : 'to'} ${dayName(o.through, now)}`)
+}
+
+export const tripPlansText: Record<TripPlans, string> = {
+  manual: 'Send manually',
+  plug_in: 'Sent when plugged in',
+  automatic: 'Automatic',
+}
+
+/** "80% by Wed 11 Nov, 07:00". */
+export function planText(p: PlanValue) {
+  return `${Math.round(p.soc)}% by ${dateTime(p.time)}`
+}
+
+/** The trip plan mode, and what automatic plans do right now. */
+export function controlLabel(
+  c: ControlView,
+  connected: boolean,
+): { mode: string; detail: string; tone: Tone } {
+  if (c.mode !== 'automatic') return { mode: tripPlansText[c.mode], detail: '', tone: 'muted' }
+  if (c.paused) {
+    const chosen = c.pausedPlan ? ` (${planText(c.pausedPlan)})` : ''
+    return {
+      mode: 'Automatic · paused',
+      detail: `Paused while the chosen plan${chosen} is in EVCC; resumes when it finishes.`,
+      tone: 'warn',
+    }
+  }
+  const t = c.target
+  if (!t) return { mode: 'Automatic', detail: 'No upcoming trip needs a plan.', tone: 'muted' }
+  const target = planText({ soc: t.soc, time: t.readyBy })
+  if (t.covered) return { mode: 'Automatic', detail: `${target}: the charge already covers it.`, tone: 'ok' }
+  if (!connected) return { mode: 'Automatic', detail: `Sends ${target} when plugged in.`, tone: 'info' }
+  return { mode: 'Automatic', detail: `Target ${target}.`, tone: 'info' }
+}
+
+/** Why a later trip is in the target: "Includes School pickup (Tue 10 Nov 14:33): …". */
+export function aheadText(a: AheadTrip) {
+  const when = `${dayShort(localDate(a.departAt))} ${clock(a.departAt)}`
+  if (a.priceLater == null)
+    return `Includes ${a.title} (${when}): too little time at home before it to charge.`
+  const saving = a.savingEur >= 0.05 ? `, saves about €${a.savingEur.toFixed(2)}` : ''
+  return `Includes ${a.title} (${when}): ${price(a.priceAhead)} before the next departure vs ${price(a.priceLater)} before it${saving}.`
 }

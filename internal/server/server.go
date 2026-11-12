@@ -73,6 +73,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/evcc/preview", s.preview)
 	mux.HandleFunc("POST /api/evcc/plan", s.sendPlan)
 	mux.HandleFunc("POST /api/evcc/refresh", s.refreshEVCC)
+	mux.HandleFunc("POST /api/control/resume", s.resumeControl)
 
 	mux.HandleFunc("GET /api/connections", s.connections)
 	mux.HandleFunc("POST /api/calendar/sync", s.syncCalendar)
@@ -84,6 +85,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/settings/connections", s.getConnectionSettings)
 	mux.HandleFunc("PUT /api/settings/connections", s.putConnectionSettings)
 	mux.HandleFunc("GET /api/homeassistant/sensors", s.homeAssistantSensors)
+	mux.HandleFunc("GET /api/settings/notifications", s.getNotificationSettings)
+	mux.HandleFunc("PUT /api/settings/notifications", s.putNotificationSettings)
+	mux.HandleFunc("GET /api/notifications", s.notifications)
+	mux.HandleFunc("GET /api/notifications/phones", s.phones)
+	mux.HandleFunc("POST /api/notifications/test", s.testNotification)
 	mux.HandleFunc("GET /api/advice/{date}/proposal", s.proposal)
 	mux.HandleFunc("POST /api/advice/{date}/dismiss", s.dismiss)
 	mux.HandleFunc("POST /api/adjustments", s.applyAdjustment)
@@ -97,6 +103,7 @@ func (s *Server) Handler() http.Handler {
 		mux.HandleFunc("POST /api/demo/vehicle", s.demoVehicle)
 	}
 	if s.Reset != nil {
+		mux.HandleFunc("POST /api/demo/notification-action", s.demoNotificationAction)
 		mux.HandleFunc("POST /api/demo/reset", func(w http.ResponseWriter, r *http.Request) {
 			if err := s.Reset(r.Context()); err != nil {
 				s.fail(w, err)
@@ -449,7 +456,13 @@ func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
-	var v model.Settings
+	// Fields left out keep their current value, so a page loaded before a
+	// new setting existed can still save.
+	v, err := s.Svc.Settings()
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
 	if err := decode(r, &v); err != nil {
 		s.fail(w, err)
 		return
@@ -498,6 +511,95 @@ func (s *Server) sendPlan(w http.ResponseWriter, r *http.Request) {
 func (s *Server) refreshEVCC(w http.ResponseWriter, r *http.Request) {
 	if err := s.Svc.PollEVCC(r.Context()); err != nil {
 		s.Log.Warn("evcc refresh failed", "err", err)
+	}
+	writeJSON(w, http.StatusOK, s.Svc.Status())
+}
+
+func (s *Server) getNotificationSettings(w http.ResponseWriter, r *http.Request) {
+	v, err := s.Svc.NotificationSettings()
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, v)
+}
+
+func (s *Server) putNotificationSettings(w http.ResponseWriter, r *http.Request) {
+	v, err := s.Svc.NotificationSettings()
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	if err := decode(r, &v); err != nil {
+		s.fail(w, err)
+		return
+	}
+	saved, err := s.Svc.SaveNotificationSettings(r.Context(), v)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, saved)
+}
+
+func (s *Server) notifications(w http.ResponseWriter, r *http.Request) {
+	list, err := s.Svc.RecentNotifications()
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
+func (s *Server) phones(w http.ResponseWriter, r *http.Request) {
+	list, err := s.Svc.Phones(r.Context())
+	if err != nil {
+		var ve service.ValidationError
+		if !errors.As(err, &ve) {
+			writeError(w, http.StatusBadGateway, err.Error())
+			return
+		}
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
+func (s *Server) testNotification(w http.ResponseWriter, r *http.Request) {
+	n, err := s.Svc.SendTestNotification(r.Context())
+	if err != nil {
+		var ve service.ValidationError
+		if !errors.As(err, &ve) {
+			writeError(w, http.StatusBadGateway, err.Error())
+			return
+		}
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, n)
+}
+
+// demoNotificationAction presses a button of a demo notification, as Home
+// Assistant reports it from the phone.
+func (s *Server) demoNotificationAction(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Action string `json:"action"`
+	}
+	if err := decode(r, &in); err != nil {
+		s.fail(w, err)
+		return
+	}
+	if err := s.Svc.HandleAction(r.Context(), in.Action); err != nil {
+		s.fail(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) resumeControl(w http.ResponseWriter, r *http.Request) {
+	if err := s.Svc.ResumeControl(r.Context()); err != nil {
+		s.fail(w, err)
+		return
 	}
 	writeJSON(w, http.StatusOK, s.Svc.Status())
 }
@@ -660,8 +762,11 @@ func (s *Server) demoVehicle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// What the EVCC job does after its next poll.
-	if err := s.Svc.PlanOnPlugIn(r.Context()); err != nil {
-		s.Log.Warn("plan on plug-in failed", "err", err)
+	if err := s.Svc.SyncPlan(r.Context()); err != nil {
+		s.Log.Warn("automatic plan check failed", "err", err)
+	}
+	if err := s.Svc.CheckNotifications(r.Context()); err != nil {
+		s.Log.Warn("notification check failed", "err", err)
 	}
 	writeJSON(w, http.StatusOK, s.Svc.Status())
 }

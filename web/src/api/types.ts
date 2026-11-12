@@ -20,8 +20,58 @@ export interface Settings {
   departureBufferMin: number
   chargeBufferMin: number
   defaultStayMin: number
-  /** Send the next departure's plan to EVCC when the car is plugged in. */
-  autoPlanOnPlugIn: boolean
+  /** How trip plans reach EVCC (AUTOMATION.md). */
+  tripPlans: TripPlans
+  /** Automatic mode: charge later trips before the next departure when cheaper. */
+  chargeAhead: boolean
+  /** EUR/kWh that charging ahead must save to start. */
+  chargeAheadMinSaving: number
+  /** Charging ahead never raises the target above this SoC (%). */
+  chargeAheadMaxSoc: number
+  /** Subtracted from the solar forecast (kW). */
+  householdKW: number
+  /** EUR/kWh of tax not paid on own solar: a solar kWh counts as the grid price minus this. */
+  solarTaxSaving: number
+}
+
+export type TripPlans = 'manual' | 'plug_in' | 'automatic'
+
+/** The plan for the next departure: its own target plus later trips charged ahead. */
+export interface Target {
+  soc: number
+  minSoc: number
+  readyBy: string
+  tripKey: string
+  title: string
+  /** The projected SoC already reaches the target. */
+  covered: boolean
+  /** Later trips charged ahead (automatic mode). */
+  ahead: AheadTrip[]
+  savingEur: number
+  /** The planner's estimate of the charging slots; EVCC picks the actual ones. */
+  charging: Rate[]
+  horizonEnd?: string
+}
+
+export interface AheadTrip {
+  tripKey: string
+  title: string
+  departAt: string
+  energyPct: number
+  /** EUR/kWh before the next departure. */
+  priceAhead: number
+  /** EUR/kWh at home before the trip; null when that time is too short. */
+  priceLater: number | null
+  savingEur: number
+}
+
+export interface ControlView {
+  mode: TripPlans
+  /** A chosen plan has paused automatic changes. */
+  paused: boolean
+  pausedAt?: string
+  pausedPlan?: PlanValue
+  target: Target | null
 }
 
 /** Where a SoC reading comes from: EVCC (only while plugged in) or Home Assistant (always). */
@@ -188,6 +238,7 @@ export interface Plan {
   timeline: TimelinePoint[]
   warnings: string[]
   advice: AdviceView
+  control: ControlView
 }
 
 export type Recommendation = 'none' | 'charge_ahead' | 'defer'
@@ -481,8 +532,9 @@ export interface TripInput {
   reviewed?: boolean
 }
 
-export type ActivitySource = 'ui' | 'job' | 'calendar_sync' | 'automation'
-export type ActivityType = 'trip' | 'schedule' | 'place' | 'settings' | 'evcc' | 'advice' | 'api' | 'system'
+export type ActivitySource = 'ui' | 'job' | 'calendar_sync' | 'automation' | 'notification'
+export type ActivityType =
+  'trip' | 'schedule' | 'place' | 'settings' | 'evcc' | 'advice' | 'notification' | 'api' | 'system'
 
 /** One entry of the append-only activity log; before/after hold the changed values. */
 export interface AuditEvent {
@@ -536,4 +588,58 @@ export interface ServiceUsage {
 export interface ActivityUsage {
   month: string
   services: ServiceUsage[]
+}
+
+/** Phone notifications through the Home Assistant Companion app (AUTOMATION.md). */
+export interface NotificationSettings {
+  enabled: boolean
+  /** Home Assistant notify services, e.g. mobile_app_phone. */
+  phones: string[]
+  /** The planner's address as the phone reaches it, for View plan. */
+  linkUrl: string
+  /** Optional entity that is "home" while the car is home. */
+  locationEntity: string
+  early: boolean
+  earlyLeadMin: number
+  urgentLeadMin: number
+  quietFrom: string
+  quietTo: string
+  urgentInQuiet: boolean
+  snoozeMin: number
+  problems: boolean
+  questions: boolean
+  ready: boolean
+}
+
+export type NotificationKind =
+  | 'test'
+  | 'early'
+  | 'urgent'
+  | 'late'
+  | 'stopped'
+  | 'unplugged'
+  | 'off'
+  | 'missed'
+  | 'question'
+  | 'ready'
+  | 'info'
+
+export type NotificationVerb = 'snooze' | 'skip' | 'view' | 'count' | 'notrip'
+
+export interface PhoneNotification {
+  id: number
+  key: string
+  kind: NotificationKind
+  subject?: string
+  title: string
+  message: string
+  verbs: NotificationVerb[]
+  urgent: boolean
+  state: 'sent' | 'snoozed' | 'done' | 'failed'
+  note?: string
+  latest?: string
+  createdAt: string
+  sentAt?: string
+  snoozedUntil?: string
+  resolvedAt?: string
 }

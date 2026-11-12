@@ -148,6 +148,7 @@ func TestEVCCTargetChangeWaitsForActiveAdjustments(t *testing.T) {
 func TestNewEVCCTargetIsNotAPlugIn(t *testing.T) {
 	ta := newTestApp(t, "")
 	ta.json("POST", "/api/demo/reset", map[string]any{}, http.StatusNoContent, nil) // learns: unplugged
+	ta.tripPlans(model.TripPlansPlugIn)
 	log := &eventLog{ta: ta}
 	log.fresh()
 
@@ -157,7 +158,7 @@ func TestNewEVCCTargetIsNotAPlugIn(t *testing.T) {
 	edit := ta.connectionSettings().Settings
 	edit.EVCCVehicle = evcc.StubVehicle
 	ta.json("PUT", "/api/settings/connections", edit, http.StatusOK, nil)
-	if err := ta.app.Service.PlanOnPlugIn(context.Background()); err != nil {
+	if err := ta.app.Service.SyncPlan(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if p := ta.evccPlan(); p != nil {

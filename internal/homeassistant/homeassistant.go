@@ -1,7 +1,9 @@
 // Package homeassistant reads the car's state of charge from Home
 // Assistant's REST API, which has it even while the car is unplugged (EVCC
-// only reads it while plugged in). It never writes. A stub with the same
-// contract serves demo mode.
+// only reads it while plugged in), and sends phone notifications through
+// the Companion app, receiving their button presses over the websocket API.
+// It changes nothing else in Home Assistant. Stubs with the same contracts
+// serve demo mode.
 package homeassistant
 
 import (
@@ -333,22 +335,27 @@ func (c *HTTPClient) get(ctx context.Context, path string) ([]byte, error) {
 		return nil, err
 	}
 	if resp.StatusCode/100 != 2 {
-		msg := strings.TrimSpace(string(body))
-		var e struct {
-			Message string `json:"message"`
-		}
-		if json.Unmarshal(body, &e) == nil && e.Message != "" {
-			msg = e.Message
-		}
-		if resp.StatusCode == http.StatusUnauthorized {
-			msg = "access token rejected"
-		}
-		if len(msg) > 300 {
-			msg = msg[:300]
-		}
-		return nil, &APIError{Status: resp.StatusCode, Message: msg}
+		return nil, apiError(resp.StatusCode, body)
 	}
 	return body, nil
+}
+
+// apiError describes a non-2xx response.
+func apiError(status int, body []byte) *APIError {
+	msg := strings.TrimSpace(string(body))
+	var e struct {
+		Message string `json:"message"`
+	}
+	if json.Unmarshal(body, &e) == nil && e.Message != "" {
+		msg = e.Message
+	}
+	if status == http.StatusUnauthorized {
+		msg = "access token rejected"
+	}
+	if len(msg) > 300 {
+		msg = msg[:300]
+	}
+	return &APIError{Status: status, Message: msg}
 }
 
 // ---- stub ----

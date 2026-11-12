@@ -21,9 +21,15 @@ type Integrations struct {
 	// HA reads the car's SoC while it is unplugged; nil when Home Assistant
 	// is not configured (HANote says why). HASensors lists sensors to choose
 	// from once the token is set.
-	HA         homeassistant.Reader
-	HASensors  homeassistant.SensorLister
-	HANote     string
+	HA        homeassistant.Reader
+	HASensors homeassistant.SensorLister
+	HANote    string
+	// Notify sends phone notifications and Actions delivers their button
+	// presses; nil when not configured (NotifyNote says why). The demo has
+	// Notify without Actions.
+	Notify     homeassistant.Notifier
+	Actions    homeassistant.ActionListener
+	NotifyNote string
 	Routes     *routes.Resolver
 	RoutesNote string // explains a stub fallback (e.g. missing API key)
 	Forecasts  Forecasts
@@ -76,6 +82,9 @@ func (s *Service) LoadSettings() error {
 	s.evccState, s.evccErr, s.evccAt, s.evccOKAt = nil, nil, time.Time{}, time.Time{}
 	s.haReading, s.haErr, s.haOKAt = nil, nil, time.Time{}
 	s.mu.Unlock()
+	s.notifyMu.Lock()
+	s.notifyPrev = nil
+	s.notifyMu.Unlock()
 	defaults := model.DefaultConnectionSettings()
 	v, err := s.Store.ConnectionSettings(defaults)
 	if err != nil {

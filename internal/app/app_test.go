@@ -586,8 +586,13 @@ func TestSendOptionsCoverMoreDays(t *testing.T) {
 		"through": "11-11-2026", "confirm": true}, http.StatusBadRequest, nil)
 	ta.json("POST", "/api/evcc/plan", map[string]any{"soc": 67, "time": p.Next.DepartAt, "tripKey": "recurring:1:2026-11-10",
 		"through": "2026-11-11", "confirm": true}, http.StatusOK, nil)
-	e := ta.activity("?subject=plan").Events[0]
+	// In automatic mode the plan sent by hand pauses automatic changes.
+	events := ta.activity("?subject=plan").Events
+	e := events[1]
 	if e.Summary != "Sent plan 67% by Tue 10 Nov, 07:48 to EVCC, covering trips through Wed 11 Nov" || e.Detail["coversThrough"] != "2026-11-11" {
 		t.Errorf("recorded = %+v", e)
+	}
+	if events[0].Summary != "Automatic plans paused: plan sent from the planner (67% by 2026-11-10 07:48)" {
+		t.Errorf("pause = %+v", events[0])
 	}
 }

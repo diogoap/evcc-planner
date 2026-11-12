@@ -6,6 +6,7 @@ export const sourceLabels: Record<ActivitySource, string> = {
   job: 'Scheduled job',
   calendar_sync: 'Calendar sync',
   automation: 'Automation',
+  notification: 'Notification',
 }
 
 export const typeLabels: Record<ActivityType, string> = {
@@ -15,6 +16,7 @@ export const typeLabels: Record<ActivityType, string> = {
   settings: 'Settings',
   evcc: 'EVCC plans and changes',
   advice: 'Advice',
+  notification: 'Notifications',
   api: 'External API calls',
   system: 'Maintenance',
 }
@@ -27,6 +29,7 @@ const subjectLabels: Record<string, string> = {
   plan: 'EVCC plan',
   adjustment: 'EVCC change',
   advice: 'Advice',
+  notification: 'Notification',
   system: 'Maintenance',
 }
 
@@ -65,7 +68,27 @@ const fieldLabels: Record<string, string> = {
   departureBufferMin: 'Departure buffer (min)',
   chargeBufferMin: 'Charging time buffer (min)',
   defaultStayMin: 'Default stay (min)',
-  autoPlanOnPlugIn: 'Plan when plugged in',
+  tripPlans: 'Trip plans',
+  chargeAhead: 'Charge ahead',
+  chargeAheadMinSaving: 'Minimum saving (€/kWh)',
+  chargeAheadMaxSoc: 'Highest target when charging ahead (%)',
+  householdKW: 'Household use (kW)',
+  solarTaxSaving: 'Tax not paid on own solar (€/kWh)',
+  automaticPlans: 'Automatic plans',
+  phones: 'Phones',
+  linkUrl: 'Link address',
+  locationEntity: 'Car location sensor',
+  early: 'Early reminders',
+  earlyLeadMin: 'Early reminder (min before)',
+  urgentLeadMin: 'Urgent reminder (min before)',
+  quietFrom: 'Quiet hours from',
+  quietTo: 'Quiet hours until',
+  urgentInQuiet: 'Urgent reminders in quiet hours',
+  snoozeMin: 'Snooze (min)',
+  problems: 'Charging problems',
+  questions: 'Questions about calendar events',
+  ready: 'Ready messages',
+  message: 'Message',
   autoApply: 'Automatic plans',
   autoMinConfidence: 'Minimum confidence',
   targetLittle: 'Target for little (%)',
@@ -101,7 +124,8 @@ const fieldLabels: Record<string, string> = {
 
 /** Label for a recorded field; "enabled" in advice settings is daily advice itself. */
 export function fieldLabel(key: string, e?: AuditEvent) {
-  if (key === 'enabled' && e?.subjectType === 'settings') return 'Daily advice'
+  if (key === 'enabled' && e?.subjectType === 'settings')
+    return e.subjectId === 'notifications' ? 'Notifications' : 'Daily advice'
   if (fieldLabels[key]) return fieldLabels[key]
   const words = key.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase()
   return words.charAt(0).toUpperCase() + words.slice(1)

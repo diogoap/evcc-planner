@@ -134,7 +134,12 @@ type Defaults struct {
 	DepartureBufferMin     int     `yaml:"departure_buffer_min"`
 	ChargeBufferMin        int     `yaml:"charge_buffer_min"`
 	DefaultStayMin         int     `yaml:"default_stay_min"`
-	AutoPlanOnPlugIn       bool    `yaml:"auto_plan_on_plug_in"`
+	TripPlans              string  `yaml:"trip_plans"`
+	ChargeAhead            bool    `yaml:"charge_ahead"`
+	ChargeAheadMinSaving   float64 `yaml:"charge_ahead_min_saving"`
+	ChargeAheadMaxSoC      int     `yaml:"charge_ahead_max_soc"`
+	HouseholdKW            float64 `yaml:"household_kw"`
+	SolarTaxSaving         float64 `yaml:"solar_tax_saving"`
 }
 
 // PlaceSeed bootstraps a saved place on first start.
@@ -154,7 +159,12 @@ func (d Defaults) Settings() model.Settings {
 		DepartureBufferMin:     d.DepartureBufferMin,
 		ChargeBufferMin:        d.ChargeBufferMin,
 		DefaultStayMin:         d.DefaultStayMin,
-		AutoPlanOnPlugIn:       d.AutoPlanOnPlugIn,
+		TripPlans:              d.TripPlans,
+		ChargeAhead:            d.ChargeAhead,
+		ChargeAheadMinSaving:   d.ChargeAheadMinSaving,
+		ChargeAheadMaxSoC:      d.ChargeAheadMaxSoC,
+		HouseholdKW:            d.HouseholdKW,
+		SolarTaxSaving:         d.SolarTaxSaving,
 	}
 }
 
@@ -180,7 +190,9 @@ func Default() Config {
 		Defaults: Defaults{
 			UsableCapacityKWh: 59, ChargePowerKW: 3.68, ConsumptionKWhPer100Km: 18,
 			ArrivalReservePct: 15, ChargingEfficiencyPct: 90,
-			DepartureBufferMin: 15, ChargeBufferMin: 30, DefaultStayMin: 15, AutoPlanOnPlugIn: true,
+			DepartureBufferMin: 15, ChargeBufferMin: 30, DefaultStayMin: 15,
+			TripPlans: model.TripPlansAutomatic, ChargeAhead: true, ChargeAheadMinSaving: 0.05,
+			ChargeAheadMaxSoC: 90, HouseholdKW: 0.4, SolarTaxSaving: 0.11,
 		},
 	}
 }

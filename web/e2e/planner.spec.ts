@@ -217,9 +217,12 @@ test('send a plan covering more days from the menu', async ({ page, request }) =
   await expect(page.getByRole('dialog')).toContainText('The current charge already covers these trips')
 })
 
-test('plugging in the car sends the next departure plan once', async ({ page }) => {
+test('automatic plans follow the car and pause for a chosen plan', async ({ page }) => {
   await page.goto('/')
-  await expect(page.getByTestId('trip-plans')).toHaveText('Sent when plugged in')
+  await expect(page.getByTestId('trip-plans')).toHaveText('Automatic')
+  await expect(page.getByTestId('control-detail')).toHaveText(
+    'Sends 42% by Tue 10 Nov, 07:48 when plugged in.',
+  )
   await expect(page.getByTestId('evcc-plan')).toHaveText('None')
 
   await page.goto('/settings')
@@ -238,11 +241,27 @@ test('plugging in the car sends the next departure plan once', async ({ page }) 
   await expect(sent).toContainText('Car plugged in: sent plan 42% by Tue 10 Nov, 07:48 to EVCC')
   await expect(sent).toContainText('Automation')
 
-  // The switch lives in Settings and turns it off.
+  // A plan sent by hand pauses automatic plans; Resume hands it back.
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Send plan to EVCC' }).click()
+  await page.getByTestId('plan-soc').fill('60')
+  await page.getByRole('dialog').getByRole('button', { name: 'Confirm and send' }).click()
+  await expect(page.getByTestId('trip-plans')).toHaveText('Automatic · paused')
+  await expect(page.getByTestId('control-detail')).toContainText('chosen plan (60% by Tue 10 Nov, 07:48)')
+  await shot(page, 'automatic-paused')
+  page.once('dialog', (d) => d.accept())
+  await page.getByTestId('resume').click()
+  await expect(page.getByText('Automatic plans resumed')).toBeVisible()
+  await expect(page.getByTestId('trip-plans')).toHaveText('Automatic')
+  await expect(page.getByTestId('evcc-plan')).toContainText('42% by Tue 10 Nov, 07:48')
+
+  // The mode lives in Settings → Planning.
   await page.goto('/settings')
-  const toggle = page.getByTestId('setting-autoPlanOnPlugIn')
-  await expect(toggle).toHaveAttribute('aria-checked', 'true')
-  await toggle.click()
+  await page.getByRole('link', { name: 'Planning' }).click()
+  await expect(page.getByTestId('trip-plans-automatic')).toBeChecked()
+  await expect(page.getByTestId('planning-status')).toContainText('Target 42% by Tue 10 Nov, 07:48.')
+  await shot(page, 'settings-planning')
+  await page.getByTestId('trip-plans-manual').check()
   await page.getByRole('button', { name: 'Save settings' }).click()
   await expect(page.getByText('Settings saved')).toBeVisible()
   await page.goto('/')

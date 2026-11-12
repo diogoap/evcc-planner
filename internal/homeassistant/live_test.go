@@ -71,6 +71,18 @@ func TestLiveHomeAssistant(t *testing.T) {
 	if len(sensors) == 0 {
 		t.Error("no battery (%), distance, or timestamp sensors found")
 	}
+
+	// Phones for notifications (listing only; nothing is sent).
+	phones, err := c.Phones(ctx)
+	if err != nil {
+		t.Fatalf("list notify services: %v", err)
+	}
+	for _, p := range phones {
+		t.Logf("phone    notify.%s", p)
+	}
+	if len(phones) == 0 {
+		t.Log("no notify.mobile_app_* services: install the Companion app to get notifications")
+	}
 }
 
 // liveAddress reads an address to check from the environment or .env. The

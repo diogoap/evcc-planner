@@ -170,6 +170,10 @@ type SendPlanInput struct {
 	Confirm bool   `json:"confirm"`
 	// Reason prefixes the activity entry of an automatic send.
 	Reason string `json:"-"`
+	// auto marks a send by the trip plan automation; control, if set, is
+	// saved with the plan record.
+	auto    bool
+	control *model.PlanControl
 }
 
 // SendPlan writes the vehicle's one-off SoC plan to EVCC. EVCC keeps one
@@ -232,17 +236,33 @@ func (s *Service) SendPlan(ctx context.Context, in SendPlanInput) (*EVCCPlanView
 	}
 	ev.Detail = audit.Marshal(detail)
 	if err := s.change(ctx, ev, func(tx *store.Store, e *model.AuditEvent) error {
-		_, err := tx.AddPlanWrite(model.PlanWrite{
+		if _, err := tx.AddPlanWrite(model.PlanWrite{
 			Vehicle: veh.Name, SoC: in.SoC, TargetTime: at, TripKey: in.TripKey, WrittenAt: now,
-		})
-		return err
+		}); err != nil {
+			return err
+		}
+		if in.control != nil {
+			return tx.SavePlanControl(*in.control)
+		}
+		return nil
 	}); err != nil {
 		return nil, err
 	}
-	s.keepAfterPlanWrite(ctx)
+	// An automatic write merges an active extra plan; a plan sent by hand
+	// replaces it.
+	if !in.auto {
+		s.keepAfterPlanWrite(ctx)
+	}
 	s.Log.Info("plan sent to evcc", "vehicle", veh.Name, "soc", in.SoC, "time", at)
 	if err := s.PollEVCC(ctx); err != nil {
 		s.Log.Warn("evcc refresh after plan write failed", "err", err)
+	}
+	// A plan sent by hand is a chosen plan: in automatic mode it pauses
+	// automatic changes right away (or is replaced when too low).
+	if !in.auto {
+		if err := s.SyncPlan(ctx); err != nil {
+			s.Log.Warn("automatic plan check after a manual send failed", "err", err)
+		}
 	}
 	return &EVCCPlanView{SoC: float64(in.SoC), Time: at, SetByPlanner: true}, nil
 }
@@ -336,7 +356,7 @@ func (s *Service) Connections() ([]ConnectionView, error) {
 		return nil, err
 	}
 	out = append(out, fc...)
-	out = append(out, s.homeAssistantConnection())
+	out = append(out, s.homeAssistantConnection(), s.notificationConnection())
 	return out, nil
 }
 

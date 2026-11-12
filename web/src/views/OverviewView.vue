@@ -15,7 +15,8 @@ import TripEditor from '../components/TripEditor.vue'
 import VehicleCard from '../components/VehicleCard.vue'
 import { historyLink } from '../lib/activity'
 import { dateTime } from '../lib/format'
-import { mutate, notify, refresh, state } from '../store'
+import { aheadText, controlLabel } from '../lib/status'
+import { mutate, notify, refresh, resumeAutomaticPlans, state } from '../store'
 
 const router = useRouter()
 const plan = computed(() => state.plan)
@@ -43,6 +44,19 @@ const activeAdjustments = computed(
   () => plan.value?.advice.adjustments.filter((a) => a.status === 'active') ?? [],
 )
 const proposing = ref<AdjustmentKind | null>(null)
+const control = computed(() =>
+  plan.value ? controlLabel(plan.value.control, !!status.value?.connected) : null,
+)
+// Later trips the automatic target charges ahead, and the estimated slots.
+const ahead = computed(() =>
+  plan.value?.control.mode === 'automatic' && !plan.value.control.paused
+    ? (plan.value.control.target?.ahead ?? [])
+    : [],
+)
+const expected = computed(() => {
+  const t = plan.value?.control.target
+  return t && !t.covered ? t.charging : []
+})
 
 async function openAdd() {
   places.value = await api.places().catch(() => [])
@@ -88,8 +102,34 @@ function cancelAdjustment(id: number) {
           <div id="control-title" class="card-title">Control</div>
           <dl class="kv">
             <dt>Trip plans</dt>
-            <dd data-testid="trip-plans">
-              {{ plan.settings.autoPlanOnPlugIn ? 'Sent when plugged in' : 'Send manually' }}
+            <dd v-if="control">
+              <span data-testid="trip-plans">{{ control.mode }}</span>
+              <div
+                v-if="control.detail"
+                class="small"
+                :class="`text-${control.tone}`"
+                data-testid="control-detail"
+              >
+                {{ control.detail }}
+              </div>
+              <ul
+                v-if="ahead.length"
+                class="small muted"
+                style="margin: 4px 0 0; padding-left: 16px"
+                data-testid="ahead"
+              >
+                <li v-for="a in ahead" :key="a.tripKey">{{ aheadText(a) }}</li>
+              </ul>
+              <button
+                v-if="plan.control.paused"
+                class="btn sm"
+                type="button"
+                data-testid="resume"
+                style="margin-top: 6px"
+                @click="resumeAutomaticPlans"
+              >
+                Resume
+              </button>
             </dd>
             <dt>EVCC plan</dt>
             <dd data-testid="evcc-plan">
@@ -179,9 +219,20 @@ function cancelAdjustment(id: number) {
         </section>
         <section class="card" aria-labelledby="price-title">
           <div id="price-title" class="card-title">Published prices <span>incl. VAT</span></div>
-          <PriceChart v-if="status?.priceSlots.length" :slots="status.priceSlots" />
+          <PriceChart
+            v-if="status?.priceSlots.length"
+            :slots="status.priceSlots"
+            :planned="expected"
+            planned-label="Expected charging (estimate)"
+          />
           <p v-else class="muted small">No published prices from EVCC.</p>
-          <p class="small muted" style="margin: 8px 0 0">From EVCC; tomorrow's prices appear around 14:00.</p>
+          <p class="small muted" style="margin: 8px 0 0">
+            From EVCC; tomorrow's prices appear around 14:00.
+            <template v-if="expected.length">
+              Shaded: the planner's estimate of when the target charges (cheapest slots, solar first); EVCC
+              picks the actual slots.
+            </template>
+          </p>
         </section>
       </div>
     </template>

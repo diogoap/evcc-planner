@@ -1,15 +1,17 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { api } from '../api/client'
-import type { Connection, Place, Settings } from '../api/types'
+import type { Connection, Place, Settings, TripPlans } from '../api/types'
 import AdviceSettingsForm from '../components/AdviceSettingsForm.vue'
 import ConnectionSettingsForm from '../components/ConnectionSettingsForm.vue'
 import ForecastDetails from '../components/ForecastDetails.vue'
+import NotificationSettingsForm from '../components/NotificationSettingsForm.vue'
 import ToggleSwitch from '../components/ToggleSwitch.vue'
 import { ago } from '../lib/format'
-import { mutate, notify, refresh, state } from '../store'
+import { controlLabel } from '../lib/status'
+import { mutate, notify, refresh, resumeAutomaticPlans, state } from '../store'
 
-type Tab = 'home' | 'places' | 'advice' | 'connections'
+type Tab = 'home' | 'planning' | 'places' | 'advice' | 'notifications' | 'connections'
 const tab = ref<Tab>('home')
 const settings = ref<Settings | null>(null)
 const places = ref<Place[]>([])
@@ -80,6 +82,59 @@ const fields: { key: keyof Settings; label: string; unit: string; step: string; 
     hint: 'How long you stay when a new trip has no end time; the return leaves after this.',
   },
 ]
+
+const modes: { value: TripPlans; label: string; hint: string }[] = [
+  {
+    value: 'automatic',
+    label: 'Automatic',
+    hint: 'Keeps EVCC’s plan matched to your trips while the car is plugged in: after every EVCC check, trip or setting change, and calendar sync. A plan you choose yourself (in EVCC or with Send plan) pauses it while that plan covers the next departure; one with less is replaced.',
+  },
+  {
+    value: 'plug_in',
+    label: 'On plug-in',
+    hint: 'Sends the next departure’s target once when the car is plugged in. A plan with the same or a higher target is kept; a lower one is replaced.',
+  },
+  {
+    value: 'manual',
+    label: 'Manual',
+    hint: 'Nothing is sent on its own; use Send plan to EVCC on the Overview.',
+  },
+]
+
+const aheadFields: { key: keyof Settings; label: string; unit: string; step: string; hint: string }[] = [
+  {
+    key: 'chargeAheadMinSaving',
+    label: 'Minimum saving',
+    unit: '€/kWh',
+    step: '0.01',
+    hint: 'Charging before the next departure must be at least this much cheaper than at home before the later trip.',
+  },
+  {
+    key: 'chargeAheadMaxSoc',
+    label: 'Highest target when charging ahead',
+    unit: '%',
+    step: '1',
+    hint: 'Charging ahead never raises the target above this. A trip’s own need can still go up to 100%.',
+  },
+  {
+    key: 'householdKW',
+    label: 'Household use during the day',
+    unit: 'kW',
+    step: '0.1',
+    hint: 'Subtracted from the solar forecast to estimate the surplus the car can use.',
+  },
+  {
+    key: 'solarTaxSaving',
+    label: 'Tax not paid on own solar',
+    unit: '€/kWh',
+    step: '0.01',
+    hint: 'Solar comes first: a solar kWh counts as the grid price at that moment minus this, the tax you don’t pay on it.',
+  },
+]
+
+const control = computed(() =>
+  state.plan ? controlLabel(state.plan.control, !!state.status?.connected) : null,
+)
 
 const statusTone: Record<Connection['status'], string> = {
   ok: 'tone-ok',
@@ -190,11 +245,23 @@ async function applyDemo() {
       <a href="#" :class="{ 'router-link-exact-active': tab === 'home' }" @click.prevent="tab = 'home'"
         >Home &amp; vehicle</a
       >
+      <a
+        href="#"
+        :class="{ 'router-link-exact-active': tab === 'planning' }"
+        @click.prevent="tab = 'planning'"
+        >Planning</a
+      >
       <a href="#" :class="{ 'router-link-exact-active': tab === 'places' }" @click.prevent="tab = 'places'"
         >Places</a
       >
       <a href="#" :class="{ 'router-link-exact-active': tab === 'advice' }" @click.prevent="tab = 'advice'"
         >Advice</a
+      >
+      <a
+        href="#"
+        :class="{ 'router-link-exact-active': tab === 'notifications' }"
+        @click.prevent="tab = 'notifications'"
+        >Notifications</a
       >
       <a
         href="#"
@@ -238,31 +305,92 @@ async function applyDemo() {
             <span :id="`hint-${f.key}`" class="field-hint">{{ f.hint }}</span>
           </label>
         </div>
-        <div class="row" style="align-items: flex-start; flex-wrap: nowrap">
-          <ToggleSwitch
-            v-model="settings.autoPlanOnPlugIn"
-            label="Plan the next departure when the car is plugged in"
-            aria-describedby="hint-autoplan"
-            data-testid="setting-autoPlanOnPlugIn"
-          />
-          <div class="small">
-            <strong>Plan the next departure when the car is plugged in</strong>
-            <div id="hint-autoplan" class="field-hint">
-              When the car goes from unplugged to plugged in, the planner sends the next departure's target to
-              EVCC, once; you can still change or remove it in EVCC. A plan already in EVCC with the same or a
-              higher target is kept, and nothing is sent when the charge already covers the departure.
-            </div>
-          </div>
-        </div>
         <p class="small muted" style="margin: 0">
           Saved privately in the planner's database. Config files only seed the vehicle and buffer values on
           first use.
         </p>
         <div><button class="btn primary" type="submit" :disabled="saving">Save settings</button></div>
       </form>
-      <p class="small muted" style="margin: 16px 0 0">
-        Fully automatic trip plans and notifications arrive in a later version (V5).
-      </p>
+    </section>
+
+    <section v-if="tab === 'planning' && settings" class="card" aria-labelledby="planning-title">
+      <div id="planning-title" class="card-title">Trip plans</div>
+      <form class="stack" style="gap: 14px" @submit.prevent="saveSettings">
+        <fieldset class="stack" style="gap: 10px; border: 0; padding: 0; margin: 0">
+          <legend class="small muted" style="margin-bottom: 6px">How plans for your trips reach EVCC</legend>
+          <label
+            v-for="m in modes"
+            :key="m.value"
+            class="row"
+            style="align-items: flex-start; flex-wrap: nowrap"
+          >
+            <input
+              v-model="settings.tripPlans"
+              type="radio"
+              name="tripPlans"
+              :value="m.value"
+              :data-testid="`trip-plans-${m.value}`"
+              style="margin-top: 3px"
+            />
+            <span class="small">
+              <strong>{{ m.label }}</strong>
+              <span class="field-hint" style="display: block">{{ m.hint }}</span>
+            </span>
+          </label>
+        </fieldset>
+        <div
+          v-if="control && state.plan?.control.mode === 'automatic'"
+          class="banner"
+          :class="`tone-${control.tone}`"
+          role="status"
+          data-testid="planning-status"
+        >
+          <strong>{{ control.mode }}</strong> · {{ control.detail }}
+          <button
+            v-if="state.plan.control.paused"
+            class="btn sm"
+            type="button"
+            style="margin-left: 8px"
+            @click="resumeAutomaticPlans"
+          >
+            Resume
+          </button>
+        </div>
+        <div class="row" style="align-items: flex-start; flex-wrap: nowrap">
+          <ToggleSwitch
+            v-model="settings.chargeAhead"
+            label="Charge ahead for later trips"
+            aria-describedby="hint-ahead"
+            data-testid="setting-chargeAhead"
+          />
+          <div class="small">
+            <strong>Charge ahead for later trips</strong>
+            <div id="hint-ahead" class="field-hint">
+              Automatic mode only. Within the published prices, adds later trips to the target when charging
+              for them before the next departure is cheaper than at home just before them.
+            </div>
+          </div>
+        </div>
+        <div class="form-grid">
+          <label v-for="f in aheadFields" :key="f.key" class="field">
+            {{ f.label }}
+            <span class="unit">
+              <input
+                v-model.number="settings[f.key]"
+                type="number"
+                :step="f.step"
+                min="0"
+                required
+                :aria-describedby="`hint-${f.key}`"
+                :data-testid="`setting-${f.key}`"
+              />
+              <span>{{ f.unit }}</span>
+            </span>
+            <span :id="`hint-${f.key}`" class="field-hint">{{ f.hint }}</span>
+          </label>
+        </div>
+        <div><button class="btn primary" type="submit" :disabled="saving">Save settings</button></div>
+      </form>
     </section>
 
     <section v-if="tab === 'places'" class="card">
@@ -311,6 +439,8 @@ async function applyDemo() {
     </section>
 
     <AdviceSettingsForm v-if="tab === 'advice'" />
+
+    <NotificationSettingsForm v-if="tab === 'notifications'" />
 
     <div v-if="tab === 'connections'" class="stack">
       <section class="card">

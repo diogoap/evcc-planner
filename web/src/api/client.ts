@@ -12,6 +12,8 @@ import type {
   EVCCPlan,
   HASensor,
   Meta,
+  NotificationSettings,
+  PhoneNotification,
   Place,
   Plan,
   Preview,
@@ -78,6 +80,7 @@ export const api = {
   plan: () => request<Plan>('GET', '/api/plan'),
   status: () => request<Status>('GET', '/api/status'),
   refreshEVCC: () => request<Status>('POST', '/api/evcc/refresh', {}),
+  resumeControl: () => request<Status>('POST', '/api/control/resume', {}),
 
   createTrip: (t: TripInput) => request<{ key: string }>('POST', '/api/trips', t),
   updateTrip: (key: string, t: TripInput) => request<{ key: string }>('PATCH', `/api/trips/${enc(key)}`, t),
@@ -130,4 +133,14 @@ export const api = {
     `/api/activity/export${activityQuery(f, { format })}`,
   demoVehicle: (connected: boolean, soc: number) =>
     request<Status>('POST', '/api/demo/vehicle', { connected, soc }),
+
+  notificationSettings: () => request<NotificationSettings>('GET', '/api/settings/notifications'),
+  saveNotificationSettings: (s: NotificationSettings) =>
+    request<NotificationSettings>('PUT', '/api/settings/notifications', s),
+  notifications: () => request<PhoneNotification[]>('GET', '/api/notifications'),
+  phones: () => request<string[]>('GET', '/api/notifications/phones'),
+  testNotification: () => request<PhoneNotification>('POST', '/api/notifications/test', {}),
+  /** Demo mode: presses a notification button as the phone would. */
+  pressNotification: (id: number, verb: string) =>
+    request<void>('POST', '/api/demo/notification-action', { action: `EVCCP_${verb.toUpperCase()}_${id}` }),
 }

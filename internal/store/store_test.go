@@ -353,3 +353,26 @@ func TestConnectionSettingsAreSparse(t *testing.T) {
 		t.Fatalf("merged = %+v %v", v, err)
 	}
 }
+
+func TestLegacyPlugInSwitchBecomesATripPlanMode(t *testing.T) {
+	s := open(t)
+	defaults := model.Settings{TripPlans: model.TripPlansAutomatic}
+	for _, c := range []struct {
+		saved string
+		want  string
+	}{
+		{`{"autoPlanOnPlugIn": true}`, model.TripPlansAutomatic},
+		{`{"autoPlanOnPlugIn": false}`, model.TripPlansManual},
+		{`{"usableCapacityKWh": 40}`, model.TripPlansAutomatic},
+		{`{"autoPlanOnPlugIn": false, "tripPlans": "plug_in"}`, model.TripPlansPlugIn},
+	} {
+		if _, err := s.db.Exec(`INSERT INTO settings (key, value, updated_at) VALUES ('planning', ?, '')
+			ON CONFLICT(key) DO UPDATE SET value = excluded.value`, c.saved); err != nil {
+			t.Fatal(err)
+		}
+		got, _, err := s.Settings(defaults)
+		if err != nil || got.TripPlans != c.want {
+			t.Errorf("%s: trip plans = %q (%v), want %q", c.saved, got.TripPlans, err, c.want)
+		}
+	}
+}

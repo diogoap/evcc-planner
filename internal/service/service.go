@@ -62,6 +62,12 @@ type Service struct {
 	adjustMu   sync.Mutex
 	autoPlanMu sync.Mutex
 
+	kickOnce sync.Once
+	kick     chan struct{}
+
+	notifyMu   sync.Mutex
+	notifyPrev *notifyState
+
 	mu        sync.RWMutex
 	evccState *evcc.State
 	evccErr   error
@@ -70,6 +76,8 @@ type Service struct {
 	haReading *homeassistant.Reading
 	haErr     error
 	haOKAt    time.Time
+	listenErr error // the notification button listener
+	listenOK  bool
 }
 
 func (s *Service) loc() *time.Location { return s.Cfg.Location }
@@ -238,6 +246,19 @@ func (s *Service) SaveSettings(ctx context.Context, v model.Settings) (model.Set
 		}
 		if err := tx.SaveSettings(v); err != nil {
 			return err
+		}
+		// A pause only exists in automatic mode.
+		if v.TripPlans != model.TripPlansAutomatic {
+			ctl, err := tx.PlanControl()
+			if err != nil {
+				return err
+			}
+			if ctl.Paused() {
+				ctl.PausedAt, ctl.PausedPlan = nil, nil
+				if err := tx.SavePlanControl(ctl); err != nil {
+					return err
+				}
+			}
 		}
 		e.Before, e.After = changes(before, v)
 		e.Summary = settingsSummary("settings", e.After)

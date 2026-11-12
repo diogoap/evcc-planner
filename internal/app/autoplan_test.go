@@ -11,9 +11,20 @@ import (
 	"github.com/diogoap/evcc-planner/internal/model"
 )
 
+// tripPlans sets the trip plan mode.
+func (ta *testApp) tripPlans(mode string) {
+	ta.t.Helper()
+	var s map[string]any
+	ta.json("GET", "/api/settings", nil, http.StatusOK, &s)
+	s["tripPlans"] = mode
+	ta.json("PUT", "/api/settings", s, http.StatusOK, nil)
+}
+
 func TestPlanWhenThePlugGoesIn(t *testing.T) {
 	ta := newTestApp(t, "")
+	ta.tripPlans(model.TripPlansPlugIn)
 	log := &eventLog{ta: ta}
+	log.fresh()
 	ctx := context.Background()
 	plug := func(connected bool, soc float64) {
 		t.Helper()
@@ -24,7 +35,7 @@ func TestPlanWhenThePlugGoesIn(t *testing.T) {
 
 	// The first check only learns the state: an app started with the car
 	// already plugged in does not count as plugging in.
-	if err := ta.app.Service.PlanOnPlugIn(ctx); err != nil {
+	if err := ta.app.Service.SyncPlan(ctx); err != nil {
 		t.Fatal(err)
 	}
 	log.none("the first check")
@@ -41,7 +52,7 @@ func TestPlanWhenThePlugGoesIn(t *testing.T) {
 	// Once per connection: a plan removed in EVCC while plugged in stays removed.
 	ta.app.Stub.DeleteSocPlan(ctx, evcc.StubVehicle)
 	ta.poll()
-	ta.app.Service.PlanOnPlugIn(ctx)
+	ta.app.Service.SyncPlan(ctx)
 	plug(true, 40)
 	if plan := ta.evccPlan(); plan != nil {
 		t.Fatalf("plan recreated while still plugged in: %+v", plan)
@@ -81,15 +92,9 @@ func TestPlanWhenThePlugGoesIn(t *testing.T) {
 		t.Errorf("covered = %+v", e)
 	}
 
-	// Turned off in Settings: nothing happens.
-	var s map[string]any
-	ta.json("GET", "/api/settings", nil, http.StatusOK, &s)
-	if s["autoPlanOnPlugIn"] != true {
-		t.Fatalf("on by default: %v", s)
-	}
-	s["autoPlanOnPlugIn"] = false
-	ta.json("PUT", "/api/settings", s, http.StatusOK, nil)
-	changed(t, log.one("settings.update", model.SourceUI), "autoPlanOnPlugIn", true, false)
+	// Manual mode: nothing happens.
+	ta.tripPlans(model.TripPlansManual)
+	changed(t, log.one("settings.update", model.SourceUI), "tripPlans", model.TripPlansPlugIn, model.TripPlansManual)
 	plug(false, 0)
 	plug(true, 38)
 	if plan := ta.evccPlan(); plan != nil {
