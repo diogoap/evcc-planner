@@ -161,14 +161,14 @@ As implemented (2026-11-11):
 <details open>
 <summary><b>V5 — Automatic plans and interaction</b> 🚧</summary>
 
-🚧 **In progress.** Every rule, with diagrams and examples: [AUTOMATION.md](AUTOMATION.md). Implemented 2026-11-12 except Telegram; still to validate live: automatic writes with the real EVCC, notification delivery and button presses with the real Home Assistant.
+🚧 **In progress.** Every rule, with diagrams and examples: [AUTOMATION.md](AUTOMATION.md). Implemented 2026-11-12; done once validated live: automatic writes with the real EVCC, notification delivery and button presses with the real Home Assistant (admin token). Telegram moved to V8 (decided 2026-11-12).
 
 - ✅ **Plan on plug-in** (2026-11-11): send the next departure's target once when the car is plugged in; keep an equal or higher plan, replace a lower one.
 - ✅ **Automatic trip plans** (default mode; Manual and On plug-in remain): keep EVCC's one plan matched to the trips while plugged in, after every EVCC check, trip or setting change, and calendar sync. Write only real changes; remove the planner's plan when nothing needs it.
 - ✅ **Chosen plans pause it:** a plan set in EVCC or sent by hand pauses automatic changes while it covers the next departure; a lower one is replaced. Resumes on its own when that plan finishes, or with **Resume**.
 - ✅ **Extra plans from advice** share EVCC's plan: the higher SoC by the earlier time. At expiry they restore as in V2, and the automatic check takes the restored plan over.
 - ✅ **Charge ahead:** within published prices, add later trips to the target when charging before the next departure is at least €0.05/kWh cheaper than at home before that trip; capped at 90%. Solar comes first: a solar kWh counts as the grid price minus the tax not paid on it (default €0.11/kWh). The UI explains a higher target.
-- ✅ **Notifications** through the Home Assistant Companion app; button presses come back over Home Assistant's websocket (no YAML). Telegram may follow.
+- ✅ **Notifications** through the Home Assistant Companion app; button presses come back over Home Assistant's websocket (no YAML).
 - ✅ **Plug-in reminders:** early (cheapest window), urgent (latest plug-in time), and too late; Remind in 30 min, Skip trip, View plan. Quiet hours 23:00–07:00; deduplicated and cleared on plug-in.
 - ✅ **Problems and questions:** charging stopped, unplugged early, EVCC not in Smart mode (only while plugged in), missed target, Needs-review calendar events, optional ready message.
 - Decisions (2026-11-12): Automatic for existing installs; replace lower chosen plans in Automatic and On plug-in; pauses end on their own; websocket for button presses; €0.05/kWh minimum saving; quiet hours 23:00–07:00; solar valued at the grid price minus €0.11/kWh tax. EVCC must be in Smart mode (it has only Off, Smart, and Fast); the planner warns but never switches the mode, since another automation sets Off while the car is away. Notification buttons need an admin token (Home Assistant only lets admins subscribe to their events).
@@ -197,6 +197,8 @@ Extend the tests already built from V1; harden recovery, credential renewal, sta
 <summary><b>V8 — Optimization and conversation</b></summary>
 
 Validate EVCC optimizer control for solar/grid scheduling; its regular planner selects tariff slots and uses available solar. Optional OpenClaw interface using the same core. UI: schedule comparisons/explanations.
+
+- **Telegram notifications** (moved from V5, optional): the same messages and buttons as the Home Assistant Companion app, through a bot. Worth it for reminders to people without a Home Assistant account (e.g. a household group chat), for buttons without an admin Home Assistant token, or for button presses away from home when Home Assistant isn't reachable from outside. The planner reads button presses from Telegram itself (outbound only), and typed replies could lead into conversation. Trip names and times would pass through Telegram's servers.
 
 </details>
 
