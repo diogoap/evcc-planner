@@ -38,9 +38,7 @@ const byDate = computed(() => new Map((props.advice ?? []).map((a) => [a.date, a
         <td>
           <span class="pill" :class="`tone-${dayLabel(d).tone}`">{{ dayLabel(d).text }}</span>
           <span v-if="dayLabel(d).detail" class="small muted plan-detail">{{ dayLabel(d).detail }}</span>
-          <span v-if="d.reviewCount" class="pill tone-warn" style="margin-left: 6px"
-            >{{ d.reviewCount }} to review</span
-          >
+          <span v-if="d.reviewCount" class="pill tone-warn ml-2">{{ d.reviewCount }} to review</span>
         </td>
         <td v-if="byDate.get(d.date)" class="advice-cell">
           <button
@@ -83,11 +81,11 @@ const byDate = computed(() => new Map((props.advice ?? []).map((a) => [a.date, a
 }
 
 .advice-btn[aria-pressed='true'] {
-  border-color: var(--accent);
+  border-color: var(--accent-ui);
 }
 
 .advice-btn:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 </style>

@@ -75,7 +75,8 @@ describe('ConnectionSettingsForm', () => {
     expect(w.get('#hint-haPollIntervalMin').text()).toContain('Default: 10 min.')
     expect(w.get('#hint-haSocEntity').text()).toContain('Default: none.')
     const ha = w.get('[data-testid="connection-group-Home Assistant (always-on SoC)"]')
-    expect(ha.get('[data-testid=connection-env]').text()).toBe('HA_TOKEN: set ✓')
+    expect(ha.get('[data-testid=connection-env]').text()).toBe('HA_TOKEN: set')
+    expect(ha.find('[data-testid=connection-env] .icon').exists()).toBe(true)
     expect(w.get('#hint-haUrl').text()).toContain('The access token is sent here')
     expect(w.get('[data-testid="connection-group-Google Routes"]').text()).toContain(
       'GOOGLE_MAPS_API_KEY: not set',

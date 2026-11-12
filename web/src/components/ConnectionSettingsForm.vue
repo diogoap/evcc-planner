@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { api } from '../api/client'
 import type { Connection, ConnectionSettings, ConnectionSettingsView, EnvValue, HASensor } from '../api/types'
 import { notify, refresh } from '../store'
+import AppIcon from './AppIcon.vue'
 import ToggleSwitch from './ToggleSwitch.vue'
 
 const emit = defineEmits<{ saved: [connections: Connection[]] }>()
@@ -242,7 +243,7 @@ function defaultText(f: Field) {
 
 function envText(e: EnvValue | undefined, name: string) {
   if (!e) return `${name}: —`
-  return `${e.env}: ${e.set ? 'set ✓' : 'not set'}`
+  return `${e.env}: ${e.set ? 'set' : 'not set'}`
 }
 
 function setField<K extends Key>(key: K, value: ConnectionSettings[K]) {
@@ -282,28 +283,28 @@ async function save() {
   <section class="card" aria-labelledby="connection-settings-title">
     <div id="connection-settings-title" class="card-title">Connection settings</div>
     <div v-if="error" class="banner tone-bad" role="alert">{{ error }}</div>
-    <form v-if="settings" class="stack" style="gap: 16px" @submit.prevent="save">
-      <p class="small muted" style="margin: 0">
+    <form v-if="settings" class="stack gap-4" @submit.prevent="save">
+      <p class="small muted m-0">
         Saved in the planner's database and applied at once. API keys, the Home Assistant token, and the
         calendar addresses stay in environment variables on the server.
       </p>
       <fieldset
         v-for="g in groups"
         :key="g.title"
-        class="stack"
-        style="gap: 12px; border: 1px solid var(--border); border-radius: 12px; padding: 12px"
+        class="stack panel gap-3"
         :data-testid="`connection-group-${g.title}`"
       >
         <legend class="small muted">{{ g.title }}</legend>
-        <p v-if="g.env.length" class="small muted" style="margin: 0" data-testid="connection-env">
+        <p v-if="g.env.length" class="small muted m-0" data-testid="connection-env">
           <span v-for="(name, i) in g.env" :key="name"
-            >{{ i ? ' · ' : '' }}{{ envText(env.get(name), name) }}</span
-          >
+            >{{ i ? ' · ' : '' }}{{ envText(env.get(name), name) }}
+            <AppIcon v-if="env.get(name)?.set" name="check" class="text-ok"
+          /></span>
         </p>
         <div class="form-grid">
           <template v-for="f in g.fields" :key="f.key">
             <div v-if="f.kind === 'toggle'" class="field">
-              <span class="row" style="flex-wrap: nowrap">
+              <span class="row nowrap">
                 <ToggleSwitch
                   :model-value="settings[f.key] === true"
                   :label="f.label"

@@ -1,48 +1,83 @@
 # EVCC Trip Planner — text UI mockup
 
-Illustrative demo data only, set on Monday evening, 9 November 2026. EVCC-inspired: spacious cards, rounded corners, clear typography, muted surfaces, and restrained green/amber accents. Layouts stack on mobile; confidence and status always have text labels. All energy prices include VAT.
+Illustrative demo data only, set on Monday evening, 9 November 2026. EVCC-inspired: spacious cards, rounded corners, clear typography, muted surfaces, and restrained green/amber accents. Layouts stack on phones, with bottom navigation (V6); confidence and status always have text labels. All energy prices include VAT.
 
-**Overview — the default screen.**
+**Overview — the default screen (V6 layout, phone).** The first card answers "will the car be ready?"; everything else supports it.
 
 ```text
-EVCC Trip Planner                         DEMO
-Overview       Trips       Recurring trips       Settings
+EVCC Trip Planner                DEMO   Updated 19:00 ⟳
 
-NISSAN LEAF                  ENERGY NOW
-38%  [########------------]  Grid: EUR 0.24/kWh incl. VAT
-(i) Last known: Mon 18:42    Solar: 0.0 kW
-Unplugged · Charging 0.0 kW  Data updated: just now
+NISSAN LEAF                                  Unplugged
+38%   122 km
+[###########--------|-----------------]   target 42%
+From Home Assistant · 20 min ago
 
-NEXT DEPARTURE               CONTROL
-Tue 10 Nov, leave 07:50      Trip plans: Send manually [V1]
-At school by 08:15           Advice auto-apply: Off
-Required departure SoC: 46%  [Settings]
-[View trips] [Send plan to EVCC]
+Plug in by 06:36
+Tomorrow, leave 07:48 · needs 42% · 2.3 kWh to charge
+School drop-off, at School by 08:15 · then Office visit
+Automatic: sends 42% when plugged in
+Now EUR 0.38/kWh · solar 0.0 kW
+[Send plan to EVCC v]                       [Tomorrow >]
 
-NEXT SEVEN DAYS                            [+ Add trip]
-Day         Driving   Energy   Daily advice [V2]
-Mon 09      24 km     4.3 kWh   Completed
-Tue 10     100 km    18.0 kWh   Charge ahead
-Wed 11      24 km     4.3 kWh   Defer optional charging
-Thu 12      24 km     4.3 kWh   No data / no suggestion
-Fri 13      24 km     4.3 kWh   Keep plan
-Sat 14       0 km     0.0 kWh   No plan needed
-Sun 15       0 km     0.0 kWh   No plan needed
+THIS WEEK
+ Mon   Tue   Wed   Thu   Fri   Sat   Sun
+  9    10    11    12    13    14    15
+ done  +8%  +21%  +10%  +8%  +12%   -
+ defer ahead  -    keep   -   -  !   -
+(defer, charge ahead, keep plan, no data; ! = to review)
 
-TUESDAY'S ADVICE [V2]
-Charge ahead      Charge indicator: High (more)
-Confidence: 3/3 — High
-Published Tuesday prices are favourable compared with
-the later-week outlook. Upcoming trips may benefit.
-Sources: published prices + weekly outlook + weather
-[Create extra plan] [Dismiss] [Why?]
+MONDAY'S ADVICE
+Defer optional charging · confidence 3/3
+Tue looks cheaper and your charge covers the trips until then.
+[Review postponement] [Dismiss]  Why?
 
-PRICE AND CHARGING GRAPH
-[Published price slots | planned charging overlay]
-Confirmed and estimated values are visually distinct.
+SOC AND PRICES                                 incl. VAT
+Tue 10, 03:00 · SoC 42% · EUR 0.19/kWh published   <- readout
+[SoC:    projected line, ^ level each departure needs,
+         -- arrival reserve, shaded away periods with
+         trip names, charging windows, | now           ]
+[Prices: published slots solid, later days' estimates
+         dashed, expected charging shaded, solar forecast]
+  Mon    Tue    Wed    Thu    Fri    Sat    Sun
+
+-------------------------------------------------------
+ Overview   Trips   Recurring   Activity   Settings
 ```
 
-EVCC only reports SoC while the car is plugged in. When unplugged, the card shows the last known value with an info tip giving when it was read; it is never presented as current. Click a day to see its trips and advice. Confidence **1 low / 2 medium / 3 high** is separate from the **little / medium / high** charge indicator. Weak/no-data advice shows its reason and no plan action. Deferred charging has **Review postponement**; keeping a plan needs no action. Long-range days use qualitative signals unless numerical estimates are actually available.
+The headline follows the next departure's state: **Ready for tomorrow 07:48**, **Plug in by 06:36**, **Charging: 42% by 07:48**, or **Can't reach 42% by 07:48** with the most it can reach. A paused automatic plan shows why, with **Resume**; a charge-ahead target says which later trips it includes and the prices compared; active extra plans show their expiry and **End now**. When unplugged, the SoC comes from Home Assistant or is EVCC's last reading; the card shows its source and age and marks old readings **last known**, never as current. On desktop the main card and the advice sit side by side, and the week strip also shows km, kWh, and price per day. Tap a day (strip or chart) to open its panel. Confidence **1 low / 2 medium / 3 high** is separate from the **little / medium / high** charge indicator. Weak/no-data advice shows its reason and no plan action. Deferred charging has **Review postponement**; keeping a plan needs no action. Long-range days use qualitative signals unless numerical estimates are actually available.
+
+**Day panel — one day in detail (V6).** A bottom sheet on phones and a side panel on desktop, over the Overview. The back gesture or Escape closes it; arrows (or a swipe on phones) move between days.
+
+```text
+<  Tuesday 10 November  >                           [x]
+100 km · 18.0 kWh · +8% charge
+First departure 07:48, needs 42%
+[the chart for this day only, hourly ticks]
+
+TRIPS
+[On ]  08:15  School drop-off           12 km   2.2 kWh
+              Leave 07:48 · until 08:20
+[On ]  09:30  Office visit              76 km  13.7 kWh
+              Leave 08:20 · until 12:00
+[On ]  15:00  School pickup             12 km   2.2 kWh
+[Off]  17:30  Optional evening visit    35 km   6.3 kWh
+
+CHARGING
+Expected 00:00-00:45 at about EUR 0.17/kWh
+(the planner's estimate; EVCC picks the slots)
+
+PRICES AND WEATHER
+Lowest EUR 0.14 at 14:00 · published
+Sun 7.6 kWh while home · wind 5 Bft
+
+ADVICE
+Charge ahead · confidence 2/3 · little
+[Create extra plan] [Dismiss]  Why?
+
+[+ Add trip] [Send plan through Tue] [Open in Trips]
+```
+
+Trip rows keep the same on/off and edit controls as on the Trips page. Days without published prices show their estimate, labelled, or **No data**.
 
 **Trips — edit individual dated journeys.**
 
@@ -184,4 +219,4 @@ unless you change them in EVCC in the meantime.
 
 Opening this dialog does not write to EVCC. The qualitative indicator itself has no fixed charging amount; any automatic target mapping must be explicitly configured by the user. Review postponement uses a similar proposal with a defer-until time; required trip charging remains protected. Advice auto-apply is off by default and independent of V5 trip automation.
 
-**Delivery.** V1 delivers the shell, status/trip views, recurring schedules, personal settings, previews, and manual **Send plan to EVCC**. V2 adds advice cards, relevant graphs/settings, and extra-plan proposals. V3 adds the Activity (audit) page. V4 shows the SoC from Home Assistant while the car is unplugged, with its source and freshness. V5 adds automation state, notification preferences, reminders, and pause/resume. V6 polishes the visual design, graphs, and phone experience. V7/V8 extend health/recovery views and schedule explanations.
+**Delivery.** V1 delivers the shell, status/trip views, recurring schedules, personal settings, previews, and manual **Send plan to EVCC**. V2 adds advice cards, relevant graphs/settings, and extra-plan proposals. V3 adds the Activity (audit) page. V4 shows the SoC from Home Assistant while the car is unplugged, with its source and freshness. V5 adds automation state, notification preferences, reminders, and pause/resume. V6 leads the Overview with the ready check and adds the week strip, one combined chart, the day panel, bottom navigation on phones, and accessibility checks. V7/V8 extend health/recovery views and schedule explanations.

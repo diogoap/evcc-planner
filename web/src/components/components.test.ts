@@ -1,8 +1,9 @@
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import type { AuditEvent, Day, SendOption, SoCView, Status, Trip } from '../api/types'
 import ActivityItem from './ActivityItem.vue'
 import DaysTable from './DaysTable.vue'
+import ModalDialog from './ModalDialog.vue'
 import SendPlanButton from './SendPlanButton.vue'
 import TripRow from './TripRow.vue'
 import VehicleCard from './VehicleCard.vue'
@@ -371,5 +372,34 @@ describe('SendPlanButton', () => {
     const off = mount(SendPlanButton, { props: { options, now, disabled: true } })
     expect(off.get('.split-main').attributes('disabled')).toBeDefined()
     expect(off.get('[data-testid=send-more]').attributes('disabled')).toBeDefined()
+  })
+})
+
+describe('ModalDialog', () => {
+  it('focuses the first control, keeps Tab inside, and returns focus on close', async () => {
+    const opener = document.createElement('button')
+    document.body.append(opener)
+    opener.focus()
+    const w = mount(ModalDialog, {
+      props: { title: 'Edit trip' },
+      slots: { default: '<input data-testid="first" /><button data-testid="last">Save</button>' },
+      attachTo: document.body,
+    })
+    await flushPromises()
+    const first = w.get('[data-testid=first]').element
+    const last = w.get('[data-testid=last]').element as HTMLElement
+    expect(document.activeElement).toBe(first)
+
+    last.focus()
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab' }))
+    expect(document.activeElement).toBe(first)
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true }))
+    expect(document.activeElement).toBe(last)
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    expect(w.emitted('close')).toHaveLength(1)
+    w.unmount()
+    expect(document.activeElement).toBe(opener)
+    opener.remove()
   })
 })

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, watch } from 'vue'
 import type { Rate } from '../api/types'
-import { Chart, cssVar, hourTicks, timeTick } from '../lib/chart'
+import { alpha, Chart, cssVar, hourTicks, onThemeChange, timeTick } from '../lib/chart'
 import { clock, price } from '../lib/format'
 
 const props = defineProps<{ slots: Rate[]; planned?: Rate[]; plannedLabel?: string; height?: number }>()
@@ -32,9 +32,9 @@ function render() {
   if (!canvas.value) return
   chart?.destroy()
   const grid = cssVar('--chart-grid')
-  const text = cssVar('--muted')
-  const accent = cssVar('--accent')
-  const line = cssVar('--text')
+  const text = cssVar('--chart-text')
+  const charging = cssVar('--chart-charging')
+  const line = cssVar('--chart-price')
   const first = props.slots[0]
   const last = props.slots[props.slots.length - 1]
   chart = new Chart(canvas.value, {
@@ -53,8 +53,8 @@ function render() {
           label: props.plannedLabel ?? 'Planned charging',
           data: plannedSteps(),
           stepped: false,
-          borderColor: accent,
-          backgroundColor: accent + '55',
+          borderColor: charging,
+          backgroundColor: alpha(charging, 0.33),
           fill: 'origin',
           pointRadius: 0,
           borderWidth: 0,
@@ -98,9 +98,16 @@ function render() {
   })
 }
 
-onMounted(render)
+let stopTheme = () => {}
+onMounted(() => {
+  render()
+  stopTheme = onThemeChange(render)
+})
 watch(() => [props.slots, props.planned], render)
-onUnmounted(() => chart?.destroy())
+onUnmounted(() => {
+  stopTheme()
+  chart?.destroy()
+})
 </script>
 
 <template>

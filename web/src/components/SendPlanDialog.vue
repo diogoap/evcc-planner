@@ -88,7 +88,7 @@ async function send() {
 
 <template>
   <ModalDialog :title="title" @close="emit('close')">
-    <form class="stack" style="gap: 14px" @submit.prevent="send">
+    <form class="stack gap-3" @submit.prevent="send">
       <div class="form-grid">
         <label class="field">
           Target SoC
@@ -113,7 +113,7 @@ async function send() {
         </label>
       </div>
       <template v-if="option">
-        <p class="small muted" style="margin: 0" data-testid="plan-covers">
+        <p class="small muted m-0" data-testid="plan-covers">
           Enough for {{ option.tripKeys.length }}
           {{ option.tripKeys.length === 1 ? 'trip' : 'trips' }} through {{ through }} ({{
             km(option.distanceKm)
@@ -121,15 +121,15 @@ async function send() {
           {{ settings.arrivalReservePct }}% reserve. Planner target: {{ option.targetSoc }}%; the next
           departure alone needs {{ block.targetSoc }}% if the car charges between trips.
         </p>
-        <p v-if="option.covered" class="small text-ok" style="margin: 0">
+        <p v-if="option.covered" class="small text-ok m-0">
           The current charge already covers these trips, so EVCC needs no extra charging for them.
         </p>
-        <p v-if="option.exceeds" class="small text-warn" style="margin: 0">
+        <p v-if="option.exceeds" class="small text-warn m-0">
           These trips need more than a full battery, so the target stops at 100%: the car still has to charge
           between them.
         </p>
       </template>
-      <p v-else class="small muted" style="margin: 0">
+      <p v-else class="small muted m-0">
         Covers {{ block.titles.join(', ') }} with a {{ settings.arrivalReservePct }}% arrival reserve. Planner
         target: {{ block.targetSoc }}%.
       </p>
@@ -156,25 +156,25 @@ async function send() {
       </dl>
 
       <div>
-        <div class="card-title" style="margin-bottom: 6px">EVCC preview</div>
+        <div class="card-title mb-2">EVCC preview</div>
         <p v-if="loading && !preview" class="small muted">Asking EVCC…</p>
         <template v-else-if="preview?.available">
-          <p class="small" style="margin: 0 0 6px">
+          <p class="small m-0 mb-2">
             EVCC plans {{ duration(preview.durationMinutes) }} of charging in the highlighted slots.
           </p>
           <PriceChart :slots="preview.priceSlots" :planned="preview.slots" :height="180" />
         </template>
         <template v-else-if="preview">
-          <p class="small text-warn" style="margin: 0 0 6px">{{ preview.reason }}</p>
+          <p class="small text-warn m-0 mb-2">{{ preview.reason }}</p>
           <PriceChart v-if="preview.priceSlots.length" :slots="preview.priceSlots" :height="160" />
         </template>
       </div>
 
-      <p class="small muted" style="margin: 0">
+      <p class="small muted m-0">
         EVCC keeps one plan per vehicle. Limits and repeating plans stay unchanged; during planned slots EVCC
         charges past its charge limit when the target is higher.
       </p>
-      <p v-if="error" class="small text-bad" role="alert" style="margin: 0">{{ error }}</p>
+      <p v-if="error" class="small text-bad m-0" role="alert">{{ error }}</p>
       <div class="modal-actions">
         <button class="btn" type="button" @click="emit('close')">Cancel</button>
         <button class="btn primary" type="submit" :disabled="sending || !readyBy">Confirm and send</button>

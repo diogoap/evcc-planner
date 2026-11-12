@@ -68,7 +68,7 @@ async function save() {
 
 <template>
   <ModalDialog :title="editing ? 'Edit trip' : 'Add trip'" @close="emit('close')">
-    <form class="stack" style="gap: 12px" @submit.prevent="save">
+    <form class="stack gap-3" @submit.prevent="save">
       <label class="field">
         Destination
         <input v-model="form.destination" list="places" required placeholder="Saved place or address" />
@@ -106,11 +106,11 @@ async function save() {
         <input v-model="form.enabled" type="checkbox" />
         Counts toward charging (enabled)
       </label>
-      <p v-if="!editing && !form.end" class="small muted" style="margin: 0">
+      <p v-if="!editing && !form.end" class="small muted m-0">
         Without an end time the return leaves {{ defaultStayMin }} minutes after arrival.
       </p>
-      <p v-if="scopeNote" class="small muted" style="margin: 0">{{ scopeNote }}</p>
-      <p v-if="error" class="small text-bad" role="alert" style="margin: 0">{{ error }}</p>
+      <p v-if="scopeNote" class="small muted m-0">{{ scopeNote }}</p>
+      <p v-if="error" class="small text-bad m-0" role="alert">{{ error }}</p>
       <div class="modal-actions">
         <button class="btn" type="button" @click="emit('close')">Cancel</button>
         <button class="btn primary" type="submit" :disabled="saving">

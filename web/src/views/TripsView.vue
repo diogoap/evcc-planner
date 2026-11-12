@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api } from '../api/client'
 import type { Place, Trip, TripSource } from '../api/types'
+import AppIcon from '../components/AppIcon.vue'
 import TripEditor from '../components/TripEditor.vue'
 import TripRow from '../components/TripRow.vue'
 import { historyLink } from '../lib/activity'
@@ -83,14 +84,14 @@ function onSaved(message: string) {
     <div class="page-head">
       <h1>Trips</h1>
       <div class="row">
-        <select v-model="source" aria-label="Filter by source" style="width: auto">
+        <select v-model="source" aria-label="Filter by source" class="w-auto">
           <option value="">All sources</option>
           <option value="calendar">Calendar</option>
           <option value="recurring">Recurring</option>
           <option value="manual">Manual</option>
         </select>
         <button class="btn primary" type="button" @click="editor = { date: plan?.days[1]?.date }">
-          + Add trip
+          <AppIcon name="plus" />Add trip
         </button>
       </div>
     </div>
@@ -102,11 +103,9 @@ function onSaved(message: string) {
         <section v-for="{ day, trips } in days" :id="`day-${day.date}`" :key="day.date" class="card">
           <div class="card-title">
             <span>{{ dayLong(day.date) }}</span>
-            <span class="num" style="letter-spacing: 0"
-              >{{ km(day.distanceKm) }} · {{ kwh(day.energyKWh) }}</span
-            >
+            <span class="num normal-case">{{ km(day.distanceKm) }} · {{ kwh(day.energyKWh) }}</span>
           </div>
-          <ul v-if="trips.length" style="margin: 0; padding: 0">
+          <ul v-if="trips.length" class="m-0 p-0">
             <TripRow
               v-for="t in trips"
               :key="t.key"
@@ -120,15 +119,15 @@ function onSaved(message: string) {
               @history="history(t)"
             />
           </ul>
-          <p v-else class="muted small" style="margin: 0">
+          <p v-else class="muted small m-0">
             {{ day.doneCount && !source ? 'No more trips.' : 'No trips.' }}
           </p>
         </section>
       </div>
 
-      <details v-if="plan.ignored.length" class="card" style="margin-top: 16px">
+      <details v-if="plan.ignored.length" class="card mt-4">
         <summary class="small">Calendar events not counted as trips ({{ plan.ignored.length }})</summary>
-        <ul class="small" style="margin: 10px 0 0; padding-left: 18px">
+        <ul class="small list-indent mt-3">
           <li v-for="e in plan.ignored" :key="e.key">
             {{ dateTime(e.start) }} · {{ e.title }}
             <span class="muted">— {{ e.reason }}{{ e.location ? ` (${e.location})` : '' }}</span>

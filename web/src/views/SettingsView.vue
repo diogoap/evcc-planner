@@ -241,7 +241,7 @@ async function applyDemo() {
 <template>
   <main class="page">
     <div class="page-head"><h1>Settings</h1></div>
-    <nav class="tabs" aria-label="Settings sections" style="margin: -8px 0 16px">
+    <nav class="tabs m-0 mt-n2 mb-4" aria-label="Settings sections">
       <a href="#" :class="{ 'router-link-exact-active': tab === 'home' }" @click.prevent="tab = 'home'"
         >Home &amp; vehicle</a
       >
@@ -274,7 +274,7 @@ async function applyDemo() {
 
     <section v-if="tab === 'home' && settings" class="card">
       <div class="card-title">Home &amp; vehicle</div>
-      <form class="stack" style="gap: 14px" @submit.prevent="saveSettings">
+      <form class="stack gap-3" @submit.prevent="saveSettings">
         <label class="field">
           Home address
           <input
@@ -305,7 +305,7 @@ async function applyDemo() {
             <span :id="`hint-${f.key}`" class="field-hint">{{ f.hint }}</span>
           </label>
         </div>
-        <p class="small muted" style="margin: 0">
+        <p class="small muted m-0">
           Saved privately in the planner's database. Config files only seed the vehicle and buffer values on
           first use.
         </p>
@@ -315,26 +315,21 @@ async function applyDemo() {
 
     <section v-if="tab === 'planning' && settings" class="card" aria-labelledby="planning-title">
       <div id="planning-title" class="card-title">Trip plans</div>
-      <form class="stack" style="gap: 14px" @submit.prevent="saveSettings">
-        <fieldset class="stack" style="gap: 10px; border: 0; padding: 0; margin: 0">
-          <legend class="small muted" style="margin-bottom: 6px">How plans for your trips reach EVCC</legend>
-          <label
-            v-for="m in modes"
-            :key="m.value"
-            class="row"
-            style="align-items: flex-start; flex-wrap: nowrap"
-          >
+      <form class="stack gap-3" @submit.prevent="saveSettings">
+        <fieldset class="stack fieldset-plain gap-3">
+          <legend class="small muted mb-2">How plans for your trips reach EVCC</legend>
+          <label v-for="m in modes" :key="m.value" class="row items-start nowrap">
             <input
               v-model="settings.tripPlans"
               type="radio"
               name="tripPlans"
               :value="m.value"
               :data-testid="`trip-plans-${m.value}`"
-              style="margin-top: 3px"
+              class="mt-1"
             />
             <span class="small">
               <strong>{{ m.label }}</strong>
-              <span class="field-hint" style="display: block">{{ m.hint }}</span>
+              <span class="field-hint block">{{ m.hint }}</span>
             </span>
           </label>
         </fieldset>
@@ -348,15 +343,14 @@ async function applyDemo() {
           <strong>{{ control.mode }}</strong> · {{ control.detail }}
           <button
             v-if="state.plan.control.paused"
-            class="btn sm"
+            class="btn sm ml-2"
             type="button"
-            style="margin-left: 8px"
             @click="resumeAutomaticPlans"
           >
             Resume
           </button>
         </div>
-        <div class="row" style="align-items: flex-start; flex-wrap: nowrap">
+        <div class="row items-start nowrap">
           <ToggleSwitch
             v-model="settings.chargeAhead"
             label="Charge ahead for later trips"
@@ -395,25 +389,20 @@ async function applyDemo() {
 
     <section v-if="tab === 'places'" class="card">
       <div class="card-title">Saved places</div>
-      <p class="small muted" style="margin-top: 0">
+      <p class="small muted mt-0">
         Use a place name as a trip destination or calendar location; the planner routes to its address.
       </p>
-      <ul style="margin: 0 0 16px; padding: 0">
-        <li
-          v-for="p in places"
-          :key="p.id"
-          class="row"
-          style="list-style: none; padding: 8px 0; border-top: 1px solid var(--border)"
-        >
+      <ul class="list-plain mb-4">
+        <li v-for="p in places" :key="p.id" class="row list-row">
           <template v-if="editingPlace?.id === p.id">
-            <input v-model="editingPlace.name" aria-label="Name" style="max-width: 160px" />
-            <input v-model="editingPlace.address" aria-label="Address" style="flex: 1" />
+            <input v-model="editingPlace.name" aria-label="Name" class="place-name" />
+            <input v-model="editingPlace.address" aria-label="Address" class="grow" />
             <button class="btn sm primary" type="button" @click="savePlace">Save</button>
             <button class="btn sm" type="button" @click="editingPlace = null">Cancel</button>
           </template>
           <template v-else>
-            <strong style="min-width: 120px">{{ p.name }}</strong>
-            <span class="muted" style="flex: 1">{{ p.address }}</span>
+            <strong class="place-label">{{ p.name }}</strong>
+            <span class="muted grow">{{ p.address }}</span>
             <button class="btn sm" type="button" @click="editingPlace = { ...p }">Edit</button>
             <button class="btn sm ghost danger" type="button" @click="removePlace(p)">Delete</button>
           </template>
@@ -425,14 +414,14 @@ async function applyDemo() {
           placeholder="Name, e.g. School"
           aria-label="New place name"
           required
-          style="max-width: 200px"
+          class="place-name"
         />
         <input
           v-model="newPlace.address"
           placeholder="Address"
           aria-label="New place address"
           required
-          style="flex: 1; min-width: 200px"
+          class="place-address"
         />
         <button class="btn" type="submit">Add place</button>
       </form>
@@ -472,11 +461,11 @@ async function applyDemo() {
             </tr>
           </tbody>
         </table>
-        <p class="small muted" style="margin: 12px 0 0">
+        <p class="small muted m-0 mt-3">
           Edit the settings below. API keys, calendar addresses, and the Home Assistant address and token stay
           in environment variables on the server and are never shown here. Forecasts are fetched once a day.
         </p>
-        <div style="margin-top: 20px"><ForecastDetails ref="forecastDetails" /></div>
+        <div class="mt-5"><ForecastDetails ref="forecastDetails" /></div>
       </section>
 
       <ConnectionSettingsForm @saved="(c) => (connections = c)" />
@@ -486,13 +475,13 @@ async function applyDemo() {
           <div class="card-title">Demo car</div>
           <form class="row" @submit.prevent="applyDemo">
             <label class="row small"><input v-model="demo.connected" type="checkbox" /> Plugged in</label>
-            <label class="unit small" style="max-width: 160px">
+            <label class="unit small demo-soc">
               SoC <input v-model.number="demo.soc" type="number" min="1" max="100" data-testid="demo-soc" />
               <span>%</span>
             </label>
             <button class="btn sm" type="submit">Apply</button>
           </form>
-          <p class="small muted" style="margin: 8px 0 0">
+          <p class="small muted m-0 mt-2">
             EVCC reads this SoC only while plugged in; the Home Assistant stub reports it always, 20 minutes
             behind.
           </p>
@@ -501,3 +490,22 @@ async function applyDemo() {
     </div>
   </main>
 </template>
+
+<style scoped>
+.place-name {
+  max-width: 200px;
+}
+
+.place-label {
+  min-width: 120px;
+}
+
+.place-address {
+  flex: 1;
+  min-width: 200px;
+}
+
+.demo-soc {
+  max-width: 160px;
+}
+</style>

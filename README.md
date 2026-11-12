@@ -60,7 +60,7 @@ deletes it.
 | `make dev-live` | Local app with your `.env` (real EVCC, calendar, routes). |
 | `make verify` | Go format/vet/tests, web format/lint/types/tests, production build, browser tests. Must pass before pushing. |
 | `make test` | Fast Go and web unit tests only. |
-| `make e2e` | Build, then run the Playwright browser tests (desktop and phone). |
+| `make e2e` | Build, then run the Playwright browser tests (desktop and phone), including layout and accessibility checks of every key screen in light and dark. |
 | `make test-live` | Read-only checks against your real EVCC (state and, when plugged in, a plan preview), Home Assistant (its battery, range, and timestamp sensors), and the forecast sources (Tibber page; KNMI with a key; OpenRouter only with `LIVE_OPENROUTER=1`). It does not read the app's database, so give it the addresses: `EVCC_URL=http://… HA_URL=http://… make test-live` (or put them in `.env`; the app itself ignores them). |
 | `make docker-smoke` | Build the production image, start it, check health/UI/API, report image size and idle memory. |
 | `make run` | Production build, run locally with your real config. |

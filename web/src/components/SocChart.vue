@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, watch } from 'vue'
 import type { Block, TimelinePoint } from '../api/types'
-import { Chart, cssVar, hourTicks, timeTick } from '../lib/chart'
+import { alpha, Chart, cssVar, hourTicks, onThemeChange, timeTick } from '../lib/chart'
 import { dateTime, pct } from '../lib/format'
 
 const props = defineProps<{
@@ -16,17 +16,17 @@ const canvas = ref<HTMLCanvasElement | null>(null)
 let chart: Chart | null = null
 
 function datasets() {
-  const accent = cssVar('--accent')
-  const info = cssVar('--info')
-  const muted = cssVar('--muted')
+  const soc = cssVar('--chart-soc')
+  const required = cssVar('--chart-required')
+  const reserve = cssVar('--chart-reserve')
   const future = props.blocks.filter((b) => b.status !== 'done' && b.status !== 'in_progress')
   return [
     {
       type: 'line' as const,
       label: 'Projected SoC',
       data: props.timeline.map((p) => ({ x: Date.parse(p.at), y: p.soc })),
-      borderColor: accent,
-      backgroundColor: accent + '22',
+      borderColor: soc,
+      backgroundColor: alpha(soc, 0.13),
       fill: 'origin' as const,
       pointRadius: 0,
       borderWidth: 2,
@@ -36,8 +36,8 @@ function datasets() {
       type: 'scatter' as const,
       label: 'Required at departure',
       data: future.map((b) => ({ x: Date.parse(b.departAt), y: b.requiredSoc })),
-      borderColor: info,
-      backgroundColor: info,
+      borderColor: required,
+      backgroundColor: required,
       pointStyle: 'triangle' as const,
       pointRadius: 6,
     },
@@ -48,7 +48,7 @@ function datasets() {
         { x: Date.parse(props.from), y: props.reserve },
         { x: Date.parse(props.to), y: props.reserve },
       ],
-      borderColor: muted,
+      borderColor: reserve,
       borderDash: [4, 4],
       borderWidth: 1,
       pointRadius: 0,
@@ -60,7 +60,7 @@ function render() {
   if (!canvas.value) return
   chart?.destroy()
   const grid = cssVar('--chart-grid')
-  const text = cssVar('--muted')
+  const text = cssVar('--chart-text')
   chart = new Chart(canvas.value, {
     type: 'line',
     data: { datasets: datasets() },
@@ -99,9 +99,16 @@ function render() {
   })
 }
 
-onMounted(render)
+let stopTheme = () => {}
+onMounted(() => {
+  render()
+  stopTheme = onThemeChange(render)
+})
 watch(() => [props.timeline, props.blocks], render)
-onUnmounted(() => chart?.destroy())
+onUnmounted(() => {
+  stopTheme()
+  chart?.destroy()
+})
 </script>
 
 <template>

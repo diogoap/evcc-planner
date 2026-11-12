@@ -70,13 +70,13 @@ function reload() {
     </div>
   </header>
 
-  <div v-if="state.newVersion" class="page" style="padding-bottom: 0">
+  <div v-if="state.newVersion" class="page pb-0">
     <div class="banner tone-warn row" role="status" data-testid="new-version">
-      <span style="flex: 1">A new version of the planner is available.</span>
+      <span class="grow">A new version of the planner is available.</span>
       <button class="btn sm" type="button" @click="reload">Reload</button>
     </div>
   </div>
-  <div v-if="state.error" class="page" style="padding-bottom: 0">
+  <div v-if="state.error" class="page pb-0">
     <div class="banner tone-bad" role="alert">{{ state.error }}</div>
   </div>
 

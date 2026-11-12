@@ -3,6 +3,7 @@ import { onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { api } from '../api/client'
 import type { Occurrence, Place, Template, TemplateView } from '../api/types'
+import AppIcon from '../components/AppIcon.vue'
 import RecurringEditor from '../components/RecurringEditor.vue'
 import { historyLink } from '../lib/activity'
 import { dayShort, weekdays } from '../lib/format'
@@ -72,7 +73,9 @@ async function onSaved(message: string) {
   <main class="page">
     <div class="page-head">
       <h1>Recurring trips</h1>
-      <button class="btn primary" type="button" @click="editor = {}">+ Add schedule</button>
+      <button class="btn primary" type="button" @click="editor = {}">
+        <AppIcon name="plus" />Add schedule
+      </button>
     </div>
     <div v-if="error" class="banner tone-bad">{{ error }}</div>
     <div v-if="!templates" class="muted">Loading…</div>
@@ -82,13 +85,13 @@ async function onSaved(message: string) {
     <div class="stack">
       <section v-for="t in templates" :key="t.id" class="card" :data-testid="`template-${t.id}`">
         <div class="row">
-          <h2 style="font-size: 1.1rem">{{ t.title }}</h2>
+          <h2 class="text-lg">{{ t.title }}</h2>
           <span class="pill" :class="t.enabled ? 'tone-ok' : ''">{{ t.enabled ? 'Enabled' : 'Paused' }}</span>
         </div>
-        <p class="muted" style="margin: 4px 0 10px">
+        <p class="muted m-0 mt-1 mb-3">
           {{ weekdays(t.weekdays) }}, {{ t.start }}–{{ t.end }} · Home → {{ t.destination }} → Home
         </p>
-        <p v-if="t.exceptions.length" class="small muted" style="margin: -4px 0 10px">
+        <p v-if="t.exceptions.length" class="small muted m-0 mt-n1 mb-3">
           Exceptions:
           {{
             t.exceptions
@@ -100,10 +103,8 @@ async function onSaved(message: string) {
               .join(', ')
           }}
         </p>
-        <div class="small muted" style="margin-bottom: 6px">
-          Next seven days (click to skip or restore a date)
-        </div>
-        <div class="row" style="margin-bottom: 12px">
+        <div class="small muted mb-2">Next seven days (click to skip or restore a date)</div>
+        <div class="row mb-3">
           <button
             v-for="o in t.occurrences"
             :key="o.key"
@@ -130,7 +131,7 @@ async function onSaved(message: string) {
         </div>
       </section>
     </div>
-    <p class="small muted" style="margin-top: 16px">
+    <p class="small muted mt-4">
       Dates appear as the seven-day window advances. Editing a schedule updates every date you have not
       changed; per-date edits are kept.
     </p>

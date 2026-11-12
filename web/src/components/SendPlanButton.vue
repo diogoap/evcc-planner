@@ -153,7 +153,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', outside))
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 14px;
-  box-shadow: 0 8px 28px rgba(20, 20, 40, 0.18);
+  box-shadow: var(--shadow-lg);
 }
 
 .split-hint {
@@ -183,7 +183,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', outside))
 }
 
 .split-option:focus-visible {
-  box-shadow: inset 0 0 0 2px var(--accent);
+  box-shadow: inset 0 0 0 2px var(--focus);
 }
 
 .split-option:disabled {

@@ -1,7 +1,7 @@
 # Agent guide
 
 Instructions for AI coding agents working in this repository. Read
-[PLAN.md](PLAN.md) for scope (V1–V4 are done; V5 is in progress) and [AUTOMATION.md](AUTOMATION.md) for the
+[PLAN.md](PLAN.md) for scope (V1–V4 are done; V5 and V6 are in progress) and [AUTOMATION.md](AUTOMATION.md) for the
 rules of automatic plans and notifications, and
 [README.md](README.md) for configuration and deployment.
 
@@ -42,6 +42,11 @@ automatically. It needs no credentials or live services.
   in `migrations` (`internal/store`). Frontend: Vue 3 `<script setup>` + TypeScript,
   Chart.js components registered selectively in `web/src/lib/chart.ts`.
 - Match the surrounding style; `gofmt` and Prettier are enforced.
+- Styling uses the design tokens and shared classes in `web/src/styles.css`
+  (type, spacing, colours with checked contrast, chart colours); lint forbids
+  static inline styles. Every new screen or dialog goes into `web/e2e/screens.spec.ts`,
+  which checks each key screen at desktop and phone size in light and dark:
+  no sideways scrolling, 44 px touch targets on phones, and no serious axe findings.
 
 ## Diagnosing failures
 

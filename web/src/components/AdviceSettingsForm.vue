@@ -68,12 +68,12 @@ async function save() {
   <section class="card">
     <div class="card-title">Daily advice</div>
     <div v-if="error" class="banner tone-bad" role="alert">{{ error }}</div>
-    <form v-if="settings" class="stack" style="gap: 16px" @submit.prevent="save">
+    <form v-if="settings" class="stack gap-4" @submit.prevent="save">
       <div class="row">
         <ToggleSwitch v-model="settings.enabled" label="Daily advice" data-testid="advice-enabled" />
         <strong>Daily advice</strong>
       </div>
-      <p class="field-hint" style="margin: -8px 0 0">
+      <p class="field-hint m-0 mt-n2">
         One recommendation per day (charge ahead, defer, or nothing) from published prices, the weekly price
         outlook, KNMI weather, and your trips. It never changes EVCC by itself.
       </p>
@@ -87,7 +87,7 @@ async function save() {
         />
         <strong>Automatically create plans from daily advice</strong>
       </div>
-      <p class="field-hint" style="margin: -8px 0 0" data-testid="advice-auto-hint">
+      <p class="field-hint m-0 mt-n2" data-testid="advice-auto-hint">
         Off by default: you review a proposal and confirm each change. Automatic mode acts only on today's
         advice with enough confidence, keeps every trip target, skips plans you set in EVCC, and restores the
         previous setting at expiry.
@@ -96,10 +96,7 @@ async function save() {
         >
       </p>
 
-      <fieldset
-        class="stack"
-        style="gap: 12px; border: 1px solid var(--border); border-radius: 12px; padding: 12px"
-      >
+      <fieldset class="stack panel gap-3">
         <legend class="small muted">Automatic plan policy</legend>
         <div class="form-grid">
           <label v-for="t in targets" :key="t.key" class="field">
@@ -116,7 +113,7 @@ async function save() {
             </span>
           </label>
         </div>
-        <span class="field-hint" style="margin-top: -6px">
+        <span class="field-hint mt-n2">
           The indicator is qualitative; these SoC targets are yours to choose. A trip's target is used when it
           is higher.
         </span>

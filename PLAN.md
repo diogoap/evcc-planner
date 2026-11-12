@@ -176,13 +176,32 @@ As implemented (2026-11-11):
 </details>
 
 <details open>
-<summary><b>V6 — UI polish</b></summary>
+<summary><b>V6 — UI polish</b> 🚧</summary>
 
-- Refine the visual design: typography scale, spacing, color tokens, dark-mode parity, icons, and empty, loading, and error states.
-- Better graphs: an interactive SoC timeline with trip markers and charging windows, a price chart with planned charging and confirmed vs estimated prices, day drill-downs, and tap-friendly tooltips on phones.
-- Clearer Overview hierarchy and a day detail view with quick actions.
-- Phone and installed-app polish: touch targets, bottom navigation on small screens, safe areas, pull-to-refresh, splash and theme colors.
-- Accessibility: contrast, focus order, screen-reader labels, reduced motion. Keep screenshot checks of key screens at desktop and phone sizes.
+🚧 **In progress** (planned 2026-11-12). Screens and layouts: [UI-MOCKUP.md](UI-MOCKUP.md). Frontend only, except that `/api/status` adds EVCC's solar forecast (already read for advice) for the chart. No planning rules change.
+
+Found on the current screens (demo data; desktop and phone; light and dark):
+
+- On phones the tabs run off the screen (Activity is cut off). Each row of the seven-day table is about 200 px tall because its five advice badges stack. Trip rows put distance and energy on different lines.
+- The most important answer (will the car be ready, and when must it be plugged in?) is split over three cards. Next to them, the Energy now card holds little.
+- The two charts cover different times (seven days vs about 27 hours), show only published prices, and have no "now", trip, or charging markers. They read their colours once, so they keep the old theme when the phone switches between light and dark.
+- Light mode fails contrast: grey text is 3.7–4.1:1 (4.5 needed), green text 3.3–3.6:1, the focus ring 1.8:1 and an off toggle 1.3:1 (3 needed). Dark mode passes.
+- Dialogs don't keep focus inside or return it on close. Small buttons and toggles are under 44 px. Loading is plain "Loading…" text. About 150 inline styles bypass the design tokens.
+
+Scope:
+
+- **Design tokens:** one type scale (system font), spacing, radius, colour, and chart tokens in `styles.css`, with light-mode contrast fixed. Shared classes replace inline styles. The hand-drawn icon set grows (navigation, plug, battery, calendar, info, warning, close, refresh) and replaces text glyphs such as ⓘ and ‹ ›.
+- **Overview, ready check first:** one main card answers "will the car be ready?". It shows the SoC with range and source, a bar with the target, the next departure, the plug-in-by time or charging progress, what the planner does (mode, pause and **Resume**, the charge-ahead reason, active extra plans with **End now**), and the price and solar power now on one line. Below it: a seven-day strip (each day's charge needed and advice; on wide screens also km, kWh, and price), the most relevant day's advice, and the chart.
+- **One chart, one time axis:** SoC on top and prices below, sharing the seven-day axis and one readout that follows a tap or drag. SoC: the projected line, the level each departure needs, the arrival reserve, away periods shaded with trip names, charging windows, and a "now" line. Prices: published slots solid, the planner's expected charging shaded, EVCC's solar forecast, and later days' estimates dashed and labelled; days without data say so. On phones the readout sits above the chart (a finger would cover a tooltip) and a compact legend switches series on and off. Screen readers get a short text summary. No new chart library: a small plugin draws the shading and the "now" line.
+- **Day panel:** tapping a day in the strip or the chart opens a panel over the Overview: a bottom sheet on phones, a side panel on desktop. The back gesture or Escape closes it; arrows (or a swipe on phones) move between days. It shows the day's chart zoomed in, its trips with on/off and edit, the charge needed and expected charging slots, prices (published or estimated), sun and wind, and the advice with its actions. Quick actions: add a trip that day, send a plan that covers through that day, open the day in Trips.
+- **Phones and the installed app:** bottom navigation with icons and labels below 640 px wide. Content clears the notch and home indicator (safe areas). Dialogs become bottom sheets. Touch targets are at least 44 px. Pull to refresh in the installed app (browsers keep their own), and "Updated hh:mm" with a refresh button everywhere. Splash and theme colours match light and dark; `pnpm icons` also generates iOS launch images for current iPhone sizes.
+- **States:** placeholders shaped like the content while loading; empty states that say what to do next (no trips that day → **Add trip**); errors shown in the card they affect, with **Retry**, keeping the last data visible and dated. V7 adds health status and recovery actions.
+- **Other pages:** Trips rows keep one layout on phones (time and title, distance and energy aligned, actions in one row) and day headers stay visible while scrolling. Settings sub-tabs fit on phones, with a Save bar while changes are unsaved. Activity filters fold away on phones.
+- **Accessibility:** contrast as above in both themes; visible focus in a logical order; focus kept inside, and returned from, dialogs and the day panel; labels on icon-only buttons; full spoken labels for days and charts; every animation respects reduced motion.
+- **Checks:** a Playwright test visits the key screens (Overview, day panel, Trips, Recurring, each Settings tab, Activity, the send dialog) at desktop and phone sizes, in light and dark. It checks for sideways scrolling, touch targets under 44 px on phones, and serious or critical findings from an axe accessibility scan (`@axe-core/playwright`, dev only), and saves a screenshot of each for review. No pixel comparison.
+- **Order**, each step passing `make verify` and deploying on its own: tokens, contrast, icons, and the checks first, so later steps are guarded; then navigation and the phone layout; the Overview and chart; the day panel; other pages and states.
+- ✅ **Step 1, foundations** (2026-11-12): tokens for type, spacing, radius, colour, and charts in `styles.css`. Light mode now passes contrast (grey text at least 4.6:1, green text 4.7:1, focus ring and switches 3:1). Shared classes replaced the inline styles, and lint blocks new ones (`vue/no-static-inline-styles`). New icons replace the text glyphs. Charts redraw when light/dark changes. Dialogs keep focus inside and return it on close. On touch screens every control is at least 44 px. `web/e2e/screens.spec.ts` checks 11 screens at both sizes in both themes.
+- Decisions (2026-11-12): the Overview leads with the ready check; day detail is a panel over the Overview, not its own page; layout and accessibility checks without pixel comparison; system font. Defaults: follow the system's light/dark setting (no switch); keep the hand-drawn icons (no icon library); no new chart dependency.
 
 </details>
 

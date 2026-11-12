@@ -13,6 +13,7 @@ import {
   windText,
 } from '../lib/advice'
 import { ago, clock, dateTime, dayLong, dayShort } from '../lib/format'
+import AppIcon from './AppIcon.vue'
 
 const props = defineProps<{
   advice: DayAdvice
@@ -49,33 +50,31 @@ const priceText = computed(() => {
   <section class="card" aria-labelledby="advice-title" data-testid="advice-card">
     <div id="advice-title" class="card-title">
       <span>{{ weekday }}'s advice</span>
-      <span class="row" style="gap: 4px">
+      <span class="row gap-1">
         <button
-          class="btn sm ghost"
+          class="btn sm ghost icon-only"
           type="button"
           aria-label="Previous day"
           :disabled="index <= 0"
           @click="emit('select', dates[index - 1]!)"
         >
-          ‹
+          <AppIcon name="chevron-left" />
         </button>
-        <span class="small num" style="text-transform: none; letter-spacing: 0">{{
-          dayShort(advice.date)
-        }}</span>
+        <span class="small num normal-case">{{ dayShort(advice.date) }}</span>
         <button
-          class="btn sm ghost"
+          class="btn sm ghost icon-only"
           type="button"
           aria-label="Next day"
           :disabled="index >= dates.length - 1"
           @click="emit('select', dates[index + 1]!)"
         >
-          ›
+          <AppIcon name="chevron-right" />
         </button>
       </span>
     </div>
 
-    <div class="row" style="justify-content: space-between; align-items: baseline">
-      <strong style="font-size: 1.2rem" data-testid="advice-label">{{ label.text }}</strong>
+    <div class="row justify-between items-baseline">
+      <strong class="text-lg" data-testid="advice-label">{{ label.text }}</strong>
       <span v-if="advice.indicator && !advice.noSuggestion" class="small" data-testid="advice-indicator">
         Charge indicator: <strong>{{ indicatorNames[advice.indicator] }}</strong>
       </span>
@@ -83,7 +82,7 @@ const priceText = computed(() => {
     <div v-if="advice.confidence" class="small muted" data-testid="advice-confidence">
       Confidence: {{ confidenceLabel(advice.confidence) }}
     </div>
-    <p style="margin: 10px 0">{{ advice.summary }}</p>
+    <p class="my-3">{{ advice.summary }}</p>
 
     <dl class="kv small">
       <template v-if="advice.price">
@@ -115,7 +114,7 @@ const priceText = computed(() => {
       </template>
     </dl>
 
-    <div v-if="adj" class="banner tone-info small" style="margin: 12px 0 0" data-testid="advice-adjustment">
+    <div v-if="adj" class="banner tone-info small m-0 mt-3" data-testid="advice-adjustment">
       <template v-if="adj.kind === 'extra_plan'">
         Extra plan active{{ adj.source === 'auto' ? ' (automatic)' : '' }}: {{ adj.plan?.soc }}% by
         {{ dateTime(adj.plan!.time) }}.
@@ -123,23 +122,22 @@ const priceText = computed(() => {
       <template v-else>Cheap-grid charging paused{{ adj.source === 'auto' ? ' (automatic)' : '' }}.</template>
       Restores the previous setting {{ dateTime(adj.expiresAt) }}, unless you change it in EVCC.
       <div v-if="adj.note && adj.note.startsWith('Restoring failed')" class="text-bad">{{ adj.note }}</div>
-      <div style="margin-top: 6px">
+      <div class="mt-2">
         <button class="btn sm" type="button" @click="emit('cancel', adj.id)">End now and restore</button>
       </div>
     </div>
-    <p v-else-if="advice.dismissed" class="small muted" style="margin: 12px 0 0">
+    <p v-else-if="advice.dismissed" class="small muted m-0 mt-3">
       Dismissed; nothing was changed.
       <button class="btn sm ghost" type="button" @click="emit('dismiss', true)">Undo</button>
     </p>
     <p
       v-else-if="!advice.noSuggestion && advice.recommendation !== 'none' && advice.confidence < 2"
-      class="small muted"
-      style="margin: 12px 0 0"
+      class="small muted m-0 mt-3"
     >
       Low confidence: no plan action.
     </p>
 
-    <div v-if="!adj && !advice.dismissed" class="row" style="margin-top: 12px">
+    <div v-if="!adj && !advice.dismissed" class="row mt-3">
       <button
         v-if="advice.action === 'extra_plan'"
         class="btn primary"
@@ -159,16 +157,16 @@ const priceText = computed(() => {
       <button v-if="canDismiss" class="btn" type="button" @click="emit('dismiss', false)">Dismiss</button>
     </div>
 
-    <details style="margin-top: 12px">
+    <details class="mt-3">
       <summary class="small">Why?</summary>
-      <ul class="small" style="margin: 8px 0; padding-left: 18px">
+      <ul class="small list-indent my-2">
         <li v-for="r in advice.rationale" :key="r">{{ r }}</li>
         <li v-if="advice.outlookNote">Outlook: {{ advice.outlookNote }}</li>
         <li v-if="advice.price">Price basis: {{ advice.price.detail }}.</li>
       </ul>
-      <div class="small muted" style="margin-bottom: 4px">Sources</div>
-      <ul class="small" style="margin: 0; padding: 0; list-style: none" data-testid="advice-sources">
-        <li v-for="s in sources" :key="s.name" class="row" style="padding: 2px 0">
+      <div class="small muted mb-1">Sources</div>
+      <ul class="small list-plain stack gap-1" data-testid="advice-sources">
+        <li v-for="s in sources" :key="s.name" class="row">
           <span class="pill" :class="`tone-${sourceTone[s.status]}`">{{ s.status }}</span>
           <strong>{{ s.name }}</strong>
           <span class="muted"
@@ -176,7 +174,7 @@ const priceText = computed(() => {
           >
         </li>
       </ul>
-      <p class="small muted" style="margin: 8px 0 0">
+      <p class="small muted m-0 mt-2">
         Advice is qualitative: the charge indicator does not prescribe an amount, and trip targets always stay
         protected.
       </p>

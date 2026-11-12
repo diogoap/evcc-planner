@@ -123,13 +123,7 @@ const number = (n: number) => n.toLocaleString('en-GB')
     <section class="card" aria-labelledby="usage-title">
       <div id="usage-title" class="card-title">
         External API usage
-        <input
-          v-model="month"
-          type="month"
-          aria-label="Month"
-          :max="today.slice(0, 7)"
-          style="width: auto; padding: 4px 8px"
-        />
+        <input v-model="month" type="month" aria-label="Month" :max="today.slice(0, 7)" class="w-auto" />
       </div>
       <table v-if="usage" class="table usage">
         <thead>
@@ -145,12 +139,11 @@ const number = (n: number) => n.toLocaleString('en-GB')
           <tr v-for="s in usage.services" :key="s.service" :data-testid="`usage-${s.service}`">
             <td>
               <strong>{{ s.name }}</strong>
-              <div v-if="s.freeCalls" class="small" style="margin-top: 4px">
+              <div v-if="s.freeCalls" class="small mt-1">
                 <div
-                  class="bar"
+                  class="bar usage-bar"
                   role="img"
                   :aria-label="`${s.calls} of ${s.freeCalls} free calls used`"
-                  style="max-width: 220px"
                 >
                   <div
                     class="bar-fill"
@@ -171,13 +164,13 @@ const number = (n: number) => n.toLocaleString('en-GB')
           </tr>
         </tbody>
       </table>
-      <p class="small muted" style="margin: 10px 0 0">
+      <p class="small muted m-0 mt-3">
         Every request to an outside service is recorded (cached routes make no call). EVCC and Home Assistant
         on your network are not counted.
       </p>
     </section>
 
-    <section class="card" style="margin-top: 16px" aria-labelledby="log-title">
+    <section class="card mt-4" aria-labelledby="log-title">
       <div id="log-title" class="card-title">Activity log</div>
       <form class="filters" @submit.prevent="apply" @change="apply">
         <select v-model="filter.type" aria-label="Type">
@@ -198,28 +191,18 @@ const number = (n: number) => n.toLocaleString('en-GB')
         </label>
         <button v-if="filtered" class="btn sm ghost" type="button" @click="clearAll">Clear filters</button>
       </form>
-      <div
-        v-if="filter.subject"
-        class="banner tone-info small row"
-        data-testid="subject-filter"
-        style="margin: 12px 0 0"
-      >
+      <div v-if="filter.subject" class="banner tone-info small row m-0 mt-3" data-testid="subject-filter">
         <span>History of {{ label || filter.subject }}</span>
         <span class="spacer" />
         <button class="btn sm ghost" type="button" @click="clearSubject">Show all</button>
       </div>
 
-      <p
-        v-if="!loading && !events.length"
-        class="muted"
-        style="margin: 16px 0 0"
-        data-testid="activity-empty"
-      >
+      <p v-if="!loading && !events.length" class="muted m-0 mt-4" data-testid="activity-empty">
         No activity{{ filtered ? ' matches these filters' : ' yet' }}.
       </p>
       <section v-for="g in groups" :key="g.date" class="activity-day">
         <h3 class="small muted">{{ dayLong(g.date) }}</h3>
-        <ul style="margin: 0; padding: 0">
+        <ul class="m-0 p-0">
           <ActivityItem
             v-for="e in g.events"
             :key="e.id"
@@ -229,10 +212,10 @@ const number = (n: number) => n.toLocaleString('en-GB')
           />
         </ul>
       </section>
-      <div v-if="next" style="margin-top: 12px">
+      <div v-if="next" class="mt-3">
         <button class="btn" type="button" :disabled="loading" @click="load(true)">Load more</button>
       </div>
-      <p class="small muted" style="margin: 16px 0 0">
+      <p class="small muted m-0 mt-4">
         Newest first. Entries are never edited; history older than {{ retentionDays }} days is deleted daily
         (Settings → Connections). Keys and secret calendar addresses are never recorded.
       </p>
@@ -241,6 +224,10 @@ const number = (n: number) => n.toLocaleString('en-GB')
 </template>
 
 <style scoped>
+.usage-bar {
+  max-width: 220px;
+}
+
 .filters {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));

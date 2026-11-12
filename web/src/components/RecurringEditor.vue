@@ -2,6 +2,7 @@
 import { reactive, ref } from 'vue'
 import { api } from '../api/client'
 import type { DateRange, Place, Template } from '../api/types'
+import AppIcon from './AppIcon.vue'
 import ModalDialog from './ModalDialog.vue'
 
 const props = defineProps<{ template?: Template; places: Place[] }>()
@@ -56,7 +57,7 @@ async function save() {
 
 <template>
   <ModalDialog :title="template ? 'Edit schedule' : 'Add schedule'" @close="emit('close')">
-    <form class="stack" style="gap: 12px" @submit.prevent="save">
+    <form class="stack gap-3" @submit.prevent="save">
       <label class="field">
         Destination
         <input
@@ -73,8 +74,8 @@ async function save() {
         Title
         <input v-model="form.title" placeholder="e.g. School drop-off" />
       </label>
-      <fieldset style="border: none; padding: 0; margin: 0">
-        <legend class="small muted" style="margin-bottom: 6px">Weekdays</legend>
+      <fieldset class="fieldset-plain">
+        <legend class="small muted mb-2">Weekdays</legend>
         <div class="row">
           <button
             v-for="(d, i) in days"
@@ -99,31 +100,26 @@ async function save() {
         </label>
       </div>
       <div>
-        <div class="row small muted" style="margin-bottom: 6px">
+        <div class="row small muted mb-2">
           Date exceptions <span class="spacer" />
           <button class="btn sm" type="button" @click="form.exceptions.push({ from: '', to: '', note: '' })">
             Add exception
           </button>
         </div>
-        <p v-if="!form.exceptions.length" class="small muted" style="margin: 0">
+        <p v-if="!form.exceptions.length" class="small muted m-0">
           None. Holidays on your calendar are usually enough; add dates here to skip the schedule.
         </p>
-        <div
-          v-for="(e, i) in form.exceptions"
-          :key="i"
-          class="row"
-          style="margin-bottom: 6px; flex-wrap: nowrap"
-        >
+        <div v-for="(e, i) in form.exceptions" :key="i" class="row mb-2 nowrap">
           <input v-model="e.from" type="date" aria-label="From" required />
           <input v-model="e.to" type="date" aria-label="To" />
           <input v-model="e.note" aria-label="Note" placeholder="Note" />
           <button
-            class="btn sm ghost danger"
+            class="btn sm ghost danger icon-only"
             type="button"
             aria-label="Remove"
             @click="form.exceptions.splice(i, 1)"
           >
-            ✕
+            <AppIcon name="close" />
           </button>
         </div>
       </div>
@@ -131,7 +127,7 @@ async function save() {
         <input v-model="form.enabled" type="checkbox" />
         Schedule active
       </label>
-      <p v-if="error" class="small text-bad" role="alert" style="margin: 0">{{ error }}</p>
+      <p v-if="error" class="small text-bad m-0" role="alert">{{ error }}</p>
       <div class="modal-actions">
         <button class="btn" type="button" @click="emit('close')">Cancel</button>
         <button class="btn primary" type="submit" :disabled="saving">Save schedule</button>

@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import type { SoCSource, SoCView, Status } from '../api/types'
 import { ago, dateTime, km, kw, pct } from '../lib/format'
+import AppIcon from './AppIcon.vue'
 
 const props = defineProps<{ soc: SoCView; status: Status | null; now: string; target?: number }>()
 
@@ -50,26 +51,20 @@ const staleHint = computed(() =>
           ≈ {{ pct(soc.projected) }} after trips since
         </span>
       </div>
-      <div class="bar" style="margin: 10px 0" role="img" :aria-label="`State of charge ${pct(soc.percent)}`">
+      <div class="bar my-3" role="img" :aria-label="`State of charge ${pct(soc.percent)}`">
         <div class="bar-fill" :class="{ stale: soc.stale }" :style="{ width: `${percent}%` }" />
         <div v-if="target" class="bar-target" :style="{ left: `${Math.min(target, 100)}%` }" title="Target" />
       </div>
-      <p v-if="soc.stale" class="small text-warn" style="margin: 0 0 8px" data-testid="soc-stale">
-        <span aria-hidden="true">ⓘ</span>
+      <p v-if="soc.stale" class="small text-warn m-0 mb-2" data-testid="soc-stale">
+        <AppIcon name="info" />
         Last known, {{ soc.observedAt ? dateTime(soc.observedAt) : '' }}, from
         {{ fromHA ? 'Home Assistant' : 'EVCC' }}
         <span class="muted">· {{ staleHint }}</span>
       </p>
-      <p v-else-if="soc.observedAt" class="small muted" style="margin: 0 0 8px" data-testid="soc-source">
+      <p v-else-if="soc.observedAt" class="small muted m-0 mb-2" data-testid="soc-source">
         {{ sourceLine }}
       </p>
-      <p
-        v-for="o in soc.other"
-        :key="o.source"
-        class="small muted"
-        style="margin: 0 0 8px"
-        data-testid="soc-other"
-      >
+      <p v-for="o in soc.other" :key="o.source" class="small muted m-0 mb-2" data-testid="soc-other">
         {{ sourceName[o.source] }}: {{ pct(o.percent) }} · {{ ago(o.observedAt, now) }}
       </p>
     </template>

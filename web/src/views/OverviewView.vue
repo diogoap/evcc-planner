@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { api } from '../api/client'
 import type { AdjustmentKind, Place, SendOption } from '../api/types'
 import AdviceCard from '../components/AdviceCard.vue'
+import AppIcon from '../components/AppIcon.vue'
 import DaysTable from '../components/DaysTable.vue'
 import EnergyCard from '../components/EnergyCard.vue'
 import NextDepartureCard from '../components/NextDepartureCard.vue'
@@ -112,20 +113,14 @@ function cancelAdjustment(id: number) {
               >
                 {{ control.detail }}
               </div>
-              <ul
-                v-if="ahead.length"
-                class="small muted"
-                style="margin: 4px 0 0; padding-left: 16px"
-                data-testid="ahead"
-              >
+              <ul v-if="ahead.length" class="small muted list-indent mt-1" data-testid="ahead">
                 <li v-for="a in ahead" :key="a.tripKey">{{ aheadText(a) }}</li>
               </ul>
               <button
                 v-if="plan.control.paused"
-                class="btn sm"
+                class="btn sm mt-2"
                 type="button"
                 data-testid="resume"
-                style="margin-top: 6px"
                 @click="resumeAutomaticPlans"
               >
                 Resume
@@ -157,7 +152,7 @@ function cancelAdjustment(id: number) {
               </dd>
             </template>
           </dl>
-          <div class="row" style="margin-top: 12px">
+          <div class="row mt-3">
             <RouterLink class="btn" to="/settings">Settings</RouterLink>
             <RouterLink class="btn" :to="historyLink('plan', 'the EVCC plan')" data-testid="plan-history"
               >Plan history</RouterLink
@@ -166,10 +161,10 @@ function cancelAdjustment(id: number) {
         </section>
       </div>
 
-      <section class="card" style="margin-top: 16px" aria-labelledby="days-title">
+      <section class="card mt-4" aria-labelledby="days-title">
         <div id="days-title" class="card-title">
           Next seven days
-          <button class="btn sm" type="button" @click="openAdd">+ Add trip</button>
+          <button class="btn sm" type="button" @click="openAdd"><AppIcon name="plus" />Add trip</button>
         </div>
         <DaysTable
           :days="plan.days"
@@ -178,7 +173,7 @@ function cancelAdjustment(id: number) {
           @select="(d) => router.push({ path: '/trips', hash: `#day-${d}` })"
           @advice="(d) => (selected = d)"
         />
-        <p class="small muted" style="margin: 10px 0 0">
+        <p class="small muted m-0 mt-3">
           Plan is the SoC the day's departures need added, if each leaves with just its target; then the first
           departure and the SoC it needs.
           <template v-if="adviceDays.length">
@@ -189,7 +184,7 @@ function cancelAdjustment(id: number) {
 
       <AdviceCard
         v-if="advice"
-        style="margin-top: 16px"
+        class="mt-4"
         :advice="advice"
         :day="plan.days.find((d) => d.date === advice!.date)"
         :sources="plan.advice.sources"
@@ -201,7 +196,7 @@ function cancelAdjustment(id: number) {
         @cancel="cancelAdjustment"
       />
 
-      <div class="grid-2" style="margin-top: 16px">
+      <div class="grid-2 mt-4">
         <section class="card" aria-labelledby="soc-title">
           <div id="soc-title" class="card-title">Projected SoC</div>
           <SocChart
@@ -213,7 +208,7 @@ function cancelAdjustment(id: number) {
             :reserve="plan.settings.arrivalReservePct"
           />
           <p v-else class="muted small">Shown once EVCC has read the SoC.</p>
-          <p class="small muted" style="margin: 8px 0 0">
+          <p class="small muted m-0 mt-2">
             Minimum charging: each departure reaches its target, charging as soon as the car is home.
           </p>
         </section>
@@ -226,7 +221,7 @@ function cancelAdjustment(id: number) {
             planned-label="Expected charging (estimate)"
           />
           <p v-else class="muted small">No published prices from EVCC.</p>
-          <p class="small muted" style="margin: 8px 0 0">
+          <p class="small muted m-0 mt-2">
             From EVCC; tomorrow's prices appear around 14:00.
             <template v-if="expected.length">
               Shaded: the planner's estimate of when the target charges (cheapest slots, solar first); EVCC

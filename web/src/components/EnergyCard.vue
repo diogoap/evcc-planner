@@ -20,7 +20,7 @@ defineProps<{ status: Status | null; now: string }>()
       <dt>Data updated</dt>
       <dd>{{ status?.updatedAt ? ago(status.updatedAt, now) : 'never' }}</dd>
     </dl>
-    <p v-if="status && !status.reachable" class="small text-bad" style="margin: 10px 0 0">
+    <p v-if="status && !status.reachable" class="small text-bad m-0 mt-3">
       EVCC unreachable{{ status.error ? `: ${status.error}` : '' }}. Showing the last known values.
     </p>
   </section>

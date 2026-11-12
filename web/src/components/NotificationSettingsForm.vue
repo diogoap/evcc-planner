@@ -116,8 +116,8 @@ async function press(n: PhoneNotification, verb: NotificationVerb) {
   <section class="card" aria-labelledby="notifications-title">
     <div id="notifications-title" class="card-title">Phone notifications</div>
     <div v-if="error" class="banner tone-bad" role="alert">{{ error }}</div>
-    <form v-if="settings" class="stack" style="gap: 14px" @submit.prevent="save">
-      <div class="row" style="align-items: flex-start; flex-wrap: nowrap">
+    <form v-if="settings" class="stack gap-3" @submit.prevent="save">
+      <div class="row items-start nowrap">
         <ToggleSwitch
           v-model="settings.enabled"
           label="Notifications"
@@ -134,10 +134,10 @@ async function press(n: PhoneNotification, verb: NotificationVerb) {
         </div>
       </div>
 
-      <fieldset class="stack" style="gap: 6px; border: 0; padding: 0; margin: 0">
-        <legend class="small" style="margin-bottom: 4px"><strong>Phones</strong></legend>
-        <p v-if="phonesError" class="small text-warn" style="margin: 0">{{ phonesError }}</p>
-        <p v-else-if="!phones.length" class="small muted" style="margin: 0">
+      <fieldset class="stack fieldset-plain gap-2">
+        <legend class="small mb-1"><strong>Phones</strong></legend>
+        <p v-if="phonesError" class="small text-warn m-0">{{ phonesError }}</p>
+        <p v-else-if="!phones.length" class="small muted m-0">
           Home Assistant has no mobile app to notify; install the Companion app and sign in.
         </p>
         <label v-for="p in phones" :key="p" class="row small">
@@ -178,7 +178,7 @@ async function press(n: PhoneNotification, verb: NotificationVerb) {
         </label>
       </div>
 
-      <div class="row" style="align-items: flex-start; flex-wrap: nowrap">
+      <div class="row items-start nowrap">
         <ToggleSwitch v-model="settings.early" label="Early reminders" aria-describedby="hint-early" />
         <div class="small">
           <strong>Early reminders</strong>
@@ -224,14 +224,14 @@ async function press(n: PhoneNotification, verb: NotificationVerb) {
           <input v-model="settings.quietTo" type="time" required data-testid="notify-quiet-to" />
         </label>
       </div>
-      <div class="row" style="align-items: flex-start; flex-wrap: nowrap">
+      <div class="row items-start nowrap">
         <ToggleSwitch v-model="settings.urgentInQuiet" label="Urgent reminders in quiet hours" />
         <div class="small">
           <strong>Urgent reminders in quiet hours</strong>
           <div class="field-hint">On: send them anyway. Off: wait until quiet hours end.</div>
         </div>
       </div>
-      <div v-for="t in toggles" :key="t.key" class="row" style="align-items: flex-start; flex-wrap: nowrap">
+      <div v-for="t in toggles" :key="t.key" class="row items-start nowrap">
         <ToggleSwitch v-model="settings[t.key]" :label="t.label" />
         <div class="small">
           <strong>{{ t.label }}</strong>
@@ -252,14 +252,13 @@ async function press(n: PhoneNotification, verb: NotificationVerb) {
       </div>
     </form>
 
-    <div v-if="recent.length" style="margin-top: 20px">
-      <div class="card-title" style="margin-bottom: 4px">Recent notifications</div>
-      <ul style="margin: 0; padding: 0" data-testid="recent-notifications">
+    <div v-if="recent.length" class="mt-5">
+      <div class="card-title mb-1">Recent notifications</div>
+      <ul class="list-plain" data-testid="recent-notifications">
         <li
           v-for="n in recent"
           :key="n.id"
-          class="stack"
-          style="list-style: none; gap: 4px; padding: 10px 0; border-top: 1px solid var(--border)"
+          class="stack gap-1 list-row"
           :data-testid="`notification-${n.kind}`"
         >
           <div class="row">

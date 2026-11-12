@@ -41,17 +41,17 @@ defineExpose({ load })
 </script>
 
 <template>
-  <div v-if="detail" class="stack" style="gap: 12px" data-testid="forecast-details">
+  <div v-if="detail" class="stack gap-3" data-testid="forecast-details">
     <div v-if="detail.outlook" class="small">
-      <div class="card-title" style="margin-bottom: 4px">Weekly price outlook</div>
-      <p style="margin: 0 0 6px">
+      <div class="card-title mb-1">Weekly price outlook</div>
+      <p class="m-0 mb-2">
         Report {{ dayShort(detail.outlook.validFrom) }} – {{ dayShort(detail.outlook.validTo) }} · fetched
         {{ dateTime(detail.outlook.fetchedAt) }} · {{ detail.outlook.extraction }}
       </p>
-      <p v-if="detail.outlook.weekly.summary" class="muted" style="margin: 0 0 6px">
+      <p v-if="detail.outlook.weekly.summary" class="muted m-0 mb-2">
         {{ detail.outlook.weekly.summary }}
       </p>
-      <ul style="margin: 0; padding-left: 18px">
+      <ul class="list-indent">
         <li v-if="detail.outlook.weekly.price">
           Week: €{{ detail.outlook.weekly.price.eurPerKWh.toFixed(3) }}/kWh incl. VAT —
           {{ detail.outlook.weekly.price.detail }}
@@ -66,16 +66,16 @@ defineExpose({ load })
           <template v-else>no price · {{ d.level.replace('_', ' ') }}</template>
         </li>
       </ul>
-      <details v-if="detail.outlook.warnings.length" style="margin-top: 6px">
+      <details v-if="detail.outlook.warnings.length" class="mt-2">
         <summary>{{ detail.outlook.warnings.length }} values dropped during validation</summary>
-        <ul style="margin: 4px 0; padding-left: 18px">
+        <ul class="list-indent my-1">
           <li v-for="w in detail.outlook.warnings" :key="w" class="muted">{{ w }}</li>
         </ul>
       </details>
     </div>
     <div v-if="detail.weather" class="small">
-      <div class="card-title" style="margin-bottom: 4px">KNMI outlook</div>
-      <p style="margin: 0">
+      <div class="card-title mb-1">KNMI outlook</div>
+      <p class="m-0">
         {{ detail.weather.days.length }} days from {{ dayShort(detail.weather.days[0]?.date ?? '') }}
         <template v-if="detail.weather.issuedAt"> · issued {{ dateTime(detail.weather.issuedAt) }}</template>
         · {{ detail.weather.summary }}

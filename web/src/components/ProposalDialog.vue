@@ -114,7 +114,7 @@ async function confirm() {
   <ModalDialog :title="title" @close="emit('close')">
     <p v-if="!p && !error" class="muted small">Loading the proposal…</p>
     <template v-if="p">
-      <p v-if="p.advice" class="small" style="margin: 0 0 12px">
+      <p v-if="p.advice" class="small m-0 mb-3">
         <template v-if="p.advice.indicator"
           >Charge indicator: <strong>{{ indicatorNames[p.advice.indicator] }}</strong> ·
         </template>
@@ -124,7 +124,7 @@ async function confirm() {
         {{ p.reason }}
       </p>
 
-      <form v-else class="stack" style="gap: 14px" @submit.prevent="confirm">
+      <form v-else class="stack gap-3" @submit.prevent="confirm">
         <template v-if="kind === 'extra_plan'">
           <div class="form-grid">
             <label class="field">
@@ -151,7 +151,7 @@ async function confirm() {
                 <select
                   v-model="form.unit"
                   aria-label="Target unit"
-                  style="width: auto"
+                  class="w-auto"
                   :disabled="p.startSoc == null"
                 >
                   <option value="%">% SoC</option>
@@ -177,7 +177,7 @@ async function confirm() {
               <input v-model="form.expTime" type="time" required />
             </label>
           </div>
-          <p v-if="p.protected" class="small muted" style="margin: 0" data-testid="proposal-protected">
+          <p v-if="p.protected" class="small muted m-0" data-testid="proposal-protected">
             {{ p.protected.title }} leaves {{ dateTime(p.protected.departAt) }} and needs
             {{ p.protected.targetSoc }}%: the target stays at least that, ready before it leaves.
           </p>
@@ -196,15 +196,15 @@ async function confirm() {
             </template>
           </dl>
           <div>
-            <div class="card-title" style="margin-bottom: 6px">EVCC preview</div>
+            <div class="card-title mb-2">EVCC preview</div>
             <template v-if="preview?.available">
-              <p class="small" style="margin: 0 0 6px">
+              <p class="small m-0 mb-2">
                 EVCC plans {{ duration(preview.durationMinutes) }} of charging in the highlighted slots.
               </p>
               <PriceChart :slots="preview.priceSlots" :planned="preview.slots" :height="170" />
             </template>
-            <p v-else-if="preview" class="small text-warn" style="margin: 0">{{ preview.reason }}</p>
-            <p v-else class="small muted" style="margin: 0">Asking EVCC…</p>
+            <p v-else-if="preview" class="small text-warn m-0">{{ preview.reason }}</p>
+            <p v-else class="small muted m-0">Asking EVCC…</p>
           </div>
         </template>
 
@@ -225,10 +225,10 @@ async function confirm() {
           </div>
         </template>
 
-        <ul class="small muted" style="margin: 0; padding-left: 18px">
+        <ul class="small muted list-indent">
           <li v-for="n in p.notes" :key="n">{{ n }}</li>
         </ul>
-        <p v-if="error" class="small text-bad" role="alert" style="margin: 0">{{ error }}</p>
+        <p v-if="error" class="small text-bad m-0" role="alert">{{ error }}</p>
         <div class="modal-actions">
           <button class="btn" type="button" @click="emit('close')">Cancel</button>
           <button class="btn primary" type="submit" :disabled="saving || !expiresAt">

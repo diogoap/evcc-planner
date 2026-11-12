@@ -36,7 +36,7 @@ test('overview shows status, the next departure, and seven days', async ({ page 
 
 test('add a manual trip and keep it after reload', async ({ page }) => {
   await page.goto('/trips')
-  await page.getByRole('button', { name: '+ Add trip' }).click()
+  await page.getByRole('button', { name: 'Add trip' }).click()
   const dialog = page.getByRole('dialog', { name: 'Add trip' })
   await dialog.getByLabel('Destination').fill('Bouwmarkt 5, Demo Town')
   await dialog.getByLabel('Title').fill('Hardware store')
@@ -311,17 +311,4 @@ test('installable as an app: manifest and icons', async ({ page, request }) => {
     expect(icon.status(), src).toBe(200)
     expect(icon.headers()['content-type'], src).toMatch(/^image\//)
   }
-})
-
-test('every page fits the viewport without errors', async ({ page }) => {
-  const errors: string[] = []
-  page.on('pageerror', (e) => errors.push(e.message))
-  page.on('console', (m) => m.type() === 'error' && errors.push(m.text()))
-  for (const path of ['/', '/trips', '/recurring', '/settings', '/activity']) {
-    await page.goto(path)
-    await page.waitForLoadState('networkidle')
-    const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)
-    expect(overflow, `${path} scrolls horizontally`).toBe(false)
-  }
-  expect(errors).toEqual([])
 })

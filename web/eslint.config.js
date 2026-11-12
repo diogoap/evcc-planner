@@ -13,6 +13,9 @@ export default defineConfig(
   {
     files: ['**/*.vue'],
     languageOptions: { parserOptions: { parser: tseslint.parser } },
+    // Styling goes through the design tokens and classes in src/styles.css;
+    // only values computed from data (widths, positions) stay inline.
+    rules: { 'vue/no-static-inline-styles': 'error' },
   },
   {
     languageOptions: { globals: { ...globals.browser } },

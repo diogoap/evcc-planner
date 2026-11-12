@@ -29,6 +29,28 @@ export function cssVar(name: string) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || '#888'
 }
 
+/** A #rrggbb token colour with the given opacity (0–1). */
+export function alpha(color: string, opacity: number) {
+  if (!/^#[0-9a-f]{6}$/i.test(color)) return color
+  return (
+    color +
+    Math.round(opacity * 255)
+      .toString(16)
+      .padStart(2, '0')
+  )
+}
+
+/**
+ * Calls render when the system switches between light and dark, so a chart
+ * picks up the new colours. Returns the function that stops listening.
+ */
+export function onThemeChange(render: () => void) {
+  if (!window.matchMedia) return () => {}
+  const media = window.matchMedia('(prefers-color-scheme: dark)')
+  media.addEventListener('change', render)
+  return () => media.removeEventListener('change', render)
+}
+
 /** Axis label: weekday at local midnight, otherwise HH:MM. */
 export function timeTick(value: number | string) {
   const t = Number(value)

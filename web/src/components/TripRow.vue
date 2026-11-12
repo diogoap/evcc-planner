@@ -150,16 +150,18 @@ const source = computed(() => {
   margin-top: 6px;
 }
 
+/* Off and finished trips are greyed out, still readable. */
 .trip.off .trip-line,
-.trip.off .trip-sub {
-  opacity: 0.55;
+.trip.done .trip-line {
+  color: var(--muted);
+}
+
+.trip.off .pill {
+  background: var(--surface-2);
+  color: var(--muted);
 }
 
 .trip.off .trip-title {
   text-decoration: line-through;
-}
-
-.trip.done .trip-line {
-  opacity: 0.7;
 }
 </style>
