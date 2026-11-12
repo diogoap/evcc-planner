@@ -21,12 +21,15 @@ type notifyState struct {
 	connected bool
 	soc       float64
 	idleSince time.Time
+	modeSince time.Time // plugged in with EVCC in mode (not Smart) since
+	mode      string
 	below     map[string]bool
 }
 
 // Timings of the notification rules (AUTOMATION.md).
 var (
 	stoppedAfter    = 10 * time.Minute // a planned charge idle this long has stopped
+	modeAfter       = 10 * time.Minute // plugged in this long outside Smart mode is a problem
 	unpluggedBefore = 30 * time.Minute // unplugging earlier than this before a departure is early
 	beforeQuiet     = 15 * time.Minute // early reminders due in quiet hours come this long before them
 )
@@ -58,7 +61,7 @@ func (s *Service) CheckNotifications(ctx context.Context) error {
 	prev := s.notifyPrev
 	cur := &notifyState{connected: lp.Connected, soc: lp.VehicleSoc, below: map[string]bool{}}
 	if prev != nil {
-		cur.idleSince, cur.below = prev.idleSince, prev.below
+		cur.idleSince, cur.modeSince, cur.mode, cur.below = prev.idleSince, prev.modeSince, prev.mode, prev.below
 	}
 	s.notifyPrev = cur
 	on := settings.Enabled && len(settings.Phones) > 0 && s.Clients().Notify != nil
@@ -234,8 +237,8 @@ func (r *reminders) cleanUp() {
 			return !review[n.Subject]
 		case n.Kind == model.NotifyStopped:
 			return !r.lp.Connected || r.lp.Charging || !r.lp.PlanActive
-		case n.Kind == model.NotifyOff:
-			return !r.lp.Connected || r.lp.Mode != "off"
+		case n.Kind == model.NotifyMode:
+			return !r.lp.Connected || n.Key != modeKey(r.lp.Mode, n.Subject)
 		}
 		return false
 	}, "No longer needed")
@@ -337,8 +340,11 @@ func (r *reminders) plugIn() {
 
 func priceText(v float64) string { return fmt.Sprintf("€%.2f", v) }
 
-// problems warns when charging stopped during a planned charge, or is off
-// in EVCC, while the next departure still needs charge.
+// problems warns when charging stopped during a planned charge, or EVCC
+// is not in Smart mode, while the car is plugged in and the next departure
+// still needs charge. The mode is only a problem after a while: another
+// automation may switch EVCC to Off while the car is away and back to
+// Smart soon after it arrives.
 func (r *reminders) problems(cur *notifyState) {
 	next, key := r.next()
 	idle := r.lp.Connected && r.lp.PlanActive && !r.lp.Charging
@@ -347,6 +353,13 @@ func (r *reminders) problems(cur *notifyState) {
 		cur.idleSince = time.Time{}
 	case cur.idleSince.IsZero():
 		cur.idleSince = r.now
+	}
+	wrongMode := r.lp.Connected && !smartMode(r.lp.Mode)
+	switch {
+	case !wrongMode:
+		cur.modeSince, cur.mode = time.Time{}, ""
+	case cur.modeSince.IsZero() || cur.mode != r.lp.Mode:
+		cur.modeSince, cur.mode = r.now, r.lp.Mode
 	}
 	if !r.settings.Problems || next == nil || !r.lp.Connected || r.lp.VehicleSoc >= float64(next.TargetSoC) || !r.allowed(true) {
 		return
@@ -359,13 +372,41 @@ func (r *reminders) problems(cur *notifyState) {
 			Title: "Charging stopped", Message: fmt.Sprintf("Charging stopped at %d%%; %s", soc, needs), Verbs: []string{model.VerbView},
 		}, false)
 	}
-	if r.lp.Mode == "off" {
-		r.send(model.Notification{
-			Key: "off:" + key, Kind: model.NotifyOff, Subject: key, Urgent: true,
-			Title: "Charging is off in EVCC", Message: "The plan won't run; " + needs, Verbs: []string{model.VerbView},
-		}, false)
+	if wrongMode && r.now.Sub(cur.modeSince) >= modeAfter {
+		n := model.Notification{
+			Key: modeKey(r.lp.Mode, key), Kind: model.NotifyMode, Subject: key, Verbs: []string{model.VerbView},
+			Title:   "EVCC is in " + modeName(r.lp.Mode) + " mode",
+			Message: "It doesn't follow the plan; " + needs + " Set EVCC to Smart.",
+		}
+		switch modeName(r.lp.Mode) {
+		case "Off":
+			n.Title, n.Urgent = "Charging is off in EVCC", true
+			n.Message = "The plan won't run; " + needs + " Set EVCC to Smart."
+		case "Fast":
+			n.Message = "It charges at full power now, not in the plan's cheapest slots or from solar. Set EVCC to Smart."
+		}
+		r.send(n, false)
 	}
 }
+
+// smartMode reports whether EVCC's loadpoint mode follows plans: Smart,
+// or no mode reported.
+func smartMode(mode string) bool { return mode == "" || mode == "smart" }
+
+// modeName is how EVCC's UI names a loadpoint mode.
+func modeName(mode string) string {
+	switch mode {
+	case "off":
+		return "Off"
+	case "now", "fast":
+		return "Fast"
+	case "smart":
+		return "Smart"
+	}
+	return mode
+}
+
+func modeKey(mode, tripKey string) string { return "mode:" + mode + ":" + tripKey }
 
 // unplugged handles the car being unplugged: early, while the next
 // departure still needs charge, or leaving with less than its target (a

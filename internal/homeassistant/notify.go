@@ -55,6 +55,12 @@ type Action struct {
 // ActionEvent is Home Assistant's event for a pressed button.
 const ActionEvent = "mobile_app_notification_action"
 
+// ErrNotAdmin means Home Assistant refused the subscription to button
+// presses: only administrators may subscribe to events like ActionEvent
+// (and to triggers), while sending notifications works for any user.
+var ErrNotAdmin = errors.New("button presses need a token of a Home Assistant administrator; " +
+	"other users can send notifications but not receive their buttons")
+
 // payload builds the notify service call.
 func payload(m Message) map[string]any {
 	data := map[string]any{"tag": m.Tag, "group": "evcc-planner"}
@@ -170,6 +176,7 @@ func (c *HTTPClient) ListenActions(ctx context.Context, ready func(), action fun
 		Type    string `json:"type"`
 		Success bool   `json:"success"`
 		Error   *struct {
+			Code    string `json:"code"`
 			Message string `json:"message"`
 		} `json:"error"`
 		Event struct {
@@ -202,6 +209,9 @@ func (c *HTTPClient) ListenActions(ctx context.Context, ready func(), action fun
 	if msg.Type != "result" || !msg.Success {
 		reason := "subscription refused"
 		if msg.Error != nil {
+			if msg.Error.Code == "unauthorized" {
+				return ErrNotAdmin
+			}
 			reason = msg.Error.Message
 		}
 		return fmt.Errorf("home assistant websocket: %s", reason)

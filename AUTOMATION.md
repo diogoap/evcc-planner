@@ -9,6 +9,34 @@ with a ready-by time. EVCC then picks the cheapest slots before that time. The
 planner never changes EVCC's mode, its limits, its cheap-charging limit
 (except a postponement from daily advice, see V2), or repeating plans.
 
+Plans need EVCC's loadpoint in **Smart** mode while the car is plugged in. In
+Off nothing charges, and in Fast EVCC charges at full power right away,
+ignoring the plan. The planner warns when it isn't Smart (see
+[Problems](#charging-problems-questions-and-ready-messages)), but never
+switches it: another automation may set EVCC to Off while the car is away.
+
+## Who does what
+
+The planner decides **how much** charge is needed **by when**; EVCC decides
+**when and how fast** to charge.
+
+Example: at 13:00 the car needs 50% by 08:00 tomorrow. This afternoon costs
+€0.20/kWh, tonight €0.25/kWh.
+
+- **The planner** writes one plan: 50% by 08:00. Solar never changes the
+  target or time for the next departure.
+- **EVCC** (Smart mode) picks the cheapest slots before 08:00: this afternoon.
+  Solar surplus covers part of that charge and the grid the rest; EVCC sets the
+  power from what is produced and used at home.
+- With a cheaper night, EVCC plans the night, but still charges from solar
+  surplus in the afternoon, so by night it needs fewer slots.
+
+The planner's own solar estimate (below) only decides whether to
+[charge later trips ahead](#charge-ahead-for-later-trips), and feeds the
+charging estimate on the price chart and the early plug-in reminder. If the sun
+disappoints, the automatic check writes the later trip's own target before
+it, and the grid fills the gap.
+
 ## Words used here
 
 | Word | Meaning |
@@ -104,9 +132,9 @@ stateDiagram-v2
   it's reached or its time has passed, or someone removed it), automatic plans
   resume and the same check writes the next target.
 - **Resume button:** confirms what will be replaced, then checks right away.
-- **Mode Off in EVCC:** not a pause. The planner never changes the mode; it
-  warns that the plan won't run, and sends a notification when a trip is at
-  risk (see [Problems](#charging-problems-questions-and-ready-messages)).
+- **EVCC not in Smart mode:** not a pause. The planner never changes the mode;
+  while the car is plugged in it warns that the plan won't be followed (see
+  [Problems](#charging-problems-questions-and-ready-messages)).
 
 ## Extra plans from daily advice
 
@@ -160,13 +188,13 @@ flowchart LR
   that rate, not at the charger's full power: 2 kW of surplus adds about 1.8
   kWh per hour to the battery. Only the charger's remaining capacity in that
   slot counts as grid energy, at the full price. Surplus below the charger's
-  minimum (6 A of 16 A, so about 1.4 kW at 3.68 kW) counts as none, as in
-  EVCC's PV mode. A trip's energy is filled from the cheapest pieces first,
+  minimum (6 A of 16 A, so about 1.4 kW at 3.68 kW) counts as none, as EVCC
+  can't charge below it. A trip's energy is filled from the cheapest pieces first,
   usually solar, so a modest sunny day covers part of a long trip and the
   rest is priced at grid rates. The same valuation applies to both A and B.
 - **Limits:** household use is one number for the whole day, while real use
   varies by hour; and EVCC picks the actual slots. The estimate assumes EVCC
-  charges from solar between plans (PV or Min+PV mode). Learning an hourly
+  charges from solar between planned slots (Smart mode). Learning an hourly
   household profile from Home Assistant's history could come later.
 - **Minimum saving** (default €0.05/kWh): A must be at least this much cheaper
   than B to start charging a trip ahead. Once a trip is charged ahead, it stays
@@ -223,6 +251,10 @@ sequenceDiagram
   Assistant and listens for `mobile_app_notification_action` events. No Home
   Assistant automation or YAML is needed, and Home Assistant never has to reach
   the planner. The connection reconnects on its own.
+- **Admin token for buttons:** Home Assistant only lets administrators
+  subscribe to these events (and to triggers), so the token's user must be an
+  administrator. Any user can send notifications: with a non-admin token they
+  arrive, but buttons do nothing, and Settings → Connections says so.
 - **View plan** opens the planner, using the **Link address** setting (the
   address your phone uses to reach it). Without one, that button is left out.
 - **Test:** **Send test notification** in Settings sends one right away.
@@ -284,13 +316,14 @@ gantt
 | --- | --- | --- |
 | **Charging stopped** | Plugged in below the next departure's minimum target, EVCC says the plan is charging now, but the car hasn't charged for 10 minutes. | "Charging stopped at 48%; Utrecht needs 52% by 17:00." |
 | **Unplugged early** | Unplugged more than 30 minutes before the next departure, below its minimum target. | "Unplugged at 48%; Utrecht needs 52% by 17:00." |
-| **Charging is off** | Plugged in below the next departure's minimum target, and EVCC's mode is Off. The Overview also warns. | "The plan won't run; Utrecht needs 52% by 17:00." |
+| **Not in Smart mode** | Plugged in below the next departure's minimum target, with EVCC's mode Off or Fast for 10 minutes (the mode may be switched back to Smart soon after the car arrives). The Overview warns right away. Never while unplugged. | Off: "The plan won't run; Utrecht needs 52% by 17:00. Set EVCC to Smart." Fast: "It charges at full power now, not in the plan's cheapest slots or from solar." |
 | **Missed target** | Unplugged within 30 minutes of the departure with less than its minimum target. Also an activity entry, even with notifications off. | "Left for Utrecht with 48% (target 52%)." |
 | **Question** | A calendar event marked Needs review, within the seven days. Buttons: **Count it** (confirm) and **Not a trip** (turn off). | "Is 'Dinner' (Thu 19:00) a car trip?" |
 | **Ready** (off by default) | Plugged in and the target reached before the departure. | "Ready for Utrecht: 64%." |
 
-Each is sent once per trip (unplugged early: once per unplug). Charging
-stopped and charging off are cleared from the phone once solved. Settings turn
+Each is sent once per trip (unplugged early: once per unplug; not in Smart
+mode: once per mode). Charging stopped and not in Smart mode are cleared from
+the phone once solved. Settings turn
 problems, questions, and ready messages on or off separately.
 
 ## Settings

@@ -170,8 +170,8 @@ As implemented (2026-11-11):
 - ✅ **Charge ahead:** within published prices, add later trips to the target when charging before the next departure is at least €0.05/kWh cheaper than at home before that trip; capped at 90%. Solar comes first: a solar kWh counts as the grid price minus the tax not paid on it (default €0.11/kWh). The UI explains a higher target.
 - ✅ **Notifications** through the Home Assistant Companion app; button presses come back over Home Assistant's websocket (no YAML). Telegram may follow.
 - ✅ **Plug-in reminders:** early (cheapest window), urgent (latest plug-in time), and too late; Remind in 30 min, Skip trip, View plan. Quiet hours 23:00–07:00; deduplicated and cleared on plug-in.
-- ✅ **Problems and questions:** charging stopped, unplugged early, charging off, missed target, Needs-review calendar events, optional ready message.
-- Decisions (2026-11-12): Automatic for existing installs; replace lower chosen plans in Automatic and On plug-in; pauses end on their own; websocket for button presses; €0.05/kWh minimum saving; quiet hours 23:00–07:00; solar valued at the grid price minus €0.11/kWh tax.
+- ✅ **Problems and questions:** charging stopped, unplugged early, EVCC not in Smart mode (only while plugged in), missed target, Needs-review calendar events, optional ready message.
+- Decisions (2026-11-12): Automatic for existing installs; replace lower chosen plans in Automatic and On plug-in; pauses end on their own; websocket for button presses; €0.05/kWh minimum saving; quiet hours 23:00–07:00; solar valued at the grid price minus €0.11/kWh tax. EVCC must be in Smart mode (it has only Off, Smart, and Fast); the planner warns but never switches the mode, since another automation sets Off while the car is away. Notification buttons need an admin token (Home Assistant only lets admins subscribe to their events).
 
 </details>
 

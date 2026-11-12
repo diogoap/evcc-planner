@@ -175,9 +175,10 @@ unplugged. It only reads, through Home Assistant's REST API.
 
 1. In Home Assistant, create a long-lived access token: your profile (bottom
    left) → **Security** → **Long-lived access tokens** → **Create token**.
-   Tokens cannot be limited to reading, so consider a separate, non-admin
-   user just for the planner. Set `HA_TOKEN` to it. The same token sends
-   phone notifications (below).
+   Tokens cannot be limited to reading. Set `HA_TOKEN` to it. The same
+   token sends phone notifications (below); for their buttons, its user must
+   be an administrator. Without notification buttons, a separate non-admin
+   user just for the planner is enough.
 2. In **Settings → Connections**, enter Home Assistant's address as the
    planner reaches it, e.g. `http://192.0.2.20:8123`, and save.
 3. Then choose the car's battery level sensor (in %) as the SoC sensor, e.g. `sensor.leaf_battery_level`; the field
@@ -215,7 +216,9 @@ Notifications go to the Home Assistant Companion app with the same
 
 Button presses (Remind later, Skip trip, Count it, Not a trip) come back over
 Home Assistant's websocket connection, which the planner opens to Home
-Assistant; Home Assistant never has to reach the planner. Settings →
+Assistant; Home Assistant never has to reach the planner. Home Assistant only
+lets administrators subscribe to button presses, so the token's user must be
+an administrator for buttons to work (sending works for any user). Settings →
 Connections shows whether that connection is up. Every message sent and
 every button press is in the activity log. The rules for each message, quiet
 hours (23:00–07:00 by default), and snoozing are in
@@ -298,6 +301,12 @@ to `main` deploy automatically, run `make verify` before pushing.
     plugged in, unless EVCC already has a plan with an equal or higher SoC or
     the charge already covers the departure.
   - **Manual:** only **Send plan to EVCC**.
+- **EVCC must be in Smart mode** while the car is plugged in: in Off nothing
+  charges, and in Fast EVCC charges at full power right away, ignoring the
+  plan. The planner never switches the mode (another automation may set it
+  to Off while the car is away); it warns on the Overview, and with a
+  notification after 10 minutes, while the car is plugged in and needs
+  charge.
 - **Charge ahead** (Automatic mode): within the published prices, later trips
   are added to the target when charging for them before the next departure
   is at least €0.05/kWh cheaper than at home just before them. Solar comes

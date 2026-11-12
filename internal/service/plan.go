@@ -380,9 +380,20 @@ func (s *Service) Plan(ctx context.Context) (*PlanView, error) {
 	if view.HomeMissing {
 		view.Warnings = append(view.Warnings, "Set your home address in Settings to calculate routes.")
 	}
-	if snap := s.snapshot(); snap.state != nil && view.Next != nil && settings.TripPlans != model.TripPlansManual {
-		if lp, ok := s.loadpoint(snap.state); ok && lp.Mode == "off" {
-			view.Warnings = append(view.Warnings, "Charging is off in EVCC, so plans for your trips won't run.")
+	// Plans only run in EVCC's Smart mode. Only while plugged in: another
+	// automation may switch EVCC to Off while the car is away.
+	if t := view.Control.Target; t != nil && !t.Covered {
+		if snap := s.snapshot(); snap.state != nil {
+			if lp, ok := s.loadpoint(snap.state); ok && lp.Connected && !smartMode(lp.Mode) {
+				w := "EVCC is in " + modeName(lp.Mode) + " mode, so it doesn't follow the plan. Set it to Smart."
+				switch modeName(lp.Mode) {
+				case "Off":
+					w = "Charging is off in EVCC, so the plan for your trips won't run. Set it to Smart."
+				case "Fast":
+					w = "EVCC is in Fast mode: it charges at full power right away, not in the plan's cheapest slots or from solar. Set it to Smart to follow the plan."
+				}
+				view.Warnings = append(view.Warnings, w)
+			}
 		}
 	}
 	if view.Advice, err = s.buildAdvice(view, result, socIn.Known); err != nil {

@@ -3,6 +3,7 @@ package homeassistant
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -70,7 +71,8 @@ func TestNotifyCallsTheMobileAppService(t *testing.T) {
 }
 
 // fakeHA speaks Home Assistant's websocket protocol: authentication, the
-// subscription, then the given events.
+// subscription, then the given events. A nil events list refuses the
+// subscription as Home Assistant does for users who are not admins.
 func fakeHA(t *testing.T, token string, events []string) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/websocket" {
@@ -92,6 +94,11 @@ func fakeHA(t *testing.T, token string, events []string) *httptest.Server {
 		wsjson.Write(ctx, conn, map[string]string{"type": "auth_ok"})
 		var sub map[string]any
 		if wsjson.Read(ctx, conn, &sub) != nil || sub["type"] != "subscribe_events" || sub["event_type"] != ActionEvent {
+			return
+		}
+		if events == nil {
+			wsjson.Write(ctx, conn, map[string]any{"id": sub["id"], "type": "result", "success": false,
+				"error": map[string]string{"code": "unauthorized", "message": "Unauthorized"}})
 			return
 		}
 		wsjson.Write(ctx, conn, map[string]any{"id": sub["id"], "type": "result", "success": true})
@@ -132,5 +139,14 @@ func TestListenActionsOverTheWebsocket(t *testing.T) {
 	err = bad.ListenActions(context.Background(), func() { t.Error("ready with a wrong token") }, func(string) {})
 	if err == nil || !strings.Contains(err.Error(), "access token rejected") {
 		t.Errorf("wrong token: %v", err)
+	}
+
+	// A user who is not an administrator may not subscribe.
+	user := fakeHA(t, "token", nil)
+	defer user.Close()
+	c = &HTTPClient{BaseURL: user.URL, Token: "token", HTTP: user.Client()}
+	err = c.ListenActions(context.Background(), func() { t.Error("ready without the subscription") }, func(string) {})
+	if !errors.Is(err, ErrNotAdmin) {
+		t.Errorf("not an admin: %v", err)
 	}
 }

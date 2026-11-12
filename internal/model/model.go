@@ -427,7 +427,7 @@ const (
 	NotifyLate      = "late"
 	NotifyStopped   = "stopped"
 	NotifyUnplugged = "unplugged"
-	NotifyOff       = "off"
+	NotifyMode      = "mode" // EVCC not in Smart mode while plugged in
 	NotifyMissed    = "missed"
 	NotifyQuestion  = "question"
 	NotifyReady     = "ready"

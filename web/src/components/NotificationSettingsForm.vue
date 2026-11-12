@@ -18,7 +18,7 @@ const toggles: { key: 'problems' | 'questions' | 'ready'; label: string; hint: s
   {
     key: 'problems',
     label: 'Charging problems',
-    hint: 'Charging stopped, unplugged early, charging off in EVCC, or a trip that left below its target.',
+    hint: 'Charging stopped, unplugged early, EVCC not in Smart mode while plugged in, or a trip that left below its target.',
   },
   {
     key: 'questions',

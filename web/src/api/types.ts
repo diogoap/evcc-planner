@@ -618,7 +618,7 @@ export type NotificationKind =
   | 'late'
   | 'stopped'
   | 'unplugged'
-  | 'off'
+  | 'mode'
   | 'missed'
   | 'question'
   | 'ready'

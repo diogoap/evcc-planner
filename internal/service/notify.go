@@ -365,8 +365,10 @@ func (s *Service) ListenNotificationActions(ctx context.Context) {
 			return
 		}
 		if err != nil && !errors.Is(err, context.Canceled) {
-			s.setListener(err, false)
-			s.Log.Warn("notification button listener", "err", err)
+			// Each new problem is logged once, not on every retry.
+			if prev := s.setListener(err, false); prev == nil || prev.Error() != err.Error() {
+				s.Log.Warn("notification button listener", "err", err)
+			}
 			sleep(ctx, backoff)
 			backoff = min(2*backoff, time.Minute)
 			continue
@@ -375,10 +377,14 @@ func (s *Service) ListenNotificationActions(ctx context.Context) {
 	}
 }
 
-func (s *Service) setListener(err error, connected bool) {
+// setListener stores the button listener's state and returns its previous
+// error.
+func (s *Service) setListener(err error, connected bool) error {
 	s.mu.Lock()
+	defer s.mu.Unlock()
+	prev := s.listenErr
 	s.listenErr, s.listenOK = err, connected
-	s.mu.Unlock()
+	return prev
 }
 
 func sleep(ctx context.Context, d time.Duration) {
@@ -404,10 +410,13 @@ func (s *Service) notificationConnection() ConnectionView {
 		c.Status, c.Detail = "not_configured", s.Clients().NotifyNote
 	case !settings.Enabled:
 		c.Status, c.Detail = "not_configured", "Off; turn them on under Settings → Notifications"
-	case s.Cfg.HomeAssistant.Mode == config.ModeStub:
-		c.Status, c.Detail = "stub", "Demo phone; press its buttons under Settings → Notifications"
+	case errors.Is(lerr, homeassistant.ErrNotAdmin):
+		c.Status, c.Detail = "error", plural(len(settings.Phones), "phone")+"; sending works, but "+lerr.Error()+
+			". Make the token's user an administrator in Home Assistant."
 	case lerr != nil:
 		c.Status, c.Detail = "error", plural(len(settings.Phones), "phone")+"; button presses: "+lerr.Error()
+	case s.Cfg.HomeAssistant.Mode == config.ModeStub:
+		c.Status, c.Detail = "stub", "Demo phone; press its buttons under Settings → Notifications"
 	case ok:
 		c.Status, c.Detail = "ok", plural(len(settings.Phones), "phone")+"; button presses connected"
 	default:

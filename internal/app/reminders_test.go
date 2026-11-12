@@ -204,20 +204,53 @@ func TestChargingProblemsAndReadyMessages(t *testing.T) {
 	ta.check()
 	ta.expectSent("-Charging stopped")
 
-	// Charging switched off in EVCC.
+	// EVCC not in Smart mode while plugged in: a warning right away, a
+	// notification after 10 minutes (another automation may switch it back
+	// to Smart soon after the car arrives).
+	warnings := func() []string {
+		t.Helper()
+		var p struct{ Warnings []string }
+		ta.json("GET", "/api/plan", nil, http.StatusOK, &p)
+		return p.Warnings
+	}
 	ev.mod = func(lp *evcc.Loadpoint) { lp.Mode = "off" }
 	ta.check()
-	ta.expectSent("Charging is off in EVCC")
-	var p struct{ Warnings []string }
-	ta.setting("tripPlans", model.TripPlansAutomatic)
-	ta.json("GET", "/api/plan", nil, http.StatusOK, &p)
-	if len(p.Warnings) != 1 || !strings.Contains(p.Warnings[0], "Charging is off in EVCC") {
-		t.Errorf("warnings = %v", p.Warnings)
+	ta.expectSent()
+	if w := warnings(); len(w) != 1 || !strings.HasPrefix(w[0], "Charging is off in EVCC") {
+		t.Errorf("warnings = %v", w)
 	}
-	ta.setting("tripPlans", model.TripPlansManual)
-	ev.mod = nil
+	ta.at(time.Date(2026, 11, 9, 19, 20, 0, 0, ams))
+	ta.check()
+	ta.expectSent("Charging is off in EVCC")
+	if n := ta.notification("mode:off:recurring:1:2026-11-10"); !n.Urgent ||
+		n.Message != "The plan won't run; School drop-off needs 42% by Tue 07:48. Set EVCC to Smart." {
+		t.Errorf("off = %+v", n)
+	}
+	// Fast mode ignores the plan's cheapest slots.
+	ev.mod = func(lp *evcc.Loadpoint) { lp.Mode = "now" }
 	ta.check()
 	ta.expectSent("-Charging is off in EVCC")
+	if w := warnings(); len(w) != 1 || !strings.HasPrefix(w[0], "EVCC is in Fast mode") {
+		t.Errorf("warnings = %v", w)
+	}
+	ta.at(time.Date(2026, 11, 9, 19, 30, 0, 0, ams))
+	ta.check()
+	ta.expectSent("EVCC is in Fast mode")
+	ev.mod = nil
+	ta.check()
+	ta.expectSent("-EVCC is in Fast mode")
+
+	// Off while the car is away is expected: no warning, no notification.
+	ev.mod = func(lp *evcc.Loadpoint) { lp.Mode = "off" }
+	ta.plug(false, 0)
+	ta.phone().Take()
+	ta.at(time.Date(2026, 11, 9, 20, 0, 0, 0, ams))
+	ta.check()
+	ta.expectSent()
+	if w := warnings(); len(w) != 0 {
+		t.Errorf("warnings while away = %v", w)
+	}
+	ev.mod = nil
 
 	// Charged to the target while plugged in: ready (optional).
 	ta.plug(true, 45)

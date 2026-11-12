@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strings"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/diogoap/evcc-planner/internal/homeassistant"
 	"github.com/diogoap/evcc-planner/internal/model"
+	"github.com/diogoap/evcc-planner/internal/service"
 )
 
 func (ta *testApp) phone() *homeassistant.NotifyStub {
@@ -172,4 +174,37 @@ func connection(ta *testApp, name string) connectionStatus {
 	}
 	ta.t.Fatalf("no connection %q in %+v", name, list)
 	return connectionStatus{}
+}
+
+// refusingListener answers like Home Assistant for a user who is not an
+// administrator.
+type refusingListener struct{}
+
+func (refusingListener) ListenActions(context.Context, func(), func(string)) error {
+	return homeassistant.ErrNotAdmin
+}
+
+func TestButtonsNeedAnAdminToken(t *testing.T) {
+	ta := newTestApp(t, "")
+	ta.notifications(nil)
+	ta.app.Service.UseIntegrations(func(i *service.Integrations) { i.Actions = refusingListener{} })
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { ta.app.Service.ListenNotificationActions(ctx); close(done) }()
+	defer func() { cancel(); <-done }()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		c := connection(ta, "Phone notifications")
+		if c.Status == "error" {
+			if !strings.Contains(c.Detail, "1 phone; sending works, but button presses need a token of a Home Assistant administrator") ||
+				!strings.HasSuffix(c.Detail, "Make the token's user an administrator in Home Assistant.") {
+				t.Errorf("detail = %q", c.Detail)
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("connection = %+v", c)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 }
