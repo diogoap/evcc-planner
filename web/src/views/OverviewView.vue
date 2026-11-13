@@ -213,7 +213,8 @@ function cancelAdjustment(id: number) {
             :days="days"
             :advice="adviceDays"
             :selected="panelDate ?? advice?.date"
-            @select="openDay"
+            @select="(d) => (selected = d)"
+            @open="openDay"
           />
           <p v-if="weekView === 'columns' && adviceDays.length" class="small muted m-0 mt-2 week-legend">
             <AppIcon name="bolt" /> charge ahead · <AppIcon name="clock" /> defer ·

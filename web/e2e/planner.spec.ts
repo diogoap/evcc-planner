@@ -70,7 +70,7 @@ test('the week and the chart show fewer days on request; the advice still covers
   await expect(summary).not.toHaveAttribute('aria-label', /Fri 13/)
 })
 
-test('the week shows as columns or as a list, remembered on this device', async ({ page }) => {
+test('the week shows as columns or as a list, remembered on this device', async ({ page, isMobile }) => {
   await page.goto('/')
   await expect(page.getByTestId('week-view-columns')).toHaveAttribute('aria-pressed', 'true')
   await page.getByTestId('week-view-list').click()
@@ -85,6 +85,16 @@ test('the week shows as columns or as a list, remembered on this device', async 
   await page.reload()
   await expect(page.getByTestId('week-view-list')).toHaveAttribute('aria-pressed', 'true')
   await page.getByTestId('day-2026-11-10').click()
+  if (!isMobile) {
+    // With every column showing, a row only picks the advice card's day;
+    // the button in the last column opens the day.
+    await expect(page.getByTestId('advice-card').locator('#advice-title')).toContainText("Tuesday's advice")
+    await expect(page.getByTestId('day-panel')).toHaveCount(0)
+    await page.getByTestId('open-2026-11-10').click()
+  } else {
+    // Phones stack the row, which opens the day itself.
+    await expect(page.getByTestId('open-2026-11-10')).toBeHidden()
+  }
   await expect(page.getByTestId('day-panel')).toContainText('Tuesday 10 November')
   await page.keyboard.press('Escape')
   await page.getByTestId('week-view-columns').click()

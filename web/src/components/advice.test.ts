@@ -359,14 +359,39 @@ describe('WeekList', () => {
     expect(row.get('[data-testid=solar] [role=img]').attributes('aria-label')).toBe('Solar forecast')
     expect(row.find('[data-testid=badge-sun]').exists()).toBe(false)
     expect(row.attributes('aria-pressed')).toBe('true')
+    // Narrow screens: the stacked row opens the day.
     await row.trigger('click')
-    expect(w.emitted('select')).toEqual([['2026-11-10']])
+    expect(w.emitted('open')).toEqual([['2026-11-10']])
+    expect(w.emitted('select')).toBeUndefined()
 
     const calm = mount(WeekList, {
       props: { days, advice: [advice({ weather: { ...weather, sunshinePct: 50, windBft: 4 } })] },
     })
     expect(calm.get('[data-testid=badge-sunshine]').classes()).not.toContain('tone-ok')
     expect(calm.get('[data-testid=badge-wind]').classes()).not.toContain('tone-ok')
+  })
+
+  it('on wide screens, a row selects its day and the last column opens it', async () => {
+    const matchMedia = window.matchMedia
+    window.matchMedia = vi.fn().mockReturnValue({
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })
+    try {
+      const day = { date: '2026-11-10', distanceKm: 0, energyKWh: 0, tripCount: 0 } as Day
+      const w = mount(WeekList, { props: { days: [day], advice: [advice({})] } })
+      await w.get('[data-testid="day-2026-11-10"]').trigger('click')
+      expect(w.emitted('select')).toEqual([['2026-11-10']])
+      expect(w.emitted('open')).toBeUndefined()
+      const open = w.get('[data-testid="open-2026-11-10"]')
+      expect(open.attributes('aria-label')).toBe('Open Tuesday 10 November')
+      await open.trigger('click')
+      expect(w.emitted('open')).toEqual([['2026-11-10']])
+      expect(w.emitted('select')).toHaveLength(1)
+    } finally {
+      window.matchMedia = matchMedia
+    }
   })
 })
 
