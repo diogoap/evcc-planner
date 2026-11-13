@@ -6,6 +6,7 @@ import type { AdjustmentKind, Place, SendOption, Trip } from '../api/types'
 import AdviceCard from '../components/AdviceCard.vue'
 import AppIcon from '../components/AppIcon.vue'
 import ChartCards from '../components/ChartCards.vue'
+import DaysSelect from '../components/DaysSelect.vue'
 import DayPanel from '../components/DayPanel.vue'
 import ErrorBanner from '../components/ErrorBanner.vue'
 import PageSkeleton from '../components/PageSkeleton.vue'
@@ -17,7 +18,7 @@ import WeekList from '../components/WeekList.vue'
 import WeekStrip from '../components/WeekStrip.vue'
 import { historyLink } from '../lib/activity'
 import { dayShort } from '../lib/format'
-import { chartsApart, layout } from '../layout'
+import { chartsApart, layout, shownDays } from '../layout'
 import { expectedCharging } from '../lib/status'
 import { mutate, notify, refresh, refreshNow, resumeAutomaticPlans, state } from '../store'
 
@@ -35,6 +36,8 @@ const places = ref<Place[]>([])
 // Sending works without a SoC reading: EVCC applies the plan once the car is plugged in.
 const canSend = computed(() => !!plan.value?.next && !!status.value?.reachable)
 
+// The days the week shows (Days shown); the advice still covers all seven.
+const days = computed(() => plan.value?.days.slice(0, shownDays.value) ?? [])
 const adviceDays = computed(() => (plan.value?.advice.enabled ? plan.value.advice.days : []))
 const selected = ref<string | null>(null)
 // The selected day, else the first day with an action or a suggestion.
@@ -163,9 +166,10 @@ function cancelAdjustment(id: number) {
         />
 
         <section class="ov-week" aria-labelledby="week-title">
-          <div class="card-title">
-            <h2 id="week-title" class="h-inherit">This week</h2>
+          <div class="card-title week-head">
+            <h2 id="week-title" class="h-inherit">Next {{ days.length }} days</h2>
             <span class="row gap-2">
+              <DaysSelect />
               <span class="segmented" role="group" aria-label="Week view">
                 <button
                   type="button"
@@ -197,14 +201,14 @@ function cancelAdjustment(id: number) {
           </div>
           <WeekStrip
             v-if="weekView === 'columns'"
-            :days="plan.days"
+            :days="days"
             :advice="adviceDays"
             :selected="panelDate ?? advice?.date"
             @select="openDay"
           />
           <WeekList
             v-else
-            :days="plan.days"
+            :days="days"
             :advice="adviceDays"
             :selected="panelDate ?? advice?.date"
             @select="openDay"
@@ -232,7 +236,7 @@ function cancelAdjustment(id: number) {
 
         <!-- On phones the charts get their own page when they would not fit. -->
         <div v-if="!chartsApart" ref="chartsBox" class="ov-charts">
-          <ChartCards :plan="plan" :status="status" @day="openDay" />
+          <ChartCards :plan="plan" :status="status" :shown-days="shownDays" @day="openDay" />
         </div>
       </div>
     </template>
@@ -324,6 +328,17 @@ function cancelAdjustment(id: number) {
 @media (min-width: 720px) {
   .week-legend {
     display: none;
+  }
+}
+
+/* Phones: the title on its own line, the controls in one row below it. */
+@media (max-width: 640px) {
+  .week-head {
+    flex-wrap: wrap;
+  }
+
+  .week-head h2 {
+    flex-basis: 100%;
   }
 }
 </style>

@@ -6,7 +6,7 @@ import { dayShort, km, kwh } from '../lib/format'
 import { dayLabel, dayTile, reviewText } from '../lib/status'
 import AppIcon from './AppIcon.vue'
 
-// The seven days at a glance: the charge each day's departures need and its
+// The days at a glance: the charge each day's departures need and its
 // advice. Phones show a word and an icon per day; wide screens add distance,
 // energy, the first departure, and the price. Screen readers get all of it,
 // in words, on every screen.
@@ -37,7 +37,7 @@ const tiles = computed(() =>
 </script>
 
 <template>
-  <div class="week" role="group" aria-label="Next seven days">
+  <div class="week" role="group" :aria-label="`Next ${days.length} days`" :style="{ '--days': days.length }">
     <button
       v-for="t in tiles"
       :key="t.day.date"
@@ -90,7 +90,7 @@ const tiles = computed(() =>
 <style scoped>
 .week {
   display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--days, 7), minmax(0, 1fr));
   gap: var(--space-1);
 }
 

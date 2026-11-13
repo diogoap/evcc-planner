@@ -44,6 +44,32 @@ test('overview shows status, the next departure, and seven days', async ({ page,
   await shot(page, 'overview')
 })
 
+test('the week and the chart show fewer days on request; the advice still covers all seven', async ({
+  page,
+  isMobile,
+}) => {
+  await page.goto('/')
+  const title = page.locator('#week-title')
+  await expect(title).toHaveText('Next 7 days')
+  await page.getByTestId('days-shown').selectOption('4')
+  await expect(title).toHaveText('Next 4 days')
+  await expect(page.getByTestId('day-2026-11-12')).toBeVisible()
+  await expect(page.getByTestId('day-2026-11-13')).toHaveCount(0)
+  // The advice still steps through every day, hidden ones included.
+  const advice = page.getByTestId('advice-card')
+  for (let i = 0; i < 6; i++) await advice.getByRole('button', { name: 'Next day' }).click()
+  await expect(advice.locator('#advice-title')).toContainText("Sunday's advice")
+  // Remembered on this device; the chart ends with the last day shown (on
+  // its own page on phones, with the same choice).
+  await page.reload()
+  await expect(title).toHaveText('Next 4 days')
+  if (isMobile) await page.getByTestId('bottom-nav').getByRole('link', { name: 'Charts' }).click()
+  await expect(page.getByTestId('days-shown')).toHaveValue('4')
+  const summary = page.getByTestId('chart-summary')
+  await expect(summary).toHaveAttribute('aria-label', /on Thu 12/)
+  await expect(summary).not.toHaveAttribute('aria-label', /Fri 13/)
+})
+
 test('the week shows as columns or as a list, remembered on this device', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByTestId('week-view-columns')).toHaveAttribute('aria-pressed', 'true')

@@ -7,7 +7,7 @@ import { dayLabel, reviewText } from '../lib/status'
 import AdviceBadges from './AdviceBadges.vue'
 import AppIcon from './AppIcon.vue'
 
-// The seven days as a list, with everything about each day: distance, energy,
+// The days as a list, with everything about each day: distance, energy,
 // the charge its departures need, the price (the lowest slot over the average
 // on published days, else the average), the weather (sunshine and wind from
 // KNMI's outlook, every day, plus EVCC's local solar forecast where it has
@@ -34,7 +34,7 @@ const rows = computed(() => {
 </script>
 
 <template>
-  <div class="card week-list" role="group" aria-label="Next seven days">
+  <div class="card week-list" role="group" :aria-label="`Next ${days.length} days`">
     <div class="wl-head" aria-hidden="true">
       <span>Day</span>
       <span class="wl-num"><AppIcon name="route" />Driving</span>

@@ -18,7 +18,7 @@ import {
 } from '../lib/planchart'
 
 // SoC above prices on one time axis, from the current hour (or `from`, if
-// later) to `to`: the seven days, or one day in the day panel. Two charts with
+// later) to `to`: the days shown, or one day in the day panel. Two charts with
 // equal axis widths, so their times line up; a readout above them follows the
 // pointer or finger (now by default). A click or tap names its day.
 const props = defineProps<{

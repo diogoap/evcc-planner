@@ -1,14 +1,26 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { Plan, Status } from '../api/types'
+import { dayRange } from '../lib/planchart'
 import { expectedCharging } from '../lib/status'
 import PlanChart from './PlanChart.vue'
 import PriceChart from './PriceChart.vue'
 
 // The week's charts: SoC over prices, and the published prices in detail.
 // On the Overview, or on their own page on phones when they would not fit.
-const props = defineProps<{ plan: Plan; status: Status | null }>()
+// The SoC and prices chart covers the first `shownDays` days (all seven by
+// default).
+const props = defineProps<{ plan: Plan; status: Status | null; shownDays?: number }>()
 const emit = defineEmits<{ day: [date: string] }>()
+
+const days = computed(() => props.plan.days.slice(0, props.shownDays ?? props.plan.days.length))
+// The end of the last day shown.
+const to = computed(() => {
+  const last = days.value[days.value.length - 1]
+  return last && days.value.length < props.plan.days.length
+    ? new Date(dayRange(last.date).end).toISOString()
+    : props.plan.to
+})
 
 const expected = computed(() => expectedCharging(props.plan))
 const adviceDays = computed(() => (props.plan.advice.enabled ? props.plan.advice.days : []))
@@ -26,11 +38,11 @@ const adviceDays = computed(() => (props.plan.advice.enabled ? props.plan.advice
         :solar="status?.solar ?? []"
         :charging="expected"
         :advice="adviceDays"
-        :dates="plan.days.map((d) => d.date)"
-        :days="plan.days"
+        :dates="days.map((d) => d.date)"
+        :days="days"
         :reserve="plan.settings.arrivalReservePct"
         :now="plan.now"
-        :to="plan.to"
+        :to="to"
         @day="(d) => emit('day', d)"
       />
       <p v-else class="muted small m-0">Shown once EVCC has read the SoC or published prices.</p>
