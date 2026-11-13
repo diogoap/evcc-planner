@@ -63,6 +63,7 @@
   /* Charts: Chart.js reads these (plain colours only). */
   --chart-text: var(--muted);
   --chart-grid: rgba(40, 41, 62, 0.08);
+  --chart-day: rgba(40, 41, 62, 0.35); /* the line between days */
   --chart-soc: var(--accent-ui);
   --chart-required: var(--info);
   --chart-reserve: var(--muted);
@@ -102,6 +103,7 @@
     --shadow: none;
     --shadow-lg: 0 8px 28px rgba(0, 0, 0, 0.5);
     --chart-grid: rgba(232, 233, 241, 0.08);
+    --chart-day: rgba(232, 233, 241, 0.35);
     --chart-price: #a998ff;
     --chart-solar: #f5c04a;
     --chart-label-text: #0b0f1e;

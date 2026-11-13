@@ -2,7 +2,7 @@
 import type { ChartDataset, Plugin } from 'chart.js'
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import type { Block, DayAdvice, Rate, SolarPoint, TimelinePoint } from '../api/types'
-import { alpha, Chart, cssVar, hourTicks, onThemeChange, timeTick } from '../lib/chart'
+import { alpha, Chart, cssVar, dayGrid, hourTicks, onThemeChange, timeTick } from '../lib/chart'
 import { localDate } from '../lib/format'
 import {
   awaySpans,
@@ -208,7 +208,7 @@ function common(kind: 'soc' | 'price', text: string, grid: string) {
         ticks: { display: kind === 'price', callback: timeTick, color: text, maxRotation: 0, autoSkip: true },
         // Midnights across the week; every three hours within a day.
         afterBuildTicks: hourTicks(to.value - from.value <= 36 * 3_600_000 ? 3 : 24),
-        grid: { color: grid },
+        grid: dayGrid(grid, cssVar('--chart-day')),
         border: { display: false },
       },
     },

@@ -2,7 +2,7 @@
 import type { Chart as ChartJS, Plugin, ScriptableContext } from 'chart.js'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { Block, Rate } from '../api/types'
-import { alpha, Chart, cssVar, hourTicks, onThemeChange, timeTick } from '../lib/chart'
+import { alpha, Chart, cssVar, dayGrid, hourTicks, onThemeChange, timeTick } from '../lib/chart'
 import { clock, dayShort, localDate, price } from '../lib/format'
 import { awayAt, awaySpans, priceStats } from '../lib/planchart'
 
@@ -217,7 +217,7 @@ function render() {
           max: last ? ms(last.end) : undefined,
           ticks: { callback: timeTick, color: text, maxRotation: 0, autoSkip: true },
           afterBuildTicks: hourTicks(3),
-          grid: { color: grid },
+          grid: dayGrid(grid, cssVar('--chart-day')),
           border: { display: false },
         },
         y: {

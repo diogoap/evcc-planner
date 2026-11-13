@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { alpha, onThemeChange } from './chart'
+import { alpha, dayGrid, onThemeChange } from './chart'
 
 describe('alpha', () => {
   it('adds an opacity to a #rrggbb token colour', () => {
@@ -29,5 +29,17 @@ describe('onThemeChange', () => {
     stop()
     media.dispatchEvent(new Event('change'))
     expect(render).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('dayGrid', () => {
+  it('draws a clear line at local midnight and faint ones at other ticks', () => {
+    const g = dayGrid('faint', 'clear')
+    // 23:00 UTC on 9 November is midnight in Amsterdam.
+    const midnight = { tick: { value: Date.parse('2026-11-09T23:00:00Z') } }
+    const morning = { tick: { value: Date.parse('2026-11-10T05:00:00Z') } }
+    expect([g.color(midnight), g.lineWidth(midnight)]).toEqual(['clear', 1.5])
+    expect([g.color(morning), g.lineWidth(morning)]).toEqual(['faint', 1])
+    expect(g.color({})).toBe('faint')
   })
 })

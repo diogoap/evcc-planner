@@ -51,6 +51,21 @@ export function onThemeChange(render: () => void) {
   return () => media.removeEventListener('change', render)
 }
 
+const isMidnight = (t: number) => clock(t) === '00:00'
+
+/**
+ * Time-axis grid lines: a clear divider at each local midnight, faint lines
+ * at the other ticks.
+ */
+export function dayGrid(grid: string, divider: string) {
+  type Ctx = { tick?: { value: number } }
+  const midnight = (ctx: Ctx) => !!ctx.tick && isMidnight(ctx.tick.value)
+  return {
+    color: (ctx: Ctx) => (midnight(ctx) ? divider : grid),
+    lineWidth: (ctx: Ctx) => (midnight(ctx) ? 1.5 : 1),
+  }
+}
+
 /** Axis label: weekday at local midnight, otherwise HH:MM. */
 export function timeTick(value: number | string) {
   const t = Number(value)
