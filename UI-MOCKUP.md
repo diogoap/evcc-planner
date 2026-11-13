@@ -36,9 +36,12 @@ SOC AND PRICES                                 incl. VAT
 Tue 10, 03:00 · SoC 42% · EUR 0.19/kWh published   <- readout
 [SoC:    projected line, ^ level each departure needs,
          -- arrival reserve, shaded away periods with
-         trip names, charging windows, | now           ]
+         trip names, charging windows, | now; above
+         it, each day's driving distance and energy
+         (icons and values, numbers only where narrow) ]
 [Prices: published slots solid, later days' estimates
-         dashed, expected charging shaded, solar forecast]
+         dashed, expected charging shaded, solar forecast;
+         above it, each day's KNMI sunshine and wind     ]
   Mon    Tue    Wed    Thu    Fri    Sat    Sun
 
 PUBLISHED PRICES                               incl. VAT

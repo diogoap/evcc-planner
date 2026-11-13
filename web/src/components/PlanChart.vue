@@ -1,16 +1,20 @@
 <script setup lang="ts">
 import type { ChartDataset, Plugin } from 'chart.js'
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
-import type { Block, DayAdvice, Rate, SolarPoint, TimelinePoint } from '../api/types'
+import type { Block, Day, DayAdvice, Rate, SolarPoint, TimelinePoint } from '../api/types'
 import { alpha, Chart, cssVar, dayGrid, hourTicks, onThemeChange, timeTick } from '../lib/chart'
 import { localDate } from '../lib/format'
+import { iconPaths, type IconName } from '../lib/icons'
 import {
   awaySpans,
   chartSummary,
+  driveTitles,
   priceSpans,
   readout,
   type ChartData,
   type EstimateSpan,
+  type TitleSpan,
+  weatherTitles,
 } from '../lib/planchart'
 
 // SoC above prices on one time axis, from the current hour (or `from`, if
@@ -30,6 +34,8 @@ const props = defineProps<{
   now: string
   to: string
   from?: string
+  /** Days whose driving distance and energy title the SoC chart. */
+  days?: Day[]
   /** Smaller, without the legend (the day panel). */
   compact?: boolean
 }>()
@@ -54,9 +60,16 @@ const data = computed<ChartData>(() => ({
   advice: props.advice,
   solar: props.solar,
   charging: props.charging,
+  days: props.days,
 }))
 const away = computed(() => awaySpans(props.blocks, from.value, to.value))
 const spans = computed(() => priceSpans(props.slots, props.dates, props.advice, from.value, to.value))
+// Each day's figures above the charts: driving above SoC, KNMI's sunshine and
+// wind above prices (the day panel shows those beside its chart).
+const titles = computed(() => ({
+  soc: driveTitles(props.days ?? [], from.value, to.value),
+  price: props.compact ? [] : weatherTitles(props.advice, from.value, to.value),
+}))
 const departures = computed(() => props.blocks.filter((b) => Date.parse(b.departAt) >= from.value))
 const hasSolar = computed(() => props.solar.some((p) => p.kw > 0))
 
@@ -120,6 +133,57 @@ const estimates = (basis: EstimateSpan['basis']) => spans.value.estimates.filter
 
 const font = () => `600 11px ${cssVar('--font')}`
 
+// The app's icons as canvas paths, as next to these figures elsewhere; made on
+// first use.
+const icons = new Map<IconName, Path2D[]>()
+const ICON = 12
+const GAP = 8
+// The strip above a chart that titles each day with its figures.
+const TITLE = 18
+
+// Each day's figures in the strip above the chart, centred over its day: icon
+// and value for each, or shorter values where a day is narrow, or only the
+// first, or nothing.
+function drawTitles(
+  ctx: CanvasRenderingContext2D,
+  area: { top: number },
+  x: { getPixelForValue(v: number): number },
+  spans: TitleSpan[],
+) {
+  const y = area.top - TITLE / 2
+  ctx.font = font()
+  ctx.textAlign = 'left'
+  ctx.textBaseline = 'middle'
+  ctx.fillStyle = ctx.strokeStyle = cssVar('--chart-text')
+  ctx.lineWidth = 2
+  ctx.lineCap = ctx.lineJoin = 'round'
+  const width = (texts: string[]) =>
+    texts.reduce((w, t) => w + ICON + 3 + ctx.measureText(t).width, 0) + GAP * (texts.length - 1)
+  for (const s of spans) {
+    const [x0, x1] = [x.getPixelForValue(s.start), x.getPixelForValue(s.end)]
+    const texts = [s.items.map((i) => i.text), s.items.map((i) => i.short), [s.items[0]!.short]].find(
+      (t) => width(t) + 6 < x1 - x0,
+    )
+    if (!texts) continue
+    let left = (x0 + x1) / 2 - width(texts) / 2
+    texts.forEach((text, i) => {
+      const icon = s.items[i]!.icon
+      if (!icons.has(icon))
+        icons.set(
+          icon,
+          iconPaths[icon].map((d) => new Path2D(d)),
+        )
+      ctx.save()
+      ctx.translate(left, y - ICON / 2)
+      ctx.scale(ICON / 24, ICON / 24)
+      for (const p of icons.get(icon)!) ctx.stroke(p)
+      ctx.restore()
+      ctx.fillText(text, left + ICON + 3, y)
+      left += ICON + 3 + ctx.measureText(text).width + GAP
+    })
+  }
+}
+
 // Away periods (named on the SoC chart), days without prices, the "now" line,
 // and the pointer line.
 function bands(kind: 'soc' | 'price'): Plugin<'line'> {
@@ -169,6 +233,7 @@ function bands(kind: 'soc' | 'price'): Plugin<'line'> {
         ctx.stroke()
       }
       ctx.save()
+      drawTitles(ctx, area, x, titles.value[kind])
       mark(nowMs.value, cssVar('--chart-now'), [3, 3])
       if (cursor.value != null) mark(cursor.value, alpha(cssVar('--chart-now'), 0.6), [])
       ctx.restore()
@@ -198,7 +263,6 @@ function common(kind: 'soc' | 'price', text: string, grid: string) {
     events: ['mousemove', 'mouseout', 'click', 'touchstart', 'touchmove'] as (
       'mousemove' | 'mouseout' | 'click' | 'touchstart' | 'touchmove'
     )[],
-    layout: { padding: { top: kind === 'soc' ? 4 : 0 } },
     plugins: { legend: { display: false }, tooltip: { enabled: false } },
     scales: {
       x: {
@@ -257,6 +321,7 @@ function socChart(canvas: HTMLCanvasElement) {
     data: { datasets },
     options: {
       ...c,
+      layout: { padding: { top: titles.value.soc.length ? TITLE : 4 } },
       scales: {
         ...c.scales,
         y: {
@@ -345,6 +410,7 @@ function priceChart(canvas: HTMLCanvasElement) {
     data: { datasets },
     options: {
       ...c,
+      layout: { padding: { top: titles.value.price.length ? TITLE : 0 } },
       scales: {
         ...c.scales,
         y: {
@@ -381,7 +447,10 @@ onMounted(() => {
   render()
   stopTheme = onThemeChange(render)
 })
-watch(() => [props.timeline, props.blocks, props.slots, props.solar, props.charging, props.advice], render)
+watch(
+  () => [props.timeline, props.blocks, props.slots, props.solar, props.charging, props.advice, props.days],
+  render,
+)
 // The pointer line moves on both charts.
 watch(cursor, () => charts.forEach((c) => c.draw()))
 onUnmounted(() => {
@@ -394,8 +463,8 @@ onUnmounted(() => {
   <div class="plan-chart" :class="{ compact }">
     <p class="chart-readout small num" data-testid="chart-readout">{{ line }}</p>
     <div role="img" :aria-label="summary" data-testid="chart-summary">
-      <div class="chart-soc"><canvas ref="socCanvas" /></div>
-      <div class="chart-price"><canvas ref="priceCanvas" /></div>
+      <div class="chart-soc" :class="{ titled: titles.soc.length }"><canvas ref="socCanvas" /></div>
+      <div class="chart-price" :class="{ titled: titles.price.length }"><canvas ref="priceCanvas" /></div>
     </div>
     <div v-if="!compact" class="chart-legend" role="group" aria-label="Show or hide">
       <button
@@ -433,6 +502,15 @@ onUnmounted(() => {
 
 .chart-soc {
   height: 150px;
+}
+
+/* Taller by the strip of figures above (TITLE), so the plot keeps its size. */
+.chart-soc.titled {
+  height: 168px;
+}
+
+.chart-price.titled {
+  height: 158px;
 }
 
 .chart-price {

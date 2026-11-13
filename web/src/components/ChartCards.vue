@@ -27,6 +27,7 @@ const adviceDays = computed(() => (props.plan.advice.enabled ? props.plan.advice
         :charging="expected"
         :advice="adviceDays"
         :dates="plan.days.map((d) => d.date)"
+        :days="plan.days"
         :reserve="plan.settings.arrivalReservePct"
         :now="plan.now"
         :to="plan.to"

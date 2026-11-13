@@ -32,6 +32,11 @@ test('overview shows status, the next departure, and seven days', async ({ page,
   if (isMobile) await page.getByTestId('bottom-nav').getByRole('link', { name: 'Charts' }).click()
   await expect(page.getByTestId('price-readout')).toHaveText(/^Now · €0\.\d\d\/kWh$/)
   await expect(page.getByTestId('price-summary')).toContainText('lowest €0.')
+  // The SoC chart labels each day's driving distance.
+  await expect(page.getByTestId('chart-summary')).toHaveAttribute(
+    'aria-label',
+    /Driving .*100 km and 18\.0 kWh on Tue 10/,
+  )
   await page.goto('/trips#day-2026-11-10')
   await expect(page.getByTestId('trip-recurring:1:2026-11-10').getByTestId('departure-target')).toHaveText(
     'Needs 42% at departure',

@@ -1,16 +1,18 @@
 import { describe, expect, it } from 'vitest'
-import type { Block, DayAdvice, Rate, TimelinePoint } from '../api/types'
+import type { Block, Day, DayAdvice, Rate, TimelinePoint, WeatherDay } from '../api/types'
 import {
   awaySpans,
   chargingWindows,
   chartSummary,
   dayRange,
+  driveTitles,
   priceAt,
   priceSpans,
   priceStats,
   readout,
   socAt,
   solarAt,
+  weatherTitles,
   type ChartData,
 } from './planchart'
 
@@ -40,13 +42,24 @@ const slots: Rate[] = [
   { start: '2026-11-10T22:00:00Z', end: '2026-11-10T23:00:00Z', value: 0.22 },
 ]
 
-const day = (date: string, price?: DayAdvice['price']) => ({ date, price }) as DayAdvice
+const day = (date: string, price?: DayAdvice['price'], weather?: Partial<WeatherDay>) =>
+  ({ date, price, weather }) as DayAdvice
 const advice = [
-  day('2026-11-10', { value: 0.2, basis: 'published', detail: '', stale: false }),
-  day('2026-11-11', { value: 0.25, basis: 'weekly', detail: 'weekly average', stale: false }),
+  day(
+    '2026-11-10',
+    { value: 0.2, basis: 'published', detail: '', stale: false },
+    { sunshinePct: 40, windBft: 5 },
+  ),
+  day('2026-11-11', { value: 0.25, basis: 'weekly', detail: 'weekly average', stale: false }, { windBft: 3 }),
   day('2026-11-12', { value: 0.3, basis: 'estimate', detail: 'Tibber outlook', stale: false }),
 ]
 const dates = ['2026-11-09', '2026-11-10', '2026-11-11', '2026-11-12', '2026-11-13']
+const days = [
+  { date: '2026-11-09', distanceKm: 12, energyKWh: 2.2 },
+  { date: '2026-11-10', distanceKm: 100, energyKWh: 18 },
+  { date: '2026-11-11', distanceKm: 0, energyKWh: 0 },
+  { date: '2026-11-12', distanceKm: 6.5, energyKWh: 1.2 },
+] as Day[]
 
 const data: ChartData = {
   timeline,
@@ -58,6 +71,7 @@ const data: ChartData = {
     { time: '2026-11-10T12:00:00Z', kw: 3 },
   ],
   charging: [{ start: '2026-11-09T23:00:00Z', end: '2026-11-09T23:45:00Z', value: 0.17 }],
+  days,
 }
 
 describe('values at a moment', () => {
@@ -97,6 +111,29 @@ describe('spans', () => {
       { start: t('2026-11-11T23:00:00Z'), end: t('2026-11-12T23:00:00Z'), value: 0.3, basis: 'estimate' },
     ])
     expect(missing).toEqual([{ start: t('2026-11-12T23:00:00Z'), end: t('2026-11-13T23:00:00Z') }])
+  })
+
+  it('titles each day with trips by its distance and energy, its day clipped to the chart', () => {
+    const titles = driveTitles(days, t('2026-11-09T18:00:00Z'), t('2026-11-12T12:00:00Z'))
+    expect(titles.map((s) => [s.start, s.end])).toEqual([
+      [t('2026-11-09T18:00:00Z'), t('2026-11-09T23:00:00Z')],
+      [t('2026-11-09T23:00:00Z'), t('2026-11-10T23:00:00Z')],
+      [t('2026-11-11T23:00:00Z'), t('2026-11-12T12:00:00Z')],
+    ])
+    expect(titles[1]!.items).toEqual([
+      { icon: 'route', text: '100 km', short: '100', label: '100 km' },
+      { icon: 'bolt', text: '18.0 kWh', short: '18.0', label: '18.0 kWh' },
+    ])
+    // Days before the chart are left out.
+    expect(driveTitles(days, t('2026-11-10T23:00:00Z'), t('2026-11-12T23:00:00Z'))).toHaveLength(1)
+  })
+
+  it('titles each day by the sunshine and wind it has', () => {
+    const titles = weatherTitles(advice, t('2026-11-09T18:00:00Z'), t('2026-11-14T23:00:00Z'))
+    expect(titles.map((s) => s.items.map((i) => `${i.icon} ${i.text} (${i.short})`))).toEqual([
+      ['sun 40% (40)', 'wind 5 Bft (5)'],
+      ['wind 3 Bft (3)'],
+    ])
   })
 
   it('clips away periods to the chart', () => {
@@ -159,8 +196,10 @@ describe('text', () => {
   it('summarises the chart for screen readers', () => {
     expect(chartSummary(data, dates, t('2026-11-09T18:00:00Z'), t('2026-11-14T23:00:00Z'))).toBe(
       'Projected SoC 38% now, lowest 38% at Mon 09 19:00. Departures need up to 42%. ' +
+        'Driving 12 km and 2.2 kWh on Mon 09, 100 km and 18.0 kWh on Tue 10, 6.5 km and 1.2 kWh on Thu 12. ' +
         'Published prices from €0.17/kWh to €0.38/kWh until Wed 11 00:00. ' +
-        'Expected charging from Tue 10 00:00. Later days show estimated day prices. No price data for Fri 13.',
+        'Expected charging from Tue 10 00:00. Later days show estimated day prices. No price data for Fri 13. ' +
+        'KNMI outlook: sun 40% and wind 5 Bft on Tue 10, wind 3 Bft on Wed 11.',
     )
   })
 })

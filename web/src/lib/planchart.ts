@@ -1,9 +1,10 @@
 // The Overview chart's data: values at a moment and the spans it shades. The
 // chart shows SoC above prices on one time axis; everything here is pure so
 // the readout and the screen-reader summary can be tested without a canvas.
-import type { Block, DayAdvice, PriceBasis, Rate, SolarPoint, TimelinePoint } from '../api/types'
+import type { Block, Day, DayAdvice, PriceBasis, Rate, SolarPoint, TimelinePoint } from '../api/types'
 import { basisNames } from './advice'
-import { clock, dayShort, localDate, pct, price, zonedToISO } from './format'
+import { clock, dayShort, km, kwh, localDate, pct, price, zonedToISO } from './format'
+import type { IconName } from './icons'
 
 const ms = (v: string) => Date.parse(v)
 
@@ -93,6 +94,79 @@ export function dayRange(date: string): Span {
   return { start: ms(zonedToISO(date, '00:00')), end: ms(zonedToISO(nextDate(date), '00:00')) }
 }
 
+/** One figure in a day's title: an icon and its value. */
+export interface TitleItem {
+  icon: IconName
+  text: string
+  /** Where the day is narrow (phones). */
+  short: string
+  /** In words, for the screen-reader summary. */
+  label: string
+}
+
+export interface TitleSpan extends Span {
+  items: TitleItem[]
+}
+
+/** The days with figures, each day clipped to [from, to]. */
+function titleSpans(days: { date: string; items: TitleItem[] }[], from: number, to: number): TitleSpan[] {
+  return days
+    .filter((d) => d.items.length)
+    .map((d) => ({ ...dayRange(d.date), items: d.items }))
+    .filter((s) => s.end > from && s.start < to)
+    .map((s) => ({ ...s, start: Math.max(s.start, from), end: Math.min(s.end, to) }))
+}
+
+/** Above the SoC chart: each day's driving distance and the energy it needs. */
+export function driveTitles(days: Day[], from: number, to: number) {
+  const items = (d: Day): TitleItem[] => [
+    {
+      icon: 'route',
+      text: km(d.distanceKm),
+      short: String(Math.round(d.distanceKm)),
+      label: km(d.distanceKm),
+    },
+    { icon: 'bolt', text: kwh(d.energyKWh), short: d.energyKWh.toFixed(1), label: kwh(d.energyKWh) },
+  ]
+  return titleSpans(
+    days.map((d) => ({ date: d.date, items: d.distanceKm > 0 ? items(d) : [] })),
+    from,
+    to,
+  )
+}
+
+/** Above the price chart: each day's sunshine and wind from KNMI's outlook. */
+export function weatherTitles(advice: DayAdvice[], from: number, to: number) {
+  return titleSpans(
+    advice.map((a) => {
+      const w = a.weather
+      const items: TitleItem[] = []
+      if (w?.sunshinePct != null) {
+        const v = `${w.sunshinePct}%`
+        items.push({ icon: 'sun', text: v, short: String(w.sunshinePct), label: `sun ${v}` })
+      }
+      if (w?.windBft != null) {
+        items.push({
+          icon: 'wind',
+          text: `${w.windBft} Bft`,
+          short: String(w.windBft),
+          label: `wind ${w.windBft} Bft`,
+        })
+      }
+      return { date: a.date, items }
+    }),
+    from,
+    to,
+  )
+}
+
+/** "76 km and 13.7 kWh on Sat 14, ..." */
+function titleText(spans: TitleSpan[]) {
+  return spans
+    .map((s) => `${s.items.map((i) => i.label).join(' and ')} on ${dayShort(localDate(s.start))}`)
+    .join(', ')
+}
+
 export interface EstimateSpan extends Span {
   value: number
   basis: 'estimate' | 'weekly'
@@ -165,6 +239,8 @@ export interface ChartData {
   solar: SolarPoint[]
   /** The planner's estimate of the charging slots. */
   charging: Rate[]
+  /** Days whose driving distance the SoC chart labels. */
+  days?: Day[]
 }
 
 const basisWord = (b: PriceBasis) => (b === 'published' ? 'published' : basisNames[b].toLowerCase())
@@ -196,6 +272,8 @@ export function chartSummary(d: ChartData, dates: string[], from: number, to: nu
   }
   const needs = d.blocks.filter((b) => ms(b.departAt) >= from).map((b) => b.requiredSoc)
   if (needs.length) out.push(`Departures need up to ${pct(Math.max(...needs))}.`)
+  const driving = driveTitles(d.days ?? [], from, to)
+  if (driving.length) out.push(`Driving ${titleText(driving)}.`)
   const last = d.slots[d.slots.length - 1]
   if (last) {
     const values = d.slots.map((r) => r.value)
@@ -211,5 +289,7 @@ export function chartSummary(d: ChartData, dates: string[], from: number, to: nu
     const days = [...new Set(missing.map((s) => dayShort(localDate(s.start))))]
     out.push(`No price data for ${days.join(', ')}.`)
   }
+  const weather = weatherTitles(d.advice, from, to)
+  if (weather.length) out.push(`KNMI outlook: ${titleText(weather)}.`)
   return out.join(' ')
 }
