@@ -189,3 +189,68 @@ func TestAwayAllDay(t *testing.T) {
 		t.Errorf("away = %+v", mon)
 	}
 }
+
+// Friday at noon, plugged in at 29%: Friday's published prices average
+// €0.42, Saturday has only the weekly average, Sunday an estimate of €0.33.
+// The charge covers Friday and Saturday; Monday needs +16%.
+func solarFriday() Input {
+	day := func(date, label, name string, p *DayPrice) Day {
+		return Day{Date: date, Label: label, Name: name, Price: p, HomeHours: 16}
+	}
+	monday := time.Date(2026, 11, 16, 7, 30, 0, 0, time.UTC)
+	return Input{
+		Days: []Day{
+			day("2026-11-13", "Fri", "Friday", published(0.42)),
+			day("2026-11-14", "Sat", "Saturday", weekly(0.46)),
+			day("2026-11-15", "Sun", "Sunday", estimate(0.33)),
+			day("2026-11-16", "Mon", "Monday", nil),
+		},
+		Departures: []Departure{{Date: "2026-11-16", DepartAt: monday, ChargePct: 16, EnergyPct: 22}},
+		SoCKnown:   true,
+	}
+}
+
+func withSun(in Input, s *Solar) Input {
+	in.Days[0].Solar = s
+	return in
+}
+
+func TestChargeAheadFromSolarWhenTheSunBeatsLaterDays(t *testing.T) {
+	from, until := time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC), time.Date(2026, 11, 13, 15, 0, 0, 0, time.UTC)
+	got := Advise(withSun(solarFriday(), &Solar{Pct: 4, Price: 0.27, From: from, Until: until}))[0]
+	if got.Recommendation != ChargeAhead || !got.Solar || got.CompareDate != "2026-11-15" {
+		t.Fatalf("Friday = %+v", got)
+	}
+	// Sunday is an estimate: medium confidence; the sun covers 4 of the 16%.
+	if got.Confidence != 2 || got.Indicator != "little" || got.SolarPct != 4 || *got.SolarPrice != 0.27 {
+		t.Errorf("confidence %d, indicator %s, solar %.1f%% at %v", got.Confidence, got.Indicator, got.SolarPct, *got.SolarPrice)
+	}
+	if !got.SolarFrom.Equal(from) || !got.SolarUntil.Equal(until) {
+		t.Errorf("solar window %v–%v", got.SolarFrom, got.SolarUntil)
+	}
+	if want := "Today's sun charges at about €0.27/kWh, cheaper than Sunday (about €0.33): keep the car plugged in."; got.Summary != want {
+		t.Errorf("summary = %q", got.Summary)
+	}
+}
+
+func TestDeferOnlyWhenALaterDayBeatsTheSun(t *testing.T) {
+	// The sun at €0.32 is not clearly cheaper than Sunday's €0.33: Sunday
+	// still beats Friday's grid, so defer, and say the sun still charges.
+	got := Advise(withSun(solarFriday(), &Solar{Pct: 4, Price: 0.32}))[0]
+	if got.Recommendation != Defer || got.Solar || got.DeferUntil != "2026-11-15" {
+		t.Fatalf("Friday = %+v", got)
+	}
+	if want := "Sunday looks cheaper and your charge covers the trips until then. Solar still charges while the car is plugged in."; got.Summary != want {
+		t.Errorf("summary = %q", got.Summary)
+	}
+	// No sun: the plain defer, with Sunday's full name.
+	got = Advise(solarFriday())[0]
+	if got.Recommendation != Defer || got.Summary != "Sunday looks cheaper and your charge covers the trips until then." {
+		t.Errorf("without sun: %+v", got)
+	}
+	// A sliver of sun (under 1%) is not worth advising on.
+	got = Advise(withSun(solarFriday(), &Solar{Pct: 0.5, Price: 0.2}))[0]
+	if got.Solar || got.Recommendation != Defer {
+		t.Errorf("sliver of sun: %+v", got)
+	}
+}

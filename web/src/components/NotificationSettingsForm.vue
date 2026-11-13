@@ -19,7 +19,7 @@ const saving = ref(false)
 const testing = ref(false)
 const error = ref('')
 
-const toggles: { key: 'problems' | 'questions' | 'ready'; label: string; hint: string }[] = [
+const toggles: { key: 'problems' | 'questions' | 'ready' | 'solar'; label: string; hint: string }[] = [
   {
     key: 'problems',
     label: 'Charging problems',
@@ -34,6 +34,11 @@ const toggles: { key: 'problems' | 'questions' | 'ready'; label: string; hint: s
     key: 'ready',
     label: 'Ready messages',
     hint: 'Tells you when the car reached its target before a departure.',
+  },
+  {
+    key: 'solar',
+    label: 'Solar reminders',
+    hint: 'Asks you to plug in when the car is home on a day whose advice is to charge ahead from the sun.',
   },
 ]
 

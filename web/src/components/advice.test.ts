@@ -67,6 +67,28 @@ describe('AdviceCard', () => {
     expect(w.get('[data-testid=advice-sources]').text()).toContain('stale')
   })
 
+  it('says to keep the car plugged in when the sun charges ahead, with no plan', () => {
+    const w = card(
+      advice({
+        solar: true,
+        confidence: 1,
+        action: undefined,
+        solarPct: 4.2,
+        solarPrice: 0.268,
+        solarFrom: '2026-11-10T09:30:00Z',
+        solarUntil: '2026-11-10T13:30:00Z',
+        summary:
+          "Tomorrow's sun charges at about €0.27/kWh, cheaper than Sunday (about €0.33): keep the car plugged in.",
+      }),
+    )
+    expect(w.get('[data-testid=advice-label]').text()).toBe('Charge ahead from solar')
+    expect(w.get('[data-testid=advice-solar]').text()).toBe(
+      'Keep the car plugged in from 10:30 to 14:30: EVCC charges from the sun by itself, about 4% at €0.27/kWh.',
+    )
+    expect(w.find('button.primary').exists()).toBe(false)
+    expect(w.text()).not.toContain('no plan action')
+  })
+
   it('offers no action for missing or weak evidence', () => {
     const none = card(
       advice({ noSuggestion: true, confidence: 0, recommendation: 'none', action: undefined }),
@@ -247,6 +269,9 @@ describe('WeekStrip advice', () => {
     })
     const tile = w.get('[data-testid="day-2026-11-10"]')
     expect(tile.get('[data-testid=badge-advice]').text()).toBe('Charge ahead')
+    // Charging ahead from the sun has its own short label and icon.
+    const sunny = mount(WeekStrip, { props: { days, advice: [advice({ solar: true })] } })
+    expect(sunny.get('[data-testid=badge-advice]').text()).toBe('Solar')
     expect(tile.get('[data-testid=badge-price]').text()).toBe('min €0.14')
     expect(tile.text()).toContain('Charge ahead, confidence medium')
     expect(tile.attributes('aria-pressed')).toBe('true')

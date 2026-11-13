@@ -272,3 +272,67 @@ func TestChargingProblemsAndReadyMessages(t *testing.T) {
 	ta.plug(false, 0)
 	log.none("leaving again")
 }
+
+// sunnyWednesday is a demo morning with strong sun (the stub's 2.6 kW peak).
+const sunnyWednesday = "2026-11-11T10:15:00+01:00"
+
+// A sunny Wednesday in the demo: today's solar surplus while the car is home
+// (late morning to mid-afternoon) beats the later days, so the advice is to
+// charge ahead from the sun, with no plan; an unplugged car at home gets a
+// reminder to plug in, cleared once it is plugged in.
+func TestPlugInForTheSun(t *testing.T) {
+	ta := newTestAppAt(t, "", sunnyWednesday)
+	ta.notifications(nil)
+	ta.check()
+	ta.sent() // other reminders are not under test
+
+	var p struct {
+		Advice struct {
+			Days []struct {
+				Date           string     `json:"date"`
+				Recommendation string     `json:"recommendation"`
+				Solar          bool       `json:"solar"`
+				SolarUntil     *time.Time `json:"solarUntil"`
+				Summary        string     `json:"summary"`
+				Action         string     `json:"action"`
+			} `json:"days"`
+		} `json:"advice"`
+	}
+	ta.json("GET", "/api/plan", nil, http.StatusOK, &p)
+	wed := p.Advice.Days[0]
+	if wed.Date != "2026-11-11" || wed.Recommendation != "charge_ahead" || !wed.Solar || wed.Action != "" {
+		t.Fatalf("Wednesday's advice = %+v", wed)
+	}
+	if !strings.HasPrefix(wed.Summary, "Today's sun charges at about €0.") || !strings.HasSuffix(wed.Summary, "keep the car plugged in.") {
+		t.Errorf("summary = %q", wed.Summary)
+	}
+
+	n := ta.notification("solar:2026-11-11")
+	if n.Title != "Plug in for the sun" || !strings.Contains(n.Message, "Plug in to use it.") ||
+		n.Latest == nil || !n.Latest.Equal(*wed.SolarUntil) {
+		t.Fatalf("solar reminder = %+v", n)
+	}
+	// Once a day.
+	ta.check()
+	for _, title := range ta.sent() {
+		if title == "Plug in for the sun" {
+			t.Error("sent the solar reminder again")
+		}
+	}
+	// Plugged in: EVCC charges from the sun, and the reminder is cleared.
+	ta.plug(true, 40)
+	ta.check()
+	if n := ta.notification("solar:2026-11-11"); n.State != model.NotifyDone {
+		t.Errorf("after plugging in the reminder is %s", n.State)
+	}
+}
+
+// The solar reminder can be turned off.
+func TestNoSunReminderWhenOff(t *testing.T) {
+	ta := newTestAppAt(t, "", sunnyWednesday)
+	ta.notifications(func(s map[string]any) { s["solar"] = false })
+	ta.check()
+	if n, _ := ta.app.Store.NotificationByKey("solar:2026-11-11"); n != nil {
+		t.Errorf("sent with solar reminders off: %+v", n)
+	}
+}

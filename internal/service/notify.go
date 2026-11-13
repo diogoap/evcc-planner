@@ -27,6 +27,7 @@ var notificationLabels = map[string]string{
 	"early": "early reminders", "earlyLeadMin": "early reminder time", "urgentLeadMin": "urgent reminder time",
 	"quietFrom": "quiet hours", "quietTo": "quiet hours", "urgentInQuiet": "urgent reminders in quiet hours",
 	"snoozeMin": "snooze", "problems": "charging problems", "questions": "questions", "ready": "ready messages",
+	"solar": "solar reminders",
 }
 
 // SaveNotificationSettings validates and stores the notification settings.

@@ -13,7 +13,7 @@ import {
   tempText,
   windFact,
 } from '../lib/advice'
-import { ago, dateTime, dayLong, dayShort } from '../lib/format'
+import { ago, clock, dateTime, dayLong, dayShort } from '../lib/format'
 import AppIcon from './AppIcon.vue'
 
 // bare: inside the day panel, without the card and its day navigation.
@@ -158,6 +158,17 @@ const level = computed(() =>
     <p v-else-if="advice.dismissed" class="small muted m-0">
       Dismissed; nothing was changed.
       <button class="btn sm ghost" type="button" @click="emit('dismiss', true)">Undo</button>
+    </p>
+    <p
+      v-else-if="advice.solar && advice.solarFrom && advice.solarUntil"
+      class="banner tone-ok small m-0"
+      data-testid="advice-solar"
+    >
+      <AppIcon name="plug" />
+      Keep the car plugged in from {{ clock(advice.solarFrom) }} to {{ clock(advice.solarUntil) }}: EVCC
+      charges from the sun by itself, about {{ Math.round(advice.solarPct ?? 0) }}% at €{{
+        advice.solarPrice?.toFixed(2)
+      }}/kWh.
     </p>
     <p
       v-else-if="!advice.noSuggestion && advice.recommendation !== 'none' && advice.confidence < 2"

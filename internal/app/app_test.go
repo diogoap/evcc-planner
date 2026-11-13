@@ -28,11 +28,18 @@ type testApp struct {
 
 func newTestApp(t *testing.T, dir string) *testApp {
 	t.Helper()
+	return newTestAppAt(t, dir, fixedNow)
+}
+
+// newTestAppAt starts the demo at another fixed time (RFC 3339), for the
+// planner and the EVCC stub alike.
+func newTestAppAt(t *testing.T, dir, fixed string) *testApp {
+	t.Helper()
 	if dir == "" {
 		dir = t.TempDir()
 	}
 	cfgPath := filepath.Join(dir, "config.yaml")
-	yaml := "demo: true\nfixed_time: " + fixedNow + "\ndata_dir: " + filepath.Join(dir, "data") +
+	yaml := "demo: true\nfixed_time: " + fixed + "\ndata_dir: " + filepath.Join(dir, "data") +
 		"\nserver:\n  web_dir: " + filepath.Join(dir, "web") + "\n"
 	if err := os.WriteFile(cfgPath, []byte(yaml), 0o600); err != nil {
 		t.Fatal(err)

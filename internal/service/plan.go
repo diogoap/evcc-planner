@@ -282,11 +282,7 @@ func (s *Service) Plan(ctx context.Context) (*PlanView, error) {
 	}
 
 	socIn, socView := s.currentSoC()
-	params := planner.Params{
-		CapacityKWh: settings.UsableCapacityKWh, ConsumptionKWhPer100Km: settings.ConsumptionKWhPer100Km,
-		ReservePct: settings.ArrivalReservePct, EfficiencyPct: settings.ChargingEfficiencyPct,
-		ChargePowerKW: settings.ChargePowerKW, ChargeBuffer: time.Duration(settings.ChargeBufferMin) * time.Minute,
-	}
+	params := planParams(settings)
 	result := planner.Plan(now, params, socIn, input)
 	if socIn.Known {
 		socView.Estimated = result.SoCEstimated
@@ -661,4 +657,13 @@ func roundPtr(v *float64) *float64 {
 		return nil
 	}
 	return ptr(round(*v, 1))
+}
+
+// planParams are the planner's vehicle and charging settings.
+func planParams(settings model.Settings) planner.Params {
+	return planner.Params{
+		CapacityKWh: settings.UsableCapacityKWh, ConsumptionKWhPer100Km: settings.ConsumptionKWhPer100Km,
+		ReservePct: settings.ArrivalReservePct, EfficiencyPct: settings.ChargingEfficiencyPct,
+		ChargePowerKW: settings.ChargePowerKW, ChargeBuffer: time.Duration(settings.ChargeBufferMin) * time.Minute,
+	}
 }

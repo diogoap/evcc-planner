@@ -222,6 +222,28 @@ would count as €0.14/kWh, and Utrecht would be charged from the sun instead.)
 EVCC still picks the actual slots. The planner shows its own estimate of them
 on the price chart, labelled as an estimate.
 
+## Charge ahead from solar (daily advice)
+
+For today and tomorrow, where EVCC's solar forecast reaches, daily advice also
+prices the day's **solar surplus while the car is home**, valued as in
+[charging ahead](#charge-ahead-for-later-trips): per 15-minute slot, the
+forecast minus household use (below the charger's minimum it counts as none),
+at the slot's price minus the tax not paid on own solar (€0.11/kWh). Slots
+without a published price use the day's estimate.
+
+- **Charge ahead from solar:** when that solar price is at least 8% below the
+  cheapest later day and later trips need charging. Example: Friday's grid
+  averages €0.42 and Sunday's estimate is €0.33, but the sun during €0.35–0.40
+  slots counts as €0.24–0.29, so "Today's sun charges at about €0.27/kWh,
+  cheaper than Sunday (about €0.33): keep the car plugged in."
+- **No plan:** EVCC charges from the sun by itself in Smart mode, so the advice
+  only asks to keep the car plugged in from the first to the last useful slot.
+  It offers no Create extra plan, and advice auto-apply ignores it.
+- **Defer** only when a later day is clearly cheaper than today's solar price;
+  the defer advice then adds that solar still charges, as postponing only
+  pauses cheap-grid charging.
+- Less than 1% of SoC from the sun is not worth advising on.
+
 ## Notifications
 
 Notifications go to the Home Assistant Companion app on your phone. They're
@@ -321,11 +343,13 @@ gantt
 | **Missed target** | Unplugged within 30 minutes of the departure with less than its minimum target. Also an activity entry, even with notifications off. | "Left for Utrecht with 48% (target 52%)." |
 | **Question** | A calendar event marked Needs review, within the seven days. Buttons: **Count it** (confirm) and **Not a trip** (turn off). | "Is 'Dinner' (Thu 19:00) a car trip?" |
 | **Ready** (off by default) | Plugged in and the target reached before the departure. | "Ready for Utrecht: 64%." |
+| **Plug in for the sun** | Today's advice is to [charge ahead from solar](#charge-ahead-from-solar-daily-advice), the car is home (no trip in progress; at home by the car location sensor, if set) and unplugged, from 30 minutes before the solar surplus starts until 30 minutes before it ends, outside quiet hours. Any confidence: plugging in changes nothing in EVCC by itself. Buttons: **Remind in 30 min** (never after the sun's end), **View plan**. | "Plug in for the sun: Sunshine until about 14:30 charges the car at about €0.27/kWh, cheaper than Sunday. Plug in to use it." |
 
 Each is sent once per trip (unplugged early: once per unplug; not in Smart
-mode: once per mode). Charging stopped and not in Smart mode are cleared from
-the phone once solved. Settings turn
-problems, questions, and ready messages on or off separately.
+mode: once per mode; plug in for the sun: once per day). Charging stopped, not
+in Smart mode, and plug in for the sun are cleared from the phone once solved
+(for the sun: plugged in, or the sun is gone). Settings turn problems,
+questions, ready messages, and solar reminders on or off separately.
 
 ## Settings
 
@@ -359,6 +383,7 @@ Settings → **Notifications**:
 | Charging problems | On |
 | Questions about calendar events | On |
 | Ready messages | Off |
+| Solar reminders | On |
 
 ## Activity log entries
 

@@ -84,6 +84,7 @@ func (s *Service) CheckNotifications(ctx context.Context) error {
 	r.ready(cur)
 	r.cleanUp()
 	r.plugIn()
+	r.solar()
 	r.snoozed()
 	r.questions()
 	return r.err()
@@ -239,9 +240,52 @@ func (r *reminders) cleanUp() {
 			return !r.lp.Connected || r.lp.Charging || !r.lp.PlanActive
 		case n.Kind == model.NotifyMode:
 			return !r.lp.Connected || n.Key != modeKey(r.lp.Mode, n.Subject)
+		case n.Kind == model.NotifySolar:
+			a := r.solarAdvice()
+			return r.lp.Connected || a == nil || n.Subject != "solar:"+a.Date || !r.now.Before(*a.SolarUntil)
 		}
 		return false
 	}, "No longer needed")
+}
+
+// solarAdvice is today's advice when it is to charge ahead from the sun and
+// has not been dismissed. Any confidence will do: plugging in changes
+// nothing in EVCC by itself.
+func (r *reminders) solarAdvice() *DayAdviceView {
+	if r.view.Advice == nil {
+		return nil
+	}
+	today := localtime.Date(r.now, r.s.loc())
+	for i := range r.view.Advice.Days {
+		a := &r.view.Advice.Days[i]
+		if a.Date == today && a.Solar && !a.Dismissed && a.SolarFrom != nil && a.SolarUntil != nil {
+			return a
+		}
+	}
+	return nil
+}
+
+// solar asks to plug in while the car is home and unplugged on a day whose
+// advice is to charge ahead from the sun: from half an hour before the
+// solar surplus starts until half an hour before it ends. EVCC charges from
+// the sun by itself once the car is plugged in.
+func (r *reminders) solar() {
+	if !r.settings.Solar || r.lp.Connected || r.onTheRoad() || r.carAway() {
+		return
+	}
+	a := r.solarAdvice()
+	if a == nil || r.now.Before(a.SolarFrom.Add(-30*time.Minute)) || !r.now.Before(a.SolarUntil.Add(-30*time.Minute)) ||
+		!r.allowed(false) {
+		return
+	}
+	than := weekdayName(a.CompareDate, r.s.loc())
+	r.send(model.Notification{
+		Key: "solar:" + a.Date, Kind: model.NotifySolar, Subject: "solar:" + a.Date, Latest: a.SolarUntil,
+		Title: "Plug in for the sun",
+		Message: fmt.Sprintf("Sunshine until about %s charges the car at about €%.2f/kWh, cheaper than %s. Plug in to use it.",
+			r.s.clockText(*a.SolarUntil), *a.SolarPrice, than),
+		Verbs: []string{model.VerbSnooze, model.VerbView},
+	}, false)
 }
 
 // snoozed sends snoozed notifications again once their time has come.

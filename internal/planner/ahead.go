@@ -241,3 +241,56 @@ func (out *Ahead) addLater(res Result, p Params, sorted []Slot, ap AheadParams, 
 	}
 	return before
 }
+
+// SolarCharge is what the forecast solar surplus can add while the car is
+// home: SoC points, the EUR/kWh it counts at (each slot's price minus the
+// tax saving, weighted by energy), and the first and last slot it charges.
+type SolarCharge struct {
+	Pct   float64
+	Price float64
+	From  time.Time
+	Until time.Time
+}
+
+// Solar measures the usable solar surplus in the slots from `from`, outside
+// the away periods (by each slot's middle), with the same rules as charging
+// ahead: household use is subtracted, surplus below the charger's minimum
+// counts as none, and no slot charges faster than the charger.
+func Solar(slots []Slot, from time.Time, away [][2]time.Time, p Params, ap AheadParams) SolarCharge {
+	var out SolarCharge
+	minKW := p.ChargePowerKW * minChargeShare
+	wallKWh, cost := 0.0, 0.0
+	for _, s := range slots {
+		start := s.Start
+		if start.Before(from) {
+			start = from
+		}
+		if !s.End.After(start) {
+			continue
+		}
+		mid := start.Add(s.End.Sub(start) / 2)
+		gone := false
+		for _, a := range away {
+			if !mid.Before(a[0]) && mid.Before(a[1]) {
+				gone = true
+				break
+			}
+		}
+		kw := math.Min(math.Max(0, s.SolarKW-ap.HouseholdKW), p.ChargePowerKW)
+		if gone || kw < minKW {
+			continue
+		}
+		kwh := kw * s.End.Sub(start).Hours()
+		wallKWh += kwh
+		cost += kwh * math.Max(0, s.Price-ap.SolarTaxSaving)
+		out.Pct += pct(kwh*p.EfficiencyPct/100, p)
+		if out.From.IsZero() {
+			out.From = start
+		}
+		out.Until = s.End
+	}
+	if wallKWh > 0 {
+		out.Price = cost / wallKWh
+	}
+	return out
+}

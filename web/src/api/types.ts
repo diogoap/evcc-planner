@@ -322,6 +322,15 @@ export interface DayAdvice {
   dismissed: boolean
   /** Plan action offered; absent for weak, no-data, dismissed, or "none" advice. */
   action?: AdjustmentKind
+  /**
+   * Charge ahead from solar: keep the car plugged in while the sun shines
+   * (solarFrom to solarUntil), at solarPrice for up to solarPct; no plan.
+   */
+  solar?: boolean
+  solarPct?: number
+  solarPrice?: number
+  solarFrom?: string
+  solarUntil?: string
   adjustment?: Adjustment
 }
 
@@ -626,6 +635,8 @@ export interface NotificationSettings {
   problems: boolean
   questions: boolean
   ready: boolean
+  /** Plug in for the sun: today's advice is to charge ahead from solar. */
+  solar: boolean
 }
 
 export type NotificationKind =
@@ -639,6 +650,7 @@ export type NotificationKind =
   | 'missed'
   | 'question'
   | 'ready'
+  | 'solar'
   | 'info'
 
 export type NotificationVerb = 'snooze' | 'skip' | 'view' | 'count' | 'notrip'

@@ -366,13 +366,16 @@ type NotificationSettings struct {
 	Problems       bool   `json:"problems"`
 	Questions      bool   `json:"questions"`
 	Ready          bool   `json:"ready"`
+	// Solar asks to plug in when today's advice is to charge ahead from the
+	// sun and the car is home but unplugged.
+	Solar bool `json:"solar"`
 }
 
 // DefaultNotificationSettings are off, with the reminder rules ready.
 func DefaultNotificationSettings() NotificationSettings {
 	return NotificationSettings{
 		Phones: []string{}, Early: true, EarlyLeadMin: 30, UrgentLeadMin: 30, QuietFrom: "23:00", QuietTo: "07:00",
-		UrgentInQuiet: true, SnoozeMin: 30, Problems: true, Questions: true,
+		UrgentInQuiet: true, SnoozeMin: 30, Problems: true, Questions: true, Solar: true,
 	}
 }
 
@@ -431,7 +434,8 @@ const (
 	NotifyMissed    = "missed"
 	NotifyQuestion  = "question"
 	NotifyReady     = "ready"
-	NotifyInfo      = "info" // a follow-up, e.g. after Skip trip
+	NotifySolar     = "solar" // plug in to charge ahead from the sun
+	NotifyInfo      = "info"  // a follow-up, e.g. after Skip trip
 
 	NotifySent    = "sent"
 	NotifySnoozed = "snoozed"

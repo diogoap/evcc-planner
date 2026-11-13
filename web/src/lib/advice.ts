@@ -23,7 +23,7 @@ export const basisNames: Record<DayPrice['basis'], string> = {
   weekly: 'Weekly average',
 }
 
-export type AdviceIcon = 'bolt' | 'clock' | 'check' | 'dash'
+export type AdviceIcon = 'bolt' | 'clock' | 'check' | 'dash' | 'sun'
 
 interface Label {
   text: string
@@ -40,6 +40,7 @@ export function adviceLabel(a: DayAdvice, day?: Day): Label {
   if (!a.noSuggestion) {
     switch (a.recommendation) {
       case 'charge_ahead':
+        if (a.solar) return { text: 'Charge ahead from solar', short: 'Solar', tone: 'ok', icon: 'sun' }
         return {
           text: 'Charge ahead',
           short: 'Charge ahead',

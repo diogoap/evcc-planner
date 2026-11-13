@@ -197,8 +197,12 @@ func (s *Service) buildAdvice(view *PlanView, result planner.Result, socKnown bo
 	outlookStale := outlook != nil && now.Sub(outlook.FetchedAt) > outlookMaxAge
 
 	in := advice.Input{SoCKnown: socKnown}
+	var away [][2]time.Time
+	for _, b := range result.Blocks {
+		away = append(away, [2]time.Time{b.DepartAt, b.ReturnAt})
+	}
 	for _, d := range view.Days {
-		day := advice.Day{Date: d.Date, Label: weekdayLabel(d.Date, s.loc())}
+		day := advice.Day{Date: d.Date, Label: weekdayLabel(d.Date, s.loc()), Name: weekdayName(d.Date, s.loc())}
 		start, _ := localtime.ParseDate(s.loc(), d.Date)
 		end := localtime.AddDays(start, 1)
 		day.HomeHours = homeHours(result.Blocks, maxTime(start, now), end)
@@ -235,6 +239,12 @@ func (s *Service) buildAdvice(view *PlanView, result planner.Result, socKnown bo
 			}
 			day.SolarKWh, day.SolarHomeKWh = ptr(round(total, 1)), ptr(round(math.Max(0, home), 1))
 			day.SunshinePct = nil
+			// What the surplus can charge while home, valued as in charging ahead.
+			sc := planner.Solar(solarSlots(solar, slots, from, end, day.Price), from, away, planParams(view.Settings),
+				planner.AheadParams{HouseholdKW: view.Settings.HouseholdKW, SolarTaxSaving: view.Settings.SolarTaxSaving})
+			if sc.Pct > 0 {
+				day.Solar = &advice.Solar{Pct: sc.Pct, Price: sc.Price, From: sc.From, Until: sc.Until}
+			}
 		}
 		in.Days = append(in.Days, day)
 	}
@@ -276,7 +286,9 @@ func (s *Service) buildAdvice(view *PlanView, result planner.Result, socKnown bo
 		}
 		if actionable(a) && !dv.Dismissed && dv.Adjustment == nil {
 			switch {
-			case a.Recommendation == advice.ChargeAhead:
+			// Charging ahead from solar needs no plan: EVCC charges from the
+			// sun by itself while the car is plugged in.
+			case a.Recommendation == advice.ChargeAhead && !a.Solar:
 				dv.Action = model.AdjustExtraPlan
 			case a.Recommendation == advice.Defer && a.Date == today:
 				dv.Action = model.AdjustPostpone
@@ -461,6 +473,15 @@ func weekdayLabel(date string, loc *time.Location) string {
 	return t.Weekday().String()[:3]
 }
 
+// weekdayName is the full name, e.g. "Sunday", for advice summaries.
+func weekdayName(date string, loc *time.Location) string {
+	t, err := localtime.ParseDate(loc, date)
+	if err != nil {
+		return date
+	}
+	return t.Weekday().String()
+}
+
 func hoursText(h float64) string {
 	if h < 1 {
 		return fmt.Sprintf("%d min", int(math.Round(h*60)))
@@ -480,4 +501,35 @@ func minTime(a, b time.Time) time.Time {
 		return a
 	}
 	return b
+}
+
+// solarSlots are the quarter hours from `from` to `to` with forecast solar
+// power, priced from EVCC's published slot or, without one, the day's price
+// level.
+func solarSlots(solar *evcc.SolarForecast, rates []evcc.Rate, from, to time.Time, day *advice.DayPrice) []planner.Slot {
+	var out []planner.Slot
+	for t := from.Truncate(15 * time.Minute); t.Before(to); t = t.Add(15 * time.Minute) {
+		start, end := maxTime(t, from), minTime(t.Add(15*time.Minute), to)
+		if !end.After(start) {
+			continue
+		}
+		kw := solar.EnergyKWh(start, end) / end.Sub(start).Hours()
+		if kw <= 0 {
+			continue
+		}
+		price, ok := 0.0, false
+		for _, r := range rates {
+			if !start.Before(r.Start) && start.Before(r.End) {
+				price, ok = r.Value, true
+				break
+			}
+		}
+		if !ok && day != nil {
+			price, ok = day.Value, true
+		}
+		if ok {
+			out = append(out, planner.Slot{Start: start, End: end, Price: price, SolarKW: kw})
+		}
+	}
+	return out
 }

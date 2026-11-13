@@ -6,6 +6,11 @@
 // estimate from the weekly outlook, then only the outlook's weekly average.
 // A day is compared with the later days the car can charge on:
 //
+//   - charge ahead from solar: the day's solar surplus while the car is home
+//     (valued at its slot price minus the tax not paid on own solar) is
+//     cheaper than every later day by at least Threshold and later trips will
+//     need charging; EVCC charges from it by itself, so the car only needs to
+//     be plugged in (no plan);
 //   - charge ahead: the day is cheaper than every later day by at least
 //     Threshold and later trips will need charging;
 //   - defer: a later day is cheaper by at least Threshold and the projected
@@ -44,6 +49,9 @@ const Threshold = 0.08
 // minHomeHours is the time at home that counts as a charging opportunity.
 const minHomeHours = 1.0
 
+// minSolarPct is the solar charge (SoC points) worth advising on.
+const minSolarPct = 1.0
+
 // DayPrice is a date's expected price level.
 type DayPrice struct {
 	Value  float64 `json:"value"` // EUR/kWh incl. VAT, daily average
@@ -59,6 +67,7 @@ type DayPrice struct {
 type Day struct {
 	Date         string
 	Label        string // e.g. "Tue"
+	Name         string // e.g. "Tuesday", for summaries
 	Price        *DayPrice
 	HomeHours    float64 // time the car is home (from now, for today)
 	WindBft      *int    // KNMI, national land wind
@@ -72,6 +81,19 @@ type Day struct {
 	SolarHomeKWh *float64
 	// KNMI's national sunshine (% of possible), used after EVCC's forecast.
 	SunshinePct *int
+	// Solar is what the forecast solar surplus can charge while the car is
+	// home, and at what price; nil beyond EVCC's forecast.
+	Solar *Solar
+}
+
+// Solar is a day's usable solar surplus while the car is home: SoC points,
+// EUR/kWh (the slot prices minus the tax not paid on own solar), and the
+// first and last slot it charges.
+type Solar struct {
+	Pct   float64
+	Price float64
+	From  time.Time
+	Until time.Time
 }
 
 // Departure is an upcoming away period from the minimum-charge plan.
@@ -102,6 +124,13 @@ type Advice struct {
 	CompareDate    string   `json:"compareDate,omitempty"` // the later day compared with
 	DeferUntil     string   `json:"deferUntil,omitempty"`  // defer: the cheaper day
 	LaterChargePct float64  `json:"laterChargePct"`        // charge the plan adds after this day
+	// Solar marks charge ahead from solar: keep the car plugged in while the
+	// sun shines (SolarFrom to SolarUntil), at SolarPrice for up to SolarPct.
+	Solar      bool       `json:"solar,omitempty"`
+	SolarPct   float64    `json:"solarPct,omitempty"`
+	SolarPrice *float64   `json:"solarPrice,omitempty"`
+	SolarFrom  *time.Time `json:"solarFrom,omitempty"`
+	SolarUntil *time.Time `json:"solarUntil,omitempty"`
 }
 
 // Advise returns advice for every day of the input window.
@@ -148,6 +177,12 @@ func adviseDay(in Input, i int) Advice {
 	for _, l := range later[1:] {
 		if l.Price.Value < cheapest.Price.Value {
 			cheapest = l
+		}
+	}
+	solar := d.Solar != nil && d.Solar.Pct >= minSolarPct
+	if solar && a.LaterChargePct >= 1 {
+		if sdiff := (cheapest.Price.Value - d.Solar.Price) / math.Abs(cheapest.Price.Value); sdiff >= Threshold {
+			return solarAhead(in, i, a, cheapest, sdiff)
 		}
 	}
 	// Positive: this day is cheaper than every later day.
@@ -197,14 +232,18 @@ func adviseDay(in Input, i int) Advice {
 		}
 		switch need := needBetween(in, d.Date, c.Date); {
 		case !in.SoCKnown:
-			a.Summary = fmt.Sprintf("%s looks cheaper, but the SoC is unknown: keep the plan.", c.Label)
+			a.Summary = fmt.Sprintf("%s looks cheaper, but the SoC is unknown: keep the plan.", name(c))
 		case need >= 1:
-			a.Summary = fmt.Sprintf("Keep the plan: %s looks cheaper, but trips before then need +%.0f%%.", c.Label, need)
+			a.Summary = fmt.Sprintf("Keep the plan: %s looks cheaper, but trips before then need +%.0f%%.", name(c), need)
 		default:
 			a.Recommendation = Defer
 			a.DeferUntil = c.Date
 			a.Rationale = append(a.Rationale, "The current charge covers every departure until then.")
-			a.Summary = fmt.Sprintf("%s looks cheaper and your charge covers the trips until then.", c.Label)
+			a.Summary = fmt.Sprintf("%s looks cheaper and your charge covers the trips until then.", name(c))
+			if solar {
+				a.Summary += " Solar still charges while the car is plugged in."
+				a.Rationale = append(a.Rationale, "Postponing pauses only cheap-grid charging: EVCC still charges from the sun.")
+			}
 		}
 		return a
 	default:
@@ -213,6 +252,54 @@ func adviseDay(in Input, i int) Advice {
 		a.Summary = "Prices are similar to the later days: keep the plan."
 		return a
 	}
+}
+
+// solarAhead advises charging ahead from the day's solar surplus: EVCC
+// charges from it by itself in Smart mode, so the car only needs to be
+// plugged in while the sun shines.
+func solarAhead(in Input, i int, a Advice, cheapest Day, diff float64) Advice {
+	d := in.Days[i]
+	s := d.Solar
+	a.Recommendation = ChargeAhead
+	a.Solar = true
+	a.CompareDate = cheapest.Date
+	a.Confidence = confidence(d, cheapest, true)
+	a.Indicator = indicator(diff, math.Min(s.Pct, a.LaterChargePct))
+	a.SolarPct, a.SolarPrice = round1(s.Pct), ptrRound3(s.Price)
+	a.SolarFrom, a.SolarUntil = &s.From, &s.Until
+	a.Rationale = append(a.Rationale,
+		fmt.Sprintf("%s: local solar while the car is home can add about %.0f%% SoC at about €%.2f/kWh: the grid price minus the tax not paid on own solar.",
+			d.Label, s.Pct, s.Price),
+		fmt.Sprintf("%.0f%% cheaper than the cheapest later day (%s, %s).", diff*100, cheapest.Label, basisShort(cheapest.Price)),
+		fmt.Sprintf("Trips later in the window need about +%.0f%% SoC.", a.LaterChargePct),
+		"EVCC charges from the sun by itself in Smart mode: keep the car plugged in, no plan needed.")
+	sun := d.Name + "'s sun"
+	switch i {
+	case 0:
+		sun = "Today's sun"
+	case 1:
+		sun = "Tomorrow's sun"
+	}
+	than := fmt.Sprintf("€%.2f", cheapest.Price.Value)
+	if cheapest.Price.Basis != BasisPublished {
+		than = "about " + than
+	}
+	a.Summary = fmt.Sprintf("%s charges at about €%.2f/kWh, cheaper than %s (%s): keep the car plugged in.",
+		sun, s.Price, name(cheapest), than)
+	return a
+}
+
+// name is a day's full weekday name for summaries.
+func name(d Day) string {
+	if d.Name != "" {
+		return d.Name
+	}
+	return d.Label
+}
+
+func ptrRound3(v float64) *float64 {
+	r := math.Round(v*1000) / 1000
+	return &r
 }
 
 func noSuggestion(a Advice, reason string) Advice {
@@ -325,9 +412,9 @@ func basisShort(p *DayPrice) string {
 
 func titleBasis(d Day) string {
 	if d.Price.Basis == BasisPublished {
-		return "Published " + d.Label
+		return "Published " + name(d)
 	}
-	return "Estimated " + d.Label
+	return "Estimated " + name(d)
 }
 
 func weatherLines(d Day) []string {
