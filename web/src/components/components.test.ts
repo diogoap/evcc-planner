@@ -505,6 +505,20 @@ describe('ModalDialog', () => {
     opener.remove()
   })
 
+  it('stacks: Escape closes only the top one, and the page stays locked until the last closes', () => {
+    const below = mount(ModalDialog, { props: { title: 'Day' }, attachTo: document.body })
+    const top = mount(ModalDialog, { props: { title: 'Edit trip' }, attachTo: document.body })
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    expect(top.emitted('close')).toHaveLength(1)
+    expect(below.emitted('close')).toBeUndefined()
+    top.unmount()
+    expect(document.documentElement.classList.contains('modal-open')).toBe(true)
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    expect(below.emitted('close')).toHaveLength(1)
+    below.unmount()
+    expect(document.documentElement.classList.contains('modal-open')).toBe(false)
+  })
+
   it('stops the page behind from scrolling while open', () => {
     const w = mount(ModalDialog, { props: { title: 'Edit trip' }, attachTo: document.body })
     expect(document.documentElement.classList.contains('modal-open')).toBe(true)

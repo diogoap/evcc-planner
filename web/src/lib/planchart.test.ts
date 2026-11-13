@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { Block, DayAdvice, Rate, TimelinePoint } from '../api/types'
 import {
   awaySpans,
+  chargingWindows,
   chartSummary,
   dayRange,
   priceAt,
@@ -102,6 +103,30 @@ describe('spans', () => {
     expect(awaySpans([block], t('2026-11-10T07:00:00Z'), t('2026-11-11T00:00:00Z'))).toEqual([
       { start: t('2026-11-10T07:00:00Z'), end: t('2026-11-10T07:20:00Z'), label: 'School drop-off' },
     ])
+  })
+})
+
+describe('chargingWindows', () => {
+  it('merges adjacent slots and averages their price', () => {
+    const slot = (start: string, end: string, value: number) => ({ start, end, value })
+    const windows = chargingWindows(
+      [
+        slot('2026-11-10T02:00:00Z', '2026-11-10T02:15:00Z', 0.16),
+        slot('2026-11-10T02:15:00Z', '2026-11-10T02:30:00Z', 0.18),
+        slot('2026-11-10T03:15:00Z', '2026-11-10T03:30:00Z', 0.15),
+        slot('2026-11-11T02:00:00Z', '2026-11-11T02:15:00Z', 0.1),
+      ],
+      t('2026-11-09T23:00:00Z'),
+      t('2026-11-10T23:00:00Z'),
+    )
+    expect(windows).toHaveLength(2)
+    expect(windows[0]).toMatchObject({ start: t('2026-11-10T02:00:00Z'), end: t('2026-11-10T02:30:00Z') })
+    expect(windows[0]!.price).toBeCloseTo(0.17)
+    expect(windows[1]).toEqual({
+      start: t('2026-11-10T03:15:00Z'),
+      end: t('2026-11-10T03:30:00Z'),
+      price: 0.15,
+    })
   })
 })
 

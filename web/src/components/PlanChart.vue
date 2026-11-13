@@ -3,6 +3,7 @@ import type { ChartDataset, Plugin } from 'chart.js'
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import type { Block, DayAdvice, Rate, SolarPoint, TimelinePoint } from '../api/types'
 import { alpha, Chart, cssVar, hourTicks, onThemeChange, timeTick } from '../lib/chart'
+import { localDate } from '../lib/format'
 import {
   awaySpans,
   chartSummary,
@@ -12,9 +13,10 @@ import {
   type EstimateSpan,
 } from '../lib/planchart'
 
-// SoC above prices on one time axis, from the current hour to the end of the
-// seven days. Two charts with equal axis widths, so their times line up; a
-// readout above them follows the pointer or finger (now by default).
+// SoC above prices on one time axis, from the current hour (or `from`, if
+// later) to `to`: the seven days, or one day in the day panel. Two charts with
+// equal axis widths, so their times line up; a readout above them follows the
+// pointer or finger (now by default). A click or tap names its day.
 const props = defineProps<{
   timeline: TimelinePoint[]
   blocks: Block[]
@@ -27,7 +29,11 @@ const props = defineProps<{
   reserve: number
   now: string
   to: string
+  from?: string
+  /** Smaller, without the legend (the day panel). */
+  compact?: boolean
 }>()
+const emit = defineEmits<{ day: [date: string] }>()
 
 const AXIS_LEFT = 48
 const AXIS_RIGHT = 44
@@ -37,7 +43,9 @@ const priceCanvas = ref<HTMLCanvasElement | null>(null)
 let charts: Chart[] = []
 
 const nowMs = computed(() => Date.parse(props.now))
-const from = computed(() => Math.floor(nowMs.value / 3_600_000) * 3_600_000)
+const from = computed(() =>
+  Math.max(Math.floor(nowMs.value / 3_600_000) * 3_600_000, props.from ? Date.parse(props.from) : 0),
+)
 const to = computed(() => Date.parse(props.to))
 const data = computed<ChartData>(() => ({
   timeline: props.timeline,
@@ -54,7 +62,12 @@ const hasSolar = computed(() => props.solar.some((p) => p.kw > 0))
 
 // The moment under the pointer or finger; null shows now.
 const cursor = ref<number | null>(null)
-const line = computed(() => readout(data.value, cursor.value ?? nowMs.value, cursor.value == null))
+// Now, while it is on the chart (not on a later day's).
+const line = computed(() => {
+  if (cursor.value != null) return readout(data.value, cursor.value)
+  if (nowMs.value >= from.value && nowMs.value <= to.value) return readout(data.value, nowMs.value, true)
+  return 'Point at or tap the chart for its values'
+})
 const summary = computed(() => chartSummary(data.value, props.dates, from.value, to.value))
 
 type Series = 'soc' | 'required' | 'prices' | 'estimates' | 'charging' | 'solar' | 'away'
@@ -168,7 +181,9 @@ function bands(kind: 'soc' | 'price'): Plugin<'line'> {
       }
       const area = chart.chartArea
       if (e.x == null || e.x < area.left || e.x > area.right) return
-      cursor.value = chart.scales.x!.getValueForPixel(e.x) ?? null
+      const t = chart.scales.x!.getValueForPixel(e.x)
+      cursor.value = t ?? null
+      if (e.type === 'click' && t != null) emit('day', localDate(t))
     },
   }
 }
@@ -191,7 +206,8 @@ function common(kind: 'soc' | 'price', text: string, grid: string) {
         min: from.value,
         max: to.value,
         ticks: { display: kind === 'price', callback: timeTick, color: text, maxRotation: 0, autoSkip: true },
-        afterBuildTicks: hourTicks(24),
+        // Midnights across the week; every three hours within a day.
+        afterBuildTicks: hourTicks(to.value - from.value <= 36 * 3_600_000 ? 3 : 24),
         grid: { color: grid },
         border: { display: false },
       },
@@ -375,13 +391,13 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="plan-chart">
+  <div class="plan-chart" :class="{ compact }">
     <p class="chart-readout small num" data-testid="chart-readout">{{ line }}</p>
     <div role="img" :aria-label="summary" data-testid="chart-summary">
       <div class="chart-soc"><canvas ref="socCanvas" /></div>
       <div class="chart-price"><canvas ref="priceCanvas" /></div>
     </div>
-    <div class="chart-legend" role="group" aria-label="Show or hide">
+    <div v-if="!compact" class="chart-legend" role="group" aria-label="Show or hide">
       <button
         v-for="item in legend"
         :key="item.key"
@@ -421,6 +437,14 @@ onUnmounted(() => {
 
 .chart-price {
   height: 140px;
+}
+
+.compact .chart-soc {
+  height: 120px;
+}
+
+.compact .chart-price {
+  height: 110px;
 }
 
 /* Horizontal drags move the readout; vertical ones still scroll the page. */

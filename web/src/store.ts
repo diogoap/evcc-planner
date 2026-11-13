@@ -1,6 +1,6 @@
 import { reactive } from 'vue'
 import { api } from './api/client'
-import type { Meta, Plan, Status } from './api/types'
+import type { Meta, Plan, Status, Trip } from './api/types'
 import { setTimeZone } from './lib/format'
 import { planText } from './lib/status'
 
@@ -84,6 +84,28 @@ export async function mutate(action: () => Promise<unknown>, success?: string) {
     notify((e as Error).message, 'error')
     return false
   }
+}
+
+// ---- trip actions (Trips page and day panel) ----
+
+export function setTripEnabled(t: Trip, enabled: boolean) {
+  return mutate(
+    () => api.updateTrip(t.key, { enabled }),
+    enabled ? `${t.title} enabled` : `${t.title} disabled for ${t.date}`,
+  )
+}
+
+export function confirmTrip(t: Trip) {
+  return mutate(() => api.updateTrip(t.key, { reviewed: true }), 'Marked as a car trip')
+}
+
+export function resetTrip(t: Trip) {
+  return mutate(() => api.resetTrip(t.key), 'Local edits removed')
+}
+
+export function deleteTrip(t: Trip) {
+  if (!confirm(`Delete "${t.title}"?`)) return Promise.resolve(false)
+  return mutate(() => api.deleteTrip(t.key), 'Trip deleted')
 }
 
 /** Asks for confirmation, then hands the plan in EVCC back to automatic plans. */

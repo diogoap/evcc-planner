@@ -16,12 +16,14 @@ import {
 import { ago, dateTime, dayLong, dayShort } from '../lib/format'
 import AppIcon from './AppIcon.vue'
 
+// bare: inside the day panel, without the card and its day navigation.
 const props = defineProps<{
   advice: DayAdvice
   day?: Day
   sources: AdviceSource[]
   now: string
   dates: string[]
+  bare?: boolean
 }>()
 const emit = defineEmits<{
   select: [date: string]
@@ -49,8 +51,14 @@ const level = computed(() =>
 </script>
 
 <template>
-  <section class="card advice" aria-labelledby="advice-title" data-testid="advice-card">
-    <div id="advice-title" class="card-title">
+  <section
+    class="advice"
+    :class="{ card: !bare }"
+    :aria-labelledby="bare ? undefined : 'advice-title'"
+    :aria-label="bare ? 'Advice' : undefined"
+    :data-testid="bare ? 'panel-advice' : 'advice-card'"
+  >
+    <div v-if="!bare" id="advice-title" class="card-title">
       <span>{{ weekday }}'s advice</span>
       <span class="row gap-1">
         <button

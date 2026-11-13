@@ -133,6 +133,30 @@ export function priceStats(slots: Rate[]) {
   return { average: hours ? sum / hours : first.value, min, max }
 }
 
+/**
+ * The planner's expected charging slots within [from, to), adjacent slots
+ * merged into windows, each with its time-weighted average price.
+ */
+export function chargingWindows(slots: Rate[], from: number, to: number) {
+  const out: { start: number; end: number; price: number }[] = []
+  let hours = 0
+  for (const r of slots) {
+    const [start, end] = [ms(r.start), ms(r.end)]
+    if (end <= from || start >= to) continue
+    const h = (end - start) / 3_600_000
+    const last = out[out.length - 1]
+    if (last && last.end === start) {
+      last.price = (last.price * hours + r.value * h) / (hours + h)
+      last.end = end
+      hours += h
+    } else {
+      out.push({ start, end, price: r.value })
+      hours = h
+    }
+  }
+  return out
+}
+
 export interface ChartData {
   timeline: TimelinePoint[]
   blocks: Block[]

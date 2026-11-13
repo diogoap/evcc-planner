@@ -30,6 +30,13 @@ const screens: Screen[] = [
       await page.getByTestId('week-view-list').click()
     },
   },
+  {
+    name: 'day-panel',
+    open: async (page) => {
+      await page.goto('/?day=2026-11-10')
+      await expect(page.getByTestId('day-panel')).toBeVisible()
+    },
+  },
   { name: 'trips', open: (page) => page.goto('/trips') },
   { name: 'recurring', open: (page) => page.goto('/recurring') },
   { name: 'settings-home', open: settingsTab('Home & vehicle') },

@@ -1,49 +1,11 @@
 <script setup lang="ts">
-import { nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { ref } from 'vue'
+import { useDialog } from '../lib/dialog'
 
 defineProps<{ title: string }>()
 const emit = defineEmits<{ close: [] }>()
 const root = ref<HTMLElement | null>(null)
-// Focus goes back here when the dialog closes.
-let opener: HTMLElement | null = null
-
-const focusable =
-  'a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea, summary'
-
-function onKey(e: KeyboardEvent) {
-  if (e.key === 'Escape') {
-    emit('close')
-    return
-  }
-  // Tab stays inside the dialog.
-  if (e.key !== 'Tab' || !root.value) return
-  const items = [...root.value.querySelectorAll<HTMLElement>(focusable)]
-  const first = items[0]
-  const last = items[items.length - 1]
-  if (!first || !last) return
-  const inside = root.value.contains(document.activeElement)
-  if (e.shiftKey && (document.activeElement === first || !inside)) {
-    e.preventDefault()
-    last.focus()
-  } else if (!e.shiftKey && (document.activeElement === last || !inside)) {
-    e.preventDefault()
-    first.focus()
-  }
-}
-
-onMounted(async () => {
-  opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
-  document.addEventListener('keydown', onKey)
-  // The page behind doesn't scroll while the dialog is open.
-  document.documentElement.classList.add('modal-open')
-  await nextTick()
-  root.value?.querySelector<HTMLElement>('input, select, button')?.focus()
-})
-onUnmounted(() => {
-  document.removeEventListener('keydown', onKey)
-  document.documentElement.classList.remove('modal-open')
-  if (opener?.isConnected) opener.focus()
-})
+useDialog(root, () => emit('close'))
 </script>
 
 <template>

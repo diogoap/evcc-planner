@@ -31,8 +31,11 @@ export const router = createRouter({
     },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
-  scrollBehavior(to) {
+  scrollBehavior(to, from, saved) {
+    if (saved) return saved
     if (to.hash) return { el: to.hash, top: 12 }
+    // Opening or closing the day panel (?day=) keeps the page where it is.
+    if (to.path === from.path) return false
     return { top: 0 }
   },
 })

@@ -5,9 +5,11 @@ import type {
   CarLocation,
   ControlView,
   Day,
+  Plan,
   PlanValue,
   SendOption,
   Status,
+  Trip,
   TripPlans,
 } from '../api/types'
 import type { IconName } from '../components/AppIcon.vue'
@@ -126,6 +128,13 @@ export function locationLabel(l: CarLocation): { text: string; tone: Tone; icon:
   if (l.home) return { text: 'Home', tone: 'muted', icon: 'home' }
   if (l.state === 'not_home') return { text: 'Away', tone: 'info', icon: 'route' }
   return { text: l.state, tone: 'info', icon: 'route' }
+}
+
+/** The SoC a departure needs, shown on its first trip (not once it has left). */
+export function departureTarget(plan: Plan, t: Trip) {
+  const b = t.blockIndex != null ? plan.blocks[t.blockIndex] : undefined
+  if (!b || b.tripKeys[0] !== t.key || b.status === 'done' || b.status === 'in_progress') return undefined
+  return b.targetSoc
 }
 
 /** "1 trip to review", "2 trips to review": calendar trips that may not be car trips. */

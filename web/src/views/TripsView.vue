@@ -8,7 +8,8 @@ import TripEditor from '../components/TripEditor.vue'
 import TripRow from '../components/TripRow.vue'
 import { historyLink } from '../lib/activity'
 import { dateTime, dayLong, dayShort, km, kwh } from '../lib/format'
-import { mutate, notify, refresh, state } from '../store'
+import { departureTarget } from '../lib/status'
+import { confirmTrip, deleteTrip, notify, refresh, resetTrip, setTripEnabled, state } from '../store'
 
 const route = useRoute()
 const router = useRouter()
@@ -40,33 +41,6 @@ watch(
   },
   { immediate: true },
 )
-
-// The SoC target belongs to a departure: show it on its first trip.
-function departureTarget(t: Trip) {
-  const b = t.blockIndex != null ? plan.value?.blocks[t.blockIndex] : undefined
-  if (!b || b.tripKeys[0] !== t.key || b.status === 'done' || b.status === 'in_progress') return undefined
-  return b.targetSoc
-}
-
-function toggle(t: Trip, enabled: boolean) {
-  mutate(
-    () => api.updateTrip(t.key, { enabled }),
-    enabled ? `${t.title} enabled` : `${t.title} disabled for ${t.date}`,
-  )
-}
-
-function review(t: Trip) {
-  mutate(() => api.updateTrip(t.key, { reviewed: true }), 'Marked as a car trip')
-}
-
-function reset(t: Trip) {
-  mutate(() => api.resetTrip(t.key), 'Local edits removed')
-}
-
-function remove(t: Trip) {
-  if (!confirm(`Delete "${t.title}"?`)) return
-  mutate(() => api.deleteTrip(t.key), 'Trip deleted')
-}
 
 function history(t: Trip) {
   router.push(historyLink(`trip:${t.key}`, `${t.title}, ${dayShort(t.date)}`))
@@ -110,12 +84,12 @@ function onSaved(message: string) {
               v-for="t in trips"
               :key="t.key"
               :trip="t"
-              :target="departureTarget(t)"
-              @toggle="toggle(t, $event)"
+              :target="plan && departureTarget(plan, t)"
+              @toggle="setTripEnabled(t, $event)"
               @edit="editor = { trip: t }"
-              @review="review(t)"
-              @reset="reset(t)"
-              @remove="remove(t)"
+              @review="confirmTrip(t)"
+              @reset="resetTrip(t)"
+              @remove="deleteTrip(t)"
               @history="history(t)"
             />
           </ul>

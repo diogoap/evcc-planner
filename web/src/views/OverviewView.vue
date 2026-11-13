@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { api } from '../api/client'
-import type { AdjustmentKind, Place, SendOption } from '../api/types'
+import type { AdjustmentKind, Place, SendOption, Trip } from '../api/types'
 import AdviceCard from '../components/AdviceCard.vue'
 import AppIcon from '../components/AppIcon.vue'
+import DayPanel from '../components/DayPanel.vue'
 import PlanChart from '../components/PlanChart.vue'
 import PriceChart from '../components/PriceChart.vue'
 import ProposalDialog from '../components/ProposalDialog.vue'
@@ -13,15 +14,19 @@ import SendPlanDialog from '../components/SendPlanDialog.vue'
 import TripEditor from '../components/TripEditor.vue'
 import WeekList from '../components/WeekList.vue'
 import WeekStrip from '../components/WeekStrip.vue'
+import { historyLink } from '../lib/activity'
+import { dayShort } from '../lib/format'
 import { mutate, notify, refresh, resumeAutomaticPlans, state } from '../store'
 
+const route = useRoute()
 const router = useRouter()
 const plan = computed(() => state.plan)
 const status = computed(() => state.status)
 // The plan being sent: the next departure's own target, or an option
 // covering more days.
 const sending = ref<{ option?: SendOption } | null>(null)
-const adding = ref(false)
+// A new trip (on a date) or one being edited.
+const editor = ref<{ trip?: Trip; date?: string } | null>(null)
 const places = ref<Place[]>([])
 
 // Sending works without a SoC reading: EVCC applies the plan once the car is plugged in.
@@ -37,7 +42,7 @@ const advice = computed(
     adviceDays.value.find((d) => !d.noSuggestion) ??
     adviceDays.value[0],
 )
-const proposing = ref<AdjustmentKind | null>(null)
+const proposing = ref<{ kind: AdjustmentKind; date: string } | null>(null)
 // The planner's estimate of the charging slots for the automatic target.
 const expected = computed(() => {
   const t = plan.value?.control.target
@@ -64,29 +69,52 @@ watch(weekView, (v) => {
   }
 })
 
-// A day shows its advice; without advice it opens in Trips.
-function select(date: string) {
-  if (adviceDays.value.some((d) => d.date === date)) selected.value = date
-  else router.push({ path: '/trips', hash: `#day-${date}` })
+// The day panel: its day lives in the address (?day=), so the back gesture
+// closes it. Moving between days replaces that entry instead of adding one.
+const panelDate = computed(() => {
+  const d = route.query.day
+  return typeof d === 'string' && plan.value?.days.some((x) => x.date === d) ? d : null
+})
+let pushed = false
+function openDay(date: string) {
+  if (!plan.value?.days.some((d) => d.date === date)) return
+  if (panelDate.value) {
+    router.replace({ query: { ...route.query, day: date } })
+    return
+  }
+  pushed = true
+  router.push({ query: { ...route.query, day: date } })
+}
+function closeDay() {
+  if (pushed) {
+    pushed = false
+    router.back()
+    return
+  }
+  const rest = { ...route.query }
+  delete rest.day
+  router.replace({ query: rest })
 }
 
-async function openAdd() {
+async function openEditor(e: { trip?: Trip; date?: string }) {
   places.value = await api.places().catch(() => [])
-  adding.value = true
+  editor.value = e
 }
 
 function onSaved(message: string) {
-  adding.value = false
+  editor.value = null
   sending.value = null
   proposing.value = null
   notify(message)
   refresh()
 }
 
-function dismiss(undo: boolean) {
-  const a = advice.value
-  if (!a) return
-  mutate(() => api.dismiss(a.date, undo), undo ? 'Advice restored' : 'Advice dismissed; nothing was changed')
+function dismiss(date: string, undo: boolean) {
+  mutate(() => api.dismiss(date, undo), undo ? 'Advice restored' : 'Advice dismissed; nothing was changed')
+}
+
+function tripHistory(t: Trip) {
+  router.push(historyLink(`trip:${t.key}`, `${t.title}, ${dayShort(t.date)}`))
 }
 
 function cancelAdjustment(id: number) {
@@ -139,17 +167,25 @@ function cancelAdjustment(id: number) {
                   <AppIcon name="rows" />
                 </button>
               </span>
-              <button class="btn sm" type="button" @click="openAdd"><AppIcon name="plus" />Add trip</button>
+              <button class="btn sm" type="button" @click="openEditor({ date: plan.days[1]?.date })">
+                <AppIcon name="plus" />Add trip
+              </button>
             </span>
           </div>
           <WeekStrip
             v-if="weekView === 'columns'"
             :days="plan.days"
             :advice="adviceDays"
-            :selected="advice?.date"
-            @select="select"
+            :selected="panelDate ?? advice?.date"
+            @select="openDay"
           />
-          <WeekList v-else :days="plan.days" :advice="adviceDays" :selected="advice?.date" @select="select" />
+          <WeekList
+            v-else
+            :days="plan.days"
+            :advice="adviceDays"
+            :selected="panelDate ?? advice?.date"
+            @select="openDay"
+          />
           <p v-if="weekView === 'columns' && adviceDays.length" class="small muted m-0 mt-2 week-legend">
             <AppIcon name="bolt" /> charge ahead · <AppIcon name="clock" /> defer ·
             <AppIcon name="check" /> keep or no plan · <AppIcon name="dash" /> no data. Tap a day for its
@@ -166,8 +202,8 @@ function cancelAdjustment(id: number) {
           :now="plan.now"
           :dates="adviceDays.map((d) => d.date)"
           @select="(d) => (selected = d)"
-          @propose="(k) => (proposing = k)"
-          @dismiss="dismiss"
+          @propose="(k) => (proposing = { kind: k, date: advice!.date })"
+          @dismiss="(undo) => dismiss(advice!.date, undo)"
           @cancel="cancelAdjustment"
         />
 
@@ -187,6 +223,7 @@ function cancelAdjustment(id: number) {
             :reserve="plan.settings.arrivalReservePct"
             :now="plan.now"
             :to="plan.to"
+            @day="openDay"
           />
           <p v-else class="muted small m-0">Shown once EVCC has read the SoC or published prices.</p>
           <p class="small muted m-0 mt-3">
@@ -213,6 +250,23 @@ function cancelAdjustment(id: number) {
       </div>
     </template>
 
+    <DayPanel
+      v-if="panelDate && plan"
+      :date="panelDate"
+      :plan="plan"
+      :status="status"
+      :charging="expected"
+      :can-send="canSend"
+      @close="closeDay"
+      @select="openDay"
+      @add="(date) => openEditor({ date })"
+      @edit="(trip) => openEditor({ trip })"
+      @history="tripHistory"
+      @send="(option) => (sending = { option })"
+      @propose="(kind, date) => (proposing = { kind, date })"
+      @dismiss="dismiss"
+      @cancel="cancelAdjustment"
+    />
     <SendPlanDialog
       v-if="sending && plan?.next"
       :block="plan.next"
@@ -223,18 +277,19 @@ function cancelAdjustment(id: number) {
       @sent="onSaved"
     />
     <ProposalDialog
-      v-if="proposing && advice"
-      :date="advice.date"
-      :kind="proposing"
+      v-if="proposing"
+      :date="proposing.date"
+      :kind="proposing.kind"
       @close="proposing = null"
       @applied="onSaved"
     />
     <TripEditor
-      v-if="adding && plan"
+      v-if="editor && plan"
       :places="places"
-      :date="plan.days[1]?.date"
+      :trip="editor.trip"
+      :date="editor.date"
       :default-stay-min="plan.settings.defaultStayMin"
-      @close="adding = false"
+      @close="editor = null"
       @saved="onSaved"
     />
   </main>

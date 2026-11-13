@@ -25,8 +25,8 @@ test('daily advice per day, with a confirmed extra plan that can be ended', asyn
   await expect(page.getByTestId('day-2026-11-09').getByTestId('badge-advice')).toHaveText('Defer')
 
   await page.getByTestId('day-2026-11-10').click()
-  const card = page.getByTestId('advice-card')
-  await expect(card).toContainText("Tuesday's advice")
+  const card = page.getByTestId('panel-advice')
+  await expect(page.getByTestId('day-panel')).toContainText('Tuesday 10 November')
   await expect(card.getByTestId('advice-confidence')).toHaveText('Medium confidence')
   await expect(card.getByTestId('advice-basis')).toHaveText('Published')
   await expect(card.getByTestId('advice-sun')).toContainText('while home')
@@ -62,7 +62,7 @@ test('daily advice per day, with a confirmed extra plan that can be ended', asyn
 test('dismissing advice changes nothing and can be undone', async ({ page }) => {
   await page.goto('/')
   await page.getByTestId('day-2026-11-10').click()
-  const card = page.getByTestId('advice-card')
+  const card = page.getByTestId('panel-advice')
   await card.getByRole('button', { name: 'Dismiss' }).click()
   await expect(card).toContainText('Dismissed; nothing was changed.')
   await expect(card.getByRole('button', { name: 'Create extra plan' })).toHaveCount(0)
@@ -74,7 +74,7 @@ test('dismissing advice changes nothing and can be undone', async ({ page }) => 
 test('weak or missing advice offers no plan action', async ({ page }) => {
   await page.goto('/')
   await page.getByTestId('day-2026-11-11').click()
-  const card = page.getByTestId('advice-card')
+  const card = page.getByTestId('panel-advice')
   await expect(card.getByTestId('advice-label')).toHaveText('No data / no suggestion')
   await expect(card.getByTestId('advice-basis')).toHaveText('Weekly average')
   await expect(card.getByTestId('advice-sun')).toContainText('of possible sunshine')
@@ -87,7 +87,7 @@ test('weak or missing advice offers no plan action', async ({ page }) => {
 test('review a postponement of cheap-grid charging', async ({ page }) => {
   await page.goto('/')
   await page.getByTestId('day-2026-11-09').click()
-  const card = page.getByTestId('advice-card')
+  const card = page.getByTestId('panel-advice')
   await card.getByRole('button', { name: 'Review postponement' }).click()
   const dialog = page.getByRole('dialog', { name: /Review postponement/ })
   await expect(dialog).toContainText('€0.20/kWh → paused')
