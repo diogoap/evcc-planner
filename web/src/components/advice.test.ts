@@ -75,15 +75,17 @@ describe('AdviceCard', () => {
         action: undefined,
         solarPct: 4.2,
         solarPrice: 0.268,
+        solarGridPrice: 0.378,
         solarFrom: '2026-11-10T09:30:00Z',
         solarUntil: '2026-11-10T13:30:00Z',
         summary:
-          "Tomorrow's sun charges at about €0.27/kWh, cheaper than Sunday (about €0.33): keep the car plugged in.",
+          "Tomorrow's sun charges at about €0.38/kWh, or €0.27 without the tax you don't pay on own solar: cheaper than Sunday (about €0.33). Keep the car plugged in.",
       }),
     )
     expect(w.get('[data-testid=advice-label]').text()).toBe('Charge ahead from solar')
+    // The grid price in the sun's slots, as on the price chart.
     expect(w.get('[data-testid=advice-solar]').text()).toBe(
-      'Keep the car plugged in from 10:30 to 14:30: EVCC charges from the sun by itself, about 4% at €0.27/kWh.',
+      'Keep the car plugged in from 10:30 to 14:30: EVCC charges from the sun by itself, about 4% at €0.38/kWh.',
     )
     expect(w.find('button.primary').exists()).toBe(false)
     expect(w.text()).not.toContain('no plan action')

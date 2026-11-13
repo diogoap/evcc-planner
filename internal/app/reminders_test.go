@@ -303,12 +303,13 @@ func TestPlugInForTheSun(t *testing.T) {
 	if wed.Date != "2026-11-11" || wed.Recommendation != "charge_ahead" || !wed.Solar || wed.Action != "" {
 		t.Fatalf("Wednesday's advice = %+v", wed)
 	}
-	if !strings.HasPrefix(wed.Summary, "Today's sun charges at about €0.") || !strings.HasSuffix(wed.Summary, "keep the car plugged in.") {
+	if !strings.HasPrefix(wed.Summary, "Today's sun charges at about €0.") || !strings.Contains(wed.Summary, "without the tax you don't pay on own solar") ||
+		!strings.HasSuffix(wed.Summary, "Keep the car plugged in.") {
 		t.Errorf("summary = %q", wed.Summary)
 	}
 
 	n := ta.notification("solar:2026-11-11")
-	if n.Title != "Plug in for the sun" || !strings.Contains(n.Message, "Plug in to use it.") ||
+	if n.Title != "Plug in for the sun" || !strings.Contains(n.Message, "Plug in to use it.") || !strings.Contains(n.Message, "without the tax on own solar") ||
 		n.Latest == nil || !n.Latest.Equal(*wed.SolarUntil) {
 		t.Fatalf("solar reminder = %+v", n)
 	}

@@ -117,7 +117,7 @@ function titleSpans(days: { date: string; items: TitleItem[] }[], from: number, 
     .map((s) => ({ ...s, start: Math.max(s.start, from), end: Math.min(s.end, to) }))
 }
 
-/** Above the SoC chart: each day's driving distance and the energy it needs. */
+/** Above the SoC chart: each day's driving distance and the energy it needs, 0 without trips. */
 export function driveTitles(days: Day[], from: number, to: number) {
   const items = (d: Day): TitleItem[] => [
     {
@@ -129,7 +129,7 @@ export function driveTitles(days: Day[], from: number, to: number) {
     { icon: 'bolt', text: kwh(d.energyKWh), short: d.energyKWh.toFixed(1), label: kwh(d.energyKWh) },
   ]
   return titleSpans(
-    days.map((d) => ({ date: d.date, items: d.distanceKm > 0 ? items(d) : [] })),
+    days.map((d) => ({ date: d.date, items: items(d) })),
     from,
     to,
   )

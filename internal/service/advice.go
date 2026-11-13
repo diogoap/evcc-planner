@@ -199,7 +199,7 @@ func (s *Service) buildAdvice(view *PlanView, result planner.Result, socKnown bo
 	}
 	outlookStale := outlook != nil && now.Sub(outlook.FetchedAt) > outlookMaxAge
 
-	in := advice.Input{SoCKnown: socKnown}
+	in := advice.Input{SoCKnown: socKnown, SolarMinKW: planner.MinChargeKW(planParams(view.Settings))}
 	var away [][2]time.Time
 	for _, b := range result.Blocks {
 		away = append(away, [2]time.Time{b.DepartAt, b.ReturnAt})
@@ -246,7 +246,7 @@ func (s *Service) buildAdvice(view *PlanView, result planner.Result, socKnown bo
 			sc := planner.Solar(solarSlots(solar, slots, from, end, day.Price), from, away, planParams(view.Settings),
 				planner.AheadParams{HouseholdKW: view.Settings.HouseholdKW, SolarTaxSaving: view.Settings.SolarTaxSaving})
 			if sc.Pct > 0 {
-				day.Solar = &advice.Solar{Pct: sc.Pct, Price: sc.Price, From: sc.From, Until: sc.Until}
+				day.Solar = &advice.Solar{Pct: sc.Pct, Price: sc.Price, GridPrice: sc.GridPrice, From: sc.From, Until: sc.Until}
 			}
 		}
 		in.Days = append(in.Days, day)

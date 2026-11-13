@@ -169,7 +169,7 @@ const level = computed(() =>
       <AppIcon name="plug" />
       Keep the car plugged in from {{ clock(advice.solarFrom) }} to {{ clock(advice.solarUntil) }}: EVCC
       charges from the sun by itself, about {{ Math.round(advice.solarPct ?? 0) }}% at €{{
-        advice.solarPrice?.toFixed(2)
+        (advice.solarGridPrice ?? advice.solarPrice)?.toFixed(2)
       }}/kWh.
     </p>
     <p

@@ -96,8 +96,10 @@ const panelDate = computed(() => {
   return typeof d === 'string' && plan.value?.days.some((x) => x.date === d) ? d : null
 })
 let pushed = false
+// Opening a day also shows its advice in the advice card.
 function openDay(date: string) {
   if (!plan.value?.days.some((d) => d.date === date)) return
+  selected.value = date
   if (panelDate.value) {
     router.replace({ query: { ...route.query, day: date } })
     return

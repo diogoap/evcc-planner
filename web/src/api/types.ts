@@ -326,11 +326,14 @@ export interface DayAdvice {
   actionNote?: string
   /**
    * Charge ahead from solar: keep the car plugged in while the sun shines
-   * (solarFrom to solarUntil), at solarPrice for up to solarPct; no plan.
+   * (solarFrom to solarUntil), for up to solarPct; no plan. It counts at
+   * solarPrice (without the tax not paid on own solar); the grid charges
+   * solarGridPrice in those slots.
    */
   solar?: boolean
   solarPct?: number
   solarPrice?: number
+  solarGridPrice?: number
   solarFrom?: string
   solarUntil?: string
   adjustment?: Adjustment

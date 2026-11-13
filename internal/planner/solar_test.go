@@ -30,6 +30,13 @@ func TestSolarCountsUsableSurplusWhileHome(t *testing.T) {
 	if want := (2.0*0.25*0.27 + 3.68*0.25*0.23) / wall; math.Abs(got.Price-want) > 1e-9 {
 		t.Errorf("Price = %.4f, want %.4f", got.Price, want)
 	}
+	// The grid price in the same slots, before the tax saving.
+	if want := (2.0*0.25*0.38 + 3.68*0.25*0.34) / wall; math.Abs(got.GridPrice-want) > 1e-9 {
+		t.Errorf("GridPrice = %.4f, want %.4f", got.GridPrice, want)
+	}
+	if math.Abs(MinChargeKW(p)-1.38) > 1e-9 {
+		t.Errorf("MinChargeKW = %v", MinChargeKW(p))
+	}
 	if !got.From.Equal(at(11, 15)) || !got.Until.Equal(at(12, 0)) {
 		t.Errorf("window %s–%s, want 11:15–12:00", got.From, got.Until)
 	}

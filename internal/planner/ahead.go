@@ -72,9 +72,13 @@ type window struct {
 // maximum (6 of 16 A): solar below it cannot charge the car.
 const minChargeShare = 6.0 / 16
 
+// MinChargeKW is the least power the charger charges with: the solar surplus
+// (after household use) it needs before the sun can charge the car.
+func MinChargeKW(p Params) float64 { return p.ChargePowerKW * minChargeShare }
+
 func newWindow(slots []Slot, from, to time.Time, p Params, ap AheadParams) *window {
 	w := &window{}
-	minKW := p.ChargePowerKW * minChargeShare
+	minKW := MinChargeKW(p)
 	for _, s := range slots {
 		start, end := s.Start, s.End
 		if start.Before(from) {
@@ -244,12 +248,14 @@ func (out *Ahead) addLater(res Result, p Params, sorted []Slot, ap AheadParams, 
 
 // SolarCharge is what the forecast solar surplus can add while the car is
 // home: SoC points, the EUR/kWh it counts at (each slot's price minus the
-// tax saving, weighted by energy), and the first and last slot it charges.
+// tax saving, weighted by energy), the slots' grid price itself (weighted
+// the same), and the first and last slot it charges.
 type SolarCharge struct {
-	Pct   float64
-	Price float64
-	From  time.Time
-	Until time.Time
+	Pct       float64
+	Price     float64
+	GridPrice float64
+	From      time.Time
+	Until     time.Time
 }
 
 // Solar measures the usable solar surplus in the slots from `from`, outside
@@ -258,8 +264,8 @@ type SolarCharge struct {
 // counts as none, and no slot charges faster than the charger.
 func Solar(slots []Slot, from time.Time, away [][2]time.Time, p Params, ap AheadParams) SolarCharge {
 	var out SolarCharge
-	minKW := p.ChargePowerKW * minChargeShare
-	wallKWh, cost := 0.0, 0.0
+	minKW := MinChargeKW(p)
+	wallKWh, cost, grid := 0.0, 0.0, 0.0
 	for _, s := range slots {
 		start := s.Start
 		if start.Before(from) {
@@ -283,6 +289,7 @@ func Solar(slots []Slot, from time.Time, away [][2]time.Time, p Params, ap Ahead
 		kwh := kw * s.End.Sub(start).Hours()
 		wallKWh += kwh
 		cost += kwh * math.Max(0, s.Price-ap.SolarTaxSaving)
+		grid += kwh * s.Price
 		out.Pct += pct(kwh*p.EfficiencyPct/100, p)
 		if out.From.IsZero() {
 			out.From = start
@@ -290,7 +297,7 @@ func Solar(slots []Slot, from time.Time, away [][2]time.Time, p Params, ap Ahead
 		out.Until = s.End
 	}
 	if wallKWh > 0 {
-		out.Price = cost / wallKWh
+		out.Price, out.GridPrice = cost/wallKWh, grid/wallKWh
 	}
 	return out
 }

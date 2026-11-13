@@ -1,6 +1,7 @@
 package advice
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -103,6 +104,7 @@ func TestDeferWhenTheChargeCoversTheTripsUntilACheaperDay(t *testing.T) {
 	}
 	total, home := 9.5, 6.2
 	in.Days[2].SolarKWh, in.Days[2].SolarHomeKWh = &total, &home
+	in.Days[2].Solar = &Solar{Pct: 6, Price: 0.15, GridPrice: 0.26}
 	got := Advise(in)
 	if mon := got[0]; mon.Recommendation != Defer || mon.DeferUntil != "2026-11-11" || mon.Confidence != 2 {
 		t.Fatalf("Monday = %+v", mon)
@@ -112,6 +114,17 @@ func TestDeferWhenTheChargeCoversTheTripsUntilACheaperDay(t *testing.T) {
 	}
 	if !strings.Contains(strings.Join(got[2].Rationale, " "), "Sun: 9.5 kWh local solar forecast (EVCC), 6.2 kWh while the car is home.") {
 		t.Errorf("the day's own rationale should show its solar: %v", got[2].Rationale)
+	}
+
+	// Sun too weak to reach the charger's minimum: no claim that it may
+	// cover the charging, and the day says why.
+	in.Days[2].Solar, in.Days[2].Name, in.SolarMinKW = nil, "Wednesday", 1.38
+	got = Advise(in)
+	if strings.Contains(strings.Join(got[0].Rationale, " "), "local solar") {
+		t.Errorf("weak sun should not count in the deferral: %v", got[0].Rationale)
+	}
+	if want := "Wednesday: the sun stays below what the charger needs (about 1.4 kW above household use), so it can't charge the car."; !slices.Contains(got[2].Rationale, want) {
+		t.Errorf("the weak sun should be explained: %v", got[2].Rationale)
 	}
 
 	// After EVCC's forecast, KNMI's sunshine stands in.
@@ -217,18 +230,20 @@ func withSun(in Input, s *Solar) Input {
 
 func TestChargeAheadFromSolarWhenTheSunBeatsLaterDays(t *testing.T) {
 	from, until := time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC), time.Date(2026, 11, 13, 15, 0, 0, 0, time.UTC)
-	got := Advise(withSun(solarFriday(), &Solar{Pct: 4, Price: 0.27, From: from, Until: until}))[0]
+	got := Advise(withSun(solarFriday(), &Solar{Pct: 4, Price: 0.27, GridPrice: 0.38, From: from, Until: until}))[0]
 	if got.Recommendation != ChargeAhead || !got.Solar || got.CompareDate != "2026-11-15" {
 		t.Fatalf("Friday = %+v", got)
 	}
 	// Sunday is an estimate: medium confidence; the sun covers 4 of the 16%.
-	if got.Confidence != 2 || got.Indicator != "little" || got.SolarPct != 4 || *got.SolarPrice != 0.27 {
+	if got.Confidence != 2 || got.Indicator != "little" || got.SolarPct != 4 || *got.SolarPrice != 0.27 || *got.SolarGridPrice != 0.38 {
 		t.Errorf("confidence %d, indicator %s, solar %.1f%% at %v", got.Confidence, got.Indicator, got.SolarPct, *got.SolarPrice)
 	}
 	if !got.SolarFrom.Equal(from) || !got.SolarUntil.Equal(until) {
 		t.Errorf("solar window %v–%v", got.SolarFrom, got.SolarUntil)
 	}
-	if want := "Today's sun charges at about €0.27/kWh, cheaper than Sunday (about €0.33): keep the car plugged in."; got.Summary != want {
+	// The grid price leads; the decision counts it without the tax.
+	if want := "Today's sun charges at about €0.38/kWh, or €0.27 without the tax you don't pay on own solar: " +
+		"cheaper than Sunday (about €0.33). Keep the car plugged in."; got.Summary != want {
 		t.Errorf("summary = %q", got.Summary)
 	}
 }

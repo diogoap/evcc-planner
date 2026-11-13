@@ -26,9 +26,13 @@ test('daily advice per day, with a confirmed extra plan that can be ended', asyn
   await expect(wed.getByTestId('badge-price')).toHaveText('~€0.25')
   await expect(page.getByTestId('day-2026-11-09').getByTestId('badge-advice')).toHaveText('Defer')
 
+  const overviewAdvice = page.getByTestId('advice-card').locator('#advice-title')
+  await expect(overviewAdvice).toContainText("Monday's advice")
   await page.getByTestId('day-2026-11-10').click()
   const card = page.getByTestId('panel-advice')
   await expect(page.getByTestId('day-panel')).toContainText('Tuesday 10 November')
+  // The Overview's advice card follows the day opened.
+  await expect(overviewAdvice).toContainText("Tuesday's advice")
   await expect(card.getByTestId('advice-confidence')).toHaveText('Medium confidence')
   await expect(card.getByTestId('advice-basis')).toHaveText('Published')
   await expect(card.getByTestId('advice-sun')).toContainText('while home')

@@ -282,10 +282,19 @@ func (r *reminders) solar() {
 	r.send(model.Notification{
 		Key: "solar:" + a.Date, Kind: model.NotifySolar, Subject: "solar:" + a.Date, Latest: a.SolarUntil,
 		Title: "Plug in for the sun",
-		Message: fmt.Sprintf("Sunshine until about %s charges the car at about €%.2f/kWh, cheaper than %s. Plug in to use it.",
-			r.s.clockText(*a.SolarUntil), *a.SolarPrice, than),
+		Message: fmt.Sprintf("Sunshine until about %s charges the car at about €%.2f/kWh (€%.2f without the tax on own solar), cheaper than %s. Plug in to use it.",
+			r.s.clockText(*a.SolarUntil), solarGridPrice(a), *a.SolarPrice, than),
 		Verbs: []string{model.VerbSnooze, model.VerbView},
 	}, false)
+}
+
+// solarGridPrice is the grid price in the sun's slots (the solar price when
+// it is missing).
+func solarGridPrice(a *DayAdviceView) float64 {
+	if a.SolarGridPrice != nil {
+		return *a.SolarGridPrice
+	}
+	return *a.SolarPrice
 }
 
 // snoozed sends snoozed notifications again once their time has come.

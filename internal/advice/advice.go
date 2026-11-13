@@ -52,6 +52,10 @@ const minHomeHours = 1.0
 // minSolarPct is the solar charge (SoC points) worth advising on.
 const minSolarPct = 1.0
 
+// minWeakSunKWh is the local solar while the car is home (kWh) worth
+// explaining when none of it can charge the car.
+const minWeakSunKWh = 3.0
+
 // DayPrice is a date's expected price level.
 type DayPrice struct {
 	Value  float64 `json:"value"` // EUR/kWh incl. VAT, daily average
@@ -87,13 +91,14 @@ type Day struct {
 }
 
 // Solar is a day's usable solar surplus while the car is home: SoC points,
-// EUR/kWh (the slot prices minus the tax not paid on own solar), and the
-// first and last slot it charges.
+// EUR/kWh (the slot prices minus the tax not paid on own solar), the slots'
+// grid price itself, and the first and last slot it charges.
 type Solar struct {
-	Pct   float64
-	Price float64
-	From  time.Time
-	Until time.Time
+	Pct       float64
+	Price     float64
+	GridPrice float64
+	From      time.Time
+	Until     time.Time
 }
 
 // Departure is an upcoming away period from the minimum-charge plan.
@@ -109,6 +114,9 @@ type Input struct {
 	Days       []Day // the window, today first
 	Departures []Departure
 	SoCKnown   bool
+	// SolarMinKW is the solar surplus (kW, after household use) the charger
+	// needs to charge at all.
+	SolarMinKW float64
 }
 
 // Advice is one date's recommendation.
@@ -125,12 +133,15 @@ type Advice struct {
 	DeferUntil     string   `json:"deferUntil,omitempty"`  // defer: the cheaper day
 	LaterChargePct float64  `json:"laterChargePct"`        // charge the plan adds after this day
 	// Solar marks charge ahead from solar: keep the car plugged in while the
-	// sun shines (SolarFrom to SolarUntil), at SolarPrice for up to SolarPct.
-	Solar      bool       `json:"solar,omitempty"`
-	SolarPct   float64    `json:"solarPct,omitempty"`
-	SolarPrice *float64   `json:"solarPrice,omitempty"`
-	SolarFrom  *time.Time `json:"solarFrom,omitempty"`
-	SolarUntil *time.Time `json:"solarUntil,omitempty"`
+	// sun shines (SolarFrom to SolarUntil), for up to SolarPct. It counts at
+	// SolarPrice (the grid price minus the tax not paid on own solar), while
+	// the grid charges SolarGridPrice in those slots.
+	Solar          bool       `json:"solar,omitempty"`
+	SolarPct       float64    `json:"solarPct,omitempty"`
+	SolarPrice     *float64   `json:"solarPrice,omitempty"`
+	SolarGridPrice *float64   `json:"solarGridPrice,omitempty"`
+	SolarFrom      *time.Time `json:"solarFrom,omitempty"`
+	SolarUntil     *time.Time `json:"solarUntil,omitempty"`
 }
 
 // Advise returns advice for every day of the input window.
@@ -149,6 +160,9 @@ func adviseDay(in Input, i int) Advice {
 		a.Rationale = append(a.Rationale, priceLine(d))
 	}
 	a.Rationale = append(a.Rationale, weatherLines(d)...)
+	if line := weakSun(in, d); line != "" {
+		a.Rationale = append(a.Rationale, line)
+	}
 	switch {
 	case d.Price == nil:
 		return noSuggestion(a, "No published prices or outlook estimate for this day.")
@@ -222,7 +236,8 @@ func adviseDay(in Input, i int) Advice {
 			c.Label, (d.Price.Value-c.Price.Value)/math.Abs(d.Price.Value)*100, basisShort(c.Price)))
 		switch {
 		case c.SolarHomeKWh != nil:
-			if *c.SolarHomeKWh >= 3 {
+			// Only sun strong enough to charge the car (see weakSun).
+			if *c.SolarHomeKWh >= minWeakSunKWh && c.Solar != nil && c.Solar.Pct >= minSolarPct {
 				a.Rationale = append(a.Rationale, fmt.Sprintf("%s: about %.0f kWh of local solar while the car is home (EVCC forecast, before household use) may cover part of the charging.",
 					c.Label, *c.SolarHomeKWh))
 			}
@@ -265,12 +280,12 @@ func solarAhead(in Input, i int, a Advice, cheapest Day, diff float64) Advice {
 	a.CompareDate = cheapest.Date
 	a.Confidence = confidence(d, cheapest, true)
 	a.Indicator = indicator(diff, math.Min(s.Pct, a.LaterChargePct))
-	a.SolarPct, a.SolarPrice = round1(s.Pct), ptrRound3(s.Price)
+	a.SolarPct, a.SolarPrice, a.SolarGridPrice = round1(s.Pct), ptrRound3(s.Price), ptrRound3(s.GridPrice)
 	a.SolarFrom, a.SolarUntil = &s.From, &s.Until
 	a.Rationale = append(a.Rationale,
-		fmt.Sprintf("%s: local solar while the car is home can add about %.0f%% SoC at about €%.2f/kWh: the grid price minus the tax not paid on own solar.",
-			d.Label, s.Pct, s.Price),
-		fmt.Sprintf("%.0f%% cheaper than the cheapest later day (%s, %s).", diff*100, cheapest.Label, basisShort(cheapest.Price)),
+		fmt.Sprintf("%s: local solar while the car is home can add about %.0f%% SoC at about €%.2f/kWh, or €%.2f without the tax not paid on own solar.",
+			d.Label, s.Pct, s.GridPrice, s.Price),
+		fmt.Sprintf("Counted that way, %.0f%% cheaper than the cheapest later day (%s, %s).", diff*100, cheapest.Label, basisShort(cheapest.Price)),
 		fmt.Sprintf("Trips later in the window need about +%.0f%% SoC.", a.LaterChargePct),
 		"EVCC charges from the sun by itself in Smart mode: keep the car plugged in, no plan needed.")
 	sun := d.Name + "'s sun"
@@ -284,9 +299,19 @@ func solarAhead(in Input, i int, a Advice, cheapest Day, diff float64) Advice {
 	if cheapest.Price.Basis != BasisPublished {
 		than = "about " + than
 	}
-	a.Summary = fmt.Sprintf("%s charges at about €%.2f/kWh, cheaper than %s (%s): keep the car plugged in.",
-		sun, s.Price, name(cheapest), than)
+	a.Summary = fmt.Sprintf("%s charges at about €%.2f/kWh, or €%.2f without the tax you don't pay on own solar: cheaper than %s (%s). Keep the car plugged in.",
+		sun, s.GridPrice, s.Price, name(cheapest), than)
 	return a
+}
+
+// weakSun says when a day has sun while the car is home but none of it
+// reaches the charger's minimum above household use, so it cannot charge.
+func weakSun(in Input, d Day) string {
+	if d.Price == nil || d.SolarHomeKWh == nil || *d.SolarHomeKWh < minWeakSunKWh || d.Solar != nil || in.SolarMinKW <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("%s: the sun stays below what the charger needs (about %.1f kW above household use), so it can't charge the car.",
+		d.Name, in.SolarMinKW)
 }
 
 // name is a day's full weekday name for summaries.
