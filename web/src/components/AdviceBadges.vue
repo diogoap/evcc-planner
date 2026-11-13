@@ -66,7 +66,9 @@ const sun = computed(() => {
       :title="price.title"
       data-testid="badge-price"
     >
-      <AppIcon name="tag" />{{ price.text }}
+      <AppIcon :name="price.lowest ? 'arrow-down' : 'tag'" :label="price.lowest ? 'Lowest' : undefined" />{{
+        price.text
+      }}
     </span>
     <span
       v-if="sun && !hideWeather"

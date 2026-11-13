@@ -110,7 +110,9 @@ const level = computed(() =>
     <dl class="facts">
       <div v-if="price && advice.price" class="fact">
         <dt><AppIcon name="tag" />Price</dt>
-        <dd class="fact-value num">{{ price.value }}</dd>
+        <dd class="fact-value num">
+          <AppIcon v-if="price.lowest" name="arrow-down" label="Lowest" />{{ price.value }}
+        </dd>
         <dd v-if="price.detail" class="small muted num">{{ price.detail }}</dd>
         <dd>
           <span

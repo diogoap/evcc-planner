@@ -67,16 +67,25 @@ export function adviceLabel(a: DayAdvice, day?: Day): Label {
     : { text: 'No plan needed', short: 'No plan', tone: 'muted', icon: 'check' }
 }
 
+/** "€0.16 (13:30)": the day's lowest published slot and when it starts. */
+export function lowestText(p: DayPrice) {
+  return `€${(p.min ?? p.value).toFixed(2)}${p.minAt ? ` (${clock(p.minAt)})` : ''}`
+}
+
 /**
  * The day's price as a short badge: the lowest slot for published days
- * ("min €0.14"), else the day level ("~€0.30" for estimates).
+ * ("€0.14", shown with a down arrow), else the day level ("~€0.30" for
+ * estimates).
  */
-export function priceBadge(a: DayAdvice): { text: string; basis: DayPrice['basis']; title: string } | null {
+export function priceBadge(
+  a: DayAdvice,
+): { text: string; basis: DayPrice['basis']; title: string; lowest: boolean } | null {
   const p = a.price
   if (!p) return null
   if (p.basis === 'published' && p.min != null) {
     return {
-      text: `min €${p.min.toFixed(2)}`,
+      text: `€${p.min.toFixed(2)}`,
+      lowest: true,
       basis: p.basis,
       title: `Lowest published price €${p.min.toFixed(3)}/kWh${p.minAt ? ` at ${clock(p.minAt)}` : ''} (average €${p.value.toFixed(3)})`,
     }
@@ -84,6 +93,7 @@ export function priceBadge(a: DayAdvice): { text: string; basis: DayPrice['basis
   const value = `€${p.value.toFixed(2)}`
   return {
     text: p.basis === 'published' ? value : `~${value}`,
+    lowest: false,
     basis: p.basis,
     title: `${basisNames[p.basis]}: ${p.detail}`,
   }
@@ -113,14 +123,19 @@ export const sunSourceNames = {
 export interface Fact {
   value: string
   detail: string
+  /** The value is the day's lowest price (shown with a down arrow). */
+  lowest?: boolean
 }
 
-/** "€0.26 avg", "lowest €0.16 at 13:30" (lowest: published days). */
+/**
+ * Published days lead with the lowest slot, "€0.16 (13:30)", over "€0.26
+ * avg"; estimates have only the day level, "€0.30 avg".
+ */
 export function priceFact(a: DayAdvice): Fact | null {
   const p = a.price
   if (!p) return null
-  const lowest = p.min != null ? `lowest €${p.min.toFixed(2)}${p.minAt ? ` at ${clock(p.minAt)}` : ''}` : ''
-  return { value: `€${p.value.toFixed(2)} avg`, detail: lowest }
+  const avg = `€${p.value.toFixed(2)} avg`
+  return p.min != null ? { value: lowestText(p), detail: avg, lowest: true } : { value: avg, detail: '' }
 }
 
 /** "7.0 kWh", "6.0 kWh while home" from EVCC; "40%", "of possible sunshine" from KNMI. */

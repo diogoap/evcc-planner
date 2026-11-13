@@ -74,7 +74,10 @@ const tiles = computed(() =>
         :class="`basis-${t.price.basis}`"
         :title="t.price.title"
         data-testid="badge-price"
-        ><AppIcon name="tag" />{{ t.price.text }}</span
+        ><AppIcon
+          :name="t.price.lowest ? 'arrow-down' : 'tag'"
+          :label="t.price.lowest ? 'Lowest' : undefined"
+        />{{ t.price.text }}</span
       >
       <span v-if="t.day.reviewCount" class="week-review pill tone-warn" :title="reviewText(t.day.reviewCount)"
         ><span aria-hidden="true">!</span

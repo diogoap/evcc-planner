@@ -2,15 +2,16 @@
 import { computed } from 'vue'
 import type { Day, DayAdvice } from '../api/types'
 import { basisNames } from '../lib/advice'
-import { clock, dayShort, km, kwh } from '../lib/format'
+import { dayShort, km, kwh } from '../lib/format'
 import { dayLabel, reviewText } from '../lib/status'
 import AdviceBadges from './AdviceBadges.vue'
 import AppIcon from './AppIcon.vue'
 
 // The seven days as a list, with everything about each day: distance, energy,
-// the charge its departures need, the price (average, and the lowest slot on
-// published days), the weather (sunshine and wind from KNMI's outlook, every
-// day, plus EVCC's local solar forecast where it has one), and the advice. A row per day on wide screens; on phones each day
+// the charge its departures need, the price (the lowest slot over the average
+// on published days, else the average), the weather (sunshine and wind from
+// KNMI's outlook, every day, plus EVCC's local solar forecast where it has
+// one), and the advice. A row per day on wide screens; on phones each day
 // stacks its figures, plan and weather, and advice.
 const props = defineProps<{ days: Day[]; advice: DayAdvice[]; selected?: string }>()
 const emit = defineEmits<{ select: [date: string] }>()
@@ -72,12 +73,15 @@ const rows = computed(() => {
           :class="`basis-${r.price.basis}`"
           :title="`${basisNames[r.price.basis]}: ${r.price.detail}`"
           data-testid="badge-price"
-          >{{ r.price.basis === 'published' ? '' : '~' }}€{{ r.price.value.toFixed(2) }} avg</span
+          ><template v-if="r.price.min != null"
+            ><AppIcon name="arrow-down" label="Lowest" />€{{ r.price.min.toFixed(2) }}</template
+          ><template v-else
+            >{{ r.price.basis === 'published' ? '' : '~' }}€{{ r.price.value.toFixed(2) }} avg</template
+          ></span
         >
         <span v-else class="muted">–</span>
-        <span v-if="r.price?.min != null" class="wl-icon-text small muted num" data-testid="price-min"
-          ><AppIcon name="arrow-down" label="Lowest" />€{{ r.price.min.toFixed(2)
-          }}{{ r.price.minAt ? ` at ${clock(r.price.minAt)}` : '' }}</span
+        <span v-if="r.price?.min != null" class="small muted num" data-testid="price-avg"
+          >€{{ r.price.value.toFixed(2) }} avg</span
         >
       </span>
       <span v-if="r.advice" class="wl-weather">

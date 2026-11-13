@@ -119,7 +119,7 @@ describe('AdviceCard', () => {
     expect(w.findAll('button').some((b) => b.text() === 'Dismiss')).toBe(true)
   })
 
-  it('shows the lowest published price with its time', () => {
+  it('leads with the lowest published price and its time, over the average', () => {
     const w = card(
       advice({
         price: {
@@ -132,9 +132,11 @@ describe('AdviceCard', () => {
         },
       }),
     )
+    const value = w.get('.fact-value')
+    expect(value.text()).toBe('€0.37 (03:45)')
+    expect(value.get('[role=img]').attributes('aria-label')).toBe('Lowest')
     const facts = w.get('.facts').text()
     expect(facts).toContain('€0.51 avg')
-    expect(facts).toContain('lowest €0.37 at 03:45')
     expect(facts).not.toContain('incl. VAT')
   })
 
@@ -214,7 +216,8 @@ describe('AdviceBadges', () => {
         }),
       },
     })
-    expect(low.get('[data-testid=badge-price]').text()).toBe('min €0.37')
+    expect(low.get('[data-testid=badge-price]').text()).toBe('€0.37')
+    expect(low.get('[data-testid=badge-price] [role=img]').attributes('aria-label')).toBe('Lowest')
     expect(low.get('[data-testid=badge-price]').attributes('title')).toBe(
       'Lowest published price €0.370/kWh at 03:45 (average €0.510)',
     )
@@ -289,7 +292,7 @@ describe('WeekStrip advice', () => {
     // Charging ahead from the sun has its own short label and icon.
     const sunny = mount(WeekStrip, { props: { days, advice: [advice({ solar: true })] } })
     expect(sunny.get('[data-testid=badge-advice]').text()).toBe('Solar')
-    expect(tile.get('[data-testid=badge-price]').text()).toBe('min €0.14')
+    expect(tile.get('[data-testid=badge-price]').text()).toBe('€0.14')
     expect(tile.text()).toContain('Charge ahead, confidence medium')
     expect(tile.attributes('aria-pressed')).toBe('true')
     await tile.trigger('click')
@@ -334,10 +337,11 @@ describe('WeekList', () => {
     expect(row.get('[data-testid=badge-advice]').text()).toBe('Charge ahead')
     expect(row.get('[data-testid=badge-confidence]').text()).toBe('2/3')
     // Price and weather in their own columns.
-    expect(row.get('[data-testid=badge-price]').text()).toBe('€0.22 avg')
-    const lowest = row.get('[data-testid=price-min]')
-    expect(lowest.text()).toBe('€0.14 at 03:00')
+    // Published days lead with the lowest slot; the average goes below.
+    const lowest = row.get('[data-testid=badge-price]')
+    expect(lowest.text()).toBe('€0.14')
     expect(lowest.get('[role=img]').attributes('aria-label')).toBe('Lowest')
+    expect(row.get('[data-testid=price-avg]').text()).toBe('€0.22 avg')
     expect(row.findAll('[data-testid=badge-price]')).toHaveLength(1)
     expect(row.get('[data-testid=badge-sunshine]').text()).toBe('70%')
     expect(row.get('[data-testid=badge-wind]').text()).toBe('5 Bft')
