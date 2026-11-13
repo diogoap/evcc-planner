@@ -1,12 +1,12 @@
-import { flushPromises, mount } from '@vue/test-utils'
+import { flushPromises, mount, RouterLinkStub } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
-import type { AuditEvent, Day, SendOption, SoCView, Status, Trip } from '../api/types'
+import type { AuditEvent, Block, Day, Plan, SendOption, SoCView, Status, Trip } from '../api/types'
 import ActivityItem from './ActivityItem.vue'
-import DaysTable from './DaysTable.vue'
 import ModalDialog from './ModalDialog.vue'
 import SendPlanButton from './SendPlanButton.vue'
+import ReadyCard from './ReadyCard.vue'
 import TripRow from './TripRow.vue'
-import VehicleCard from './VehicleCard.vue'
+import WeekStrip from './WeekStrip.vue'
 
 const status: Status = {
   mode: 'stub',
@@ -17,7 +17,9 @@ const status: Status = {
   gridPrice: 0.24,
   pvPowerW: 0,
   priceSlots: [],
+  solar: [],
   plan: null,
+  location: null,
   vehicleTitle: 'Nissan Leaf',
 }
 
@@ -62,79 +64,181 @@ const trip = (over: Partial<Trip>): Trip => ({
   ...over,
 })
 
-describe('VehicleCard', () => {
-  it('marks a stale EVCC SoC as last known with its time', () => {
-    const w = mount(VehicleCard, {
-      props: { soc: soc({ stale: true }), status, now: '2026-11-09T22:00:00Z' },
-    })
-    expect(w.get('[data-testid=soc]').text()).toBe('38%')
-    expect(w.get('[data-testid=soc-range]').text()).toBe('122 km range')
-    const tip = w.get('[data-testid=soc-stale]').text()
-    expect(tip).toContain('Last known, Mon 9 Nov, 18:42, from EVCC')
-    expect(tip).toContain('only reads the SoC while the car is plugged in')
-    expect(w.find('.bar-fill.stale').exists()).toBe(true)
-    expect(w.text()).toContain('Unplugged')
+// Tuesday's school run, leaving 07:48 local, needing 42% with 2.3 kWh to charge.
+const block = (over: Partial<Block> = {}): Block => ({
+  index: 0,
+  tripKeys: ['recurring:1:2026-11-10', 'calendar:office'],
+  titles: ['School drop-off', 'Office visit'],
+  firstTitle: 'School drop-off',
+  firstDestination: 'School',
+  firstArriveAt: '2026-11-10T07:15:00Z',
+  departAt: '2026-11-10T06:48:00Z',
+  returnAt: '2026-11-10T11:30:00Z',
+  distanceKm: 100,
+  energyKWh: 18,
+  energyPct: 30,
+  ownRequiredSoc: 19,
+  requiredSoc: 41.8,
+  targetSoc: 42,
+  status: 'charge',
+  overlap: false,
+  startSoc: 38,
+  departSoc: 42,
+  arrivalSoc: 15,
+  chargePct: 4,
+  chargeKWh: 2.3,
+  gridKWh: 2.6,
+  chargeMinutes: 42,
+  chargeFrom: null,
+  latestChargeStart: '2026-11-10T05:36:00Z',
+  shortfall: 0,
+  ...over,
+})
+
+const plan = (over: Partial<Plan> = {}) =>
+  ({
+    now: '2026-11-09T18:00:00Z',
+    soc: soc({}),
+    next: block(),
+    sendOptions: [],
+    control: { mode: 'automatic', paused: false, target: null },
+    advice: { enabled: true, autoApply: false, days: [], sources: [], adjustments: [] },
+    ...over,
+  }) as Plan
+
+const ready = (p: Plan, s: Status | null = status) =>
+  mount(ReadyCard, {
+    props: { plan: p, status: s, canSend: true },
+    global: { stubs: { RouterLink: RouterLinkStub } },
   })
 
-  it('shows a recent EVCC reading from before unplugging as fresh', () => {
-    const w = mount(VehicleCard, { props: { soc: soc({}), status, now: '2026-11-09T18:00:00Z' } })
-    expect(w.find('[data-testid=soc-stale]').exists()).toBe(false)
-    expect(w.get('[data-testid=soc-source]').text()).toBe(
-      'From EVCC · 18 min ago, read before the car was unplugged',
+describe('ReadyCard', () => {
+  it('says when to plug in for the next departure and what it needs', () => {
+    const w = ready(plan())
+    expect(w.get('[data-testid=ready-headline]').text()).toBe('Plug in by 06:36 for tomorrow 07:48')
+    expect(w.get('.ready-icon').classes()).toContain('tone-bad')
+    expect(w.get('[data-testid=next-needs]').text()).toBe('needs 42%')
+    expect(w.get('[data-testid=next-trips]').text()).toBe(
+      'School drop-off, at School by 08:15 · then Office visit',
     )
+    expect(w.get('[data-testid=next-charge]').text()).toBe('2.3 kWh to charge, about 42 min')
+    expect(w.get('[data-testid=connection]').text()).toBe('Unplugged')
+    expect(w.find('[data-testid=location]').exists()).toBe(false)
+    expect(w.get('[data-testid=energy-now]').text()).toBe('€0.24/kWh incl. VAT · solar 0.0 kW')
+    expect(w.get('[data-testid=evcc-plan]').text()).toBe('None')
   })
 
-  it('shows a Home Assistant reading with its age and the other source', () => {
-    const w = mount(VehicleCard, {
-      props: {
+  it('follows the car: charging, plugged in, ready, short of time, or no trips', () => {
+    const charging = ready(plan(), { ...status, connected: true, charging: true, chargePowerW: 3680 })
+    expect(charging.get('[data-testid=ready-headline]').text()).toBe('Charging for tomorrow 07:48')
+    expect(charging.get('.ready-icon').classes()).toContain('tone-ok')
+    expect(charging.get('[data-testid=connection]').text()).toBe('Charging 3.7 kW')
+
+    const waiting = ready(plan(), { ...status, connected: true })
+    expect(waiting.get('[data-testid=ready-headline]').text()).toBe('Plugged in for tomorrow 07:48')
+    expect(waiting.get('[data-testid=connection]').text()).toBe('Plugged in')
+
+    const covered = ready(plan({ next: block({ status: 'ready' }) }))
+    expect(covered.get('[data-testid=ready-headline]').text()).toBe('Ready for tomorrow 07:48')
+    expect(covered.get('.ready-icon').classes()).toContain('tone-ok')
+    expect(covered.find('[data-testid=next-charge]').exists()).toBe(false)
+
+    const short = ready(plan({ next: block({ status: 'shortfall', shortfall: 4.2 }) }))
+    expect(short.get('[data-testid=ready-headline]').text()).toBe(
+      'Not enough time to charge for tomorrow 07:48',
+    )
+    expect(short.get('[data-testid=next-charge]').text()).toContain('about 5% short at departure')
+
+    const none = ready(plan({ next: null }))
+    expect(none.get('[data-testid=ready-headline]').text()).toBe('No trips in the next seven days')
+    expect(none.text()).toContain('Add a trip')
+  })
+
+  it('shows where Home Assistant puts the car', () => {
+    const at = (state: string) =>
+      ready(plan(), { ...status, location: { state, home: state === 'home', since: '2026-11-09T16:00:00Z' } })
+    expect(at('home').get('[data-testid=location]').text()).toBe('Home')
+    expect(at('not_home').get('[data-testid=location]').text()).toBe('Away')
+    expect(at('Work').get('[data-testid=location]').text()).toBe('Work')
+  })
+
+  it('shows a paused automatic plan, the plan in EVCC, and active extra plans', async () => {
+    const w = ready(
+      plan({
+        control: {
+          mode: 'automatic',
+          paused: true,
+          pausedPlan: { soc: 60, time: '2026-11-10T06:48:00Z' },
+          target: null,
+        },
+        advice: {
+          enabled: true,
+          autoApply: true,
+          days: [],
+          sources: [],
+          adjustments: [
+            {
+              id: 7,
+              kind: 'extra_plan',
+              status: 'active',
+              plan: { soc: 60, time: '2026-11-10T06:48:00Z' },
+              expiresAt: '2026-11-10T06:48:00Z',
+            } as Plan['advice']['adjustments'][number],
+          ],
+        },
+      }),
+      {
+        ...status,
+        reachable: false,
+        error: 'timeout',
+        plan: { soc: 60, time: '2026-11-10T06:48:00Z', setByPlanner: false },
+      },
+    )
+    expect(w.get('[data-testid=trip-plans]').text()).toBe('Automatic · paused')
+    expect(w.get('[data-testid=control-detail]').text()).toContain('chosen plan (60% by Tue 10 Nov, 07:48)')
+    expect(w.get('[data-testid=evcc-plan]').text()).toBe('60% by Tue 10 Nov, 07:48 · Set in EVCC')
+    expect(w.get('[data-testid=active-adjustment]').text()).toContain('restores Tue 10 Nov, 07:48')
+    expect(w.get('[data-testid=auto-apply]').text()).toBe('Plans created automatically')
+    expect(w.get('[data-testid=energy-now]').text()).toContain('EVCC unreachable: timeout')
+    await w.get('[data-testid=resume]').trigger('click')
+    expect(w.emitted('resume')).toHaveLength(1)
+    await w.get('[data-testid=active-adjustment] button').trigger('click')
+    expect(w.emitted('cancel')).toEqual([[7]])
+  })
+
+  it('shows just the SoC and range, with each source in the tooltip', () => {
+    const w = ready(
+      plan({
         soc: soc({
           source: 'homeassistant',
           percent: 61,
           rangeKm: null,
           other: [{ source: 'evcc', percent: 70, observedAt: '2026-11-08T21:10:00Z', rangeKm: 224 }],
         }),
-        status,
-        now: '2026-11-09T18:00:00Z',
-      },
-    })
+      }),
+    )
     expect(w.get('[data-testid=soc]').text()).toBe('61%')
-    expect(w.get('[data-testid=soc-source]').text()).toBe('From Home Assistant · 18 min ago')
     expect(w.get('[data-testid=soc-range]').text()).toBe('Range: not reported')
-    expect(w.get('[data-testid=soc-other]').text()).toBe('EVCC: 70% · 21 h ago')
+    expect(w.get('[data-testid=soc]').element.parentElement!.title).toBe(
+      'Home Assistant: 61% · 18 min ago\nEVCC: 70% · 21 h ago',
+    )
+    expect(w.text()).not.toContain('From Home Assistant')
+    expect(ready(plan()).get('[data-testid=soc-range]').text()).toBe('122 km range')
   })
 
-  it('flags a Home Assistant reading that stopped updating', () => {
-    const w = mount(VehicleCard, {
-      props: { soc: soc({ source: 'homeassistant', stale: true }), status, now: '2026-11-09T23:00:00Z' },
-    })
-    const tip = w.get('[data-testid=soc-stale]').text()
-    expect(tip).toContain('Last known, Mon 9 Nov, 18:42, from Home Assistant')
-    expect(tip).toContain('Home Assistant has not updated it since')
-  })
-
-  it('shows live readings without the stale tip', () => {
-    const w = mount(VehicleCard, {
-      props: {
-        soc: soc({ live: true, rangeKm: null }),
-        status: { ...status, connected: true },
-        now: '2026-11-09T17:42:00Z',
-      },
-    })
-    expect(w.find('[data-testid=soc-stale]').exists()).toBe(false)
-    expect(w.text()).toContain('Live from EVCC')
-    // Not reported yet (e.g. a reading saved before EVCC gave the range).
-    expect(w.get('[data-testid=soc-range]').text()).toBe('Range: read when plugged in')
-    expect(w.text()).toContain('Plugged in')
+  it('marks a stale SoC as last known with its time and source', () => {
+    const evcc = ready(plan({ soc: soc({ stale: true }), now: '2026-11-09T22:00:00Z' }))
+    expect(evcc.get('[data-testid=soc-stale]').text()).toBe('Last known, Mon 9 Nov, 18:42, from EVCC')
+    expect(evcc.find('.bar-fill.stale').exists()).toBe(true)
+    const ha = ready(
+      plan({ soc: soc({ source: 'homeassistant', stale: true }), now: '2026-11-09T23:00:00Z' }),
+    )
+    expect(ha.get('[data-testid=soc-stale]').text()).toBe('Last known, Mon 9 Nov, 18:42, from Home Assistant')
+    expect(ready(plan()).find('[data-testid=soc-stale]').exists()).toBe(false)
   })
 
   it('asks to plug in when the SoC was never read', () => {
-    const w = mount(VehicleCard, {
-      props: {
-        soc: soc({ known: false, percent: null, observedAt: null, rangeKm: null }),
-        status,
-        now: '2026-11-09T18:00:00Z',
-      },
-    })
+    const w = ready(plan({ soc: soc({ known: false, percent: null, observedAt: null, rangeKm: null }) }))
     expect(w.text()).toContain('SoC unknown')
   })
 })
@@ -213,8 +317,8 @@ describe('TripRow without a route', () => {
   })
 })
 
-describe('DaysTable', () => {
-  it('lists days and emits the selected date', async () => {
+describe('WeekStrip', () => {
+  it('shows each day’s charge and figures, reads it out in full, and emits the selected date', async () => {
     const days: Day[] = [
       {
         date: '2026-11-10',
@@ -231,15 +335,13 @@ describe('DaysTable', () => {
         firstDepartAt: '2026-11-10T06:48:00Z',
       },
     ]
-    const w = mount(DaysTable, { props: { days } })
-    const row = w.get('[data-testid="day-2026-11-10"]')
-    expect(row.text()).toContain('Tue 10')
-    expect(row.text()).toContain('100 km')
-    expect(row.text()).toContain('18.0 kWh')
-    expect(row.text()).toContain('+4% charge')
-    expect(row.text()).toContain('42% by 07:48')
-    expect(row.text()).toContain('1 to review')
-    await row.trigger('click')
+    const w = mount(WeekStrip, { props: { days, advice: [] } })
+    const tile = w.get('[data-testid="day-2026-11-10"]')
+    for (const text of ['Tue', '10', '+4%', '100 km, 18.0 kWh', '42% by 07:48', '1 trip to review'])
+      expect(tile.text()).toContain(text)
+    // Words for screen readers where the tile shows a symbol.
+    expect(tile.get('.week-charge .sr-only').text()).toBe('+4% charge')
+    await tile.trigger('click')
     expect(w.emitted('select')).toEqual([['2026-11-10']])
   })
 })

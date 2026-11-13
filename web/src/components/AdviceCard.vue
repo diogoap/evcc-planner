@@ -4,15 +4,16 @@ import type { AdviceSource, Day, DayAdvice } from '../api/types'
 import {
   adviceLabel,
   basisNames,
-  confidenceLabel,
+  confidenceNames,
+  indicatorLevel,
   indicatorNames,
+  priceFact,
   sourceTone,
-  sunSourceNames,
-  sunText,
+  sunFact,
   tempText,
-  windText,
+  windFact,
 } from '../lib/advice'
-import { ago, clock, dateTime, dayLong, dayShort } from '../lib/format'
+import { ago, dateTime, dayLong, dayShort } from '../lib/format'
 import AppIcon from './AppIcon.vue'
 
 const props = defineProps<{
@@ -36,18 +37,19 @@ const canDismiss = computed(
   () => !props.advice.noSuggestion && props.advice.recommendation !== 'none' && !props.advice.adjustment,
 )
 const adj = computed(() => props.advice.adjustment)
-// "€0.510/kWh avg incl. VAT · lowest €0.370 at 03:45" (lowest: published days).
-const priceText = computed(() => {
-  const p = props.advice.price
-  if (!p) return ''
-  let text = `€${p.value.toFixed(3)}/kWh avg incl. VAT`
-  if (p.min != null) text += ` · lowest €${p.min.toFixed(3)}${p.minAt ? ` at ${clock(p.minAt)}` : ''}`
-  return text
-})
+// The day's facts: price, sun (EVCC's local forecast, else KNMI's national
+// outlook), wind, and temperature.
+const price = computed(() => priceFact(props.advice))
+const sun = computed(() => sunFact(props.advice))
+const wind = computed(() => windFact(props.advice))
+const temp = computed(() => tempText(props.advice))
+const level = computed(() =>
+  props.advice.indicator && !props.advice.noSuggestion ? indicatorLevel[props.advice.indicator] : 0,
+)
 </script>
 
 <template>
-  <section class="card" aria-labelledby="advice-title" data-testid="advice-card">
+  <section class="card advice" aria-labelledby="advice-title" data-testid="advice-card">
     <div id="advice-title" class="card-title">
       <span>{{ weekday }}'s advice</span>
       <span class="row gap-1">
@@ -73,22 +75,36 @@ const priceText = computed(() => {
       </span>
     </div>
 
-    <div class="row justify-between items-baseline">
+    <div class="advice-head">
+      <span class="advice-icon" :class="`tone-${label.tone}`"><AppIcon :name="label.icon" /></span>
       <strong class="text-lg" data-testid="advice-label">{{ label.text }}</strong>
-      <span v-if="advice.indicator && !advice.noSuggestion" class="small" data-testid="advice-indicator">
-        Charge indicator: <strong>{{ indicatorNames[advice.indicator] }}</strong>
+    </div>
+    <div v-if="advice.confidence || level" class="row gap-1">
+      <span v-if="advice.confidence" class="badge" data-testid="advice-confidence">
+        <span
+          v-for="i in 3"
+          :key="i"
+          class="dot"
+          :class="{ on: i <= advice.confidence }"
+          aria-hidden="true"
+        />
+        {{ confidenceNames[advice.confidence] }} confidence
+      </span>
+      <span v-if="level" class="badge" data-testid="advice-indicator">
+        <span class="bars" aria-hidden="true"
+          ><span v-for="i in 3" :key="i" class="bar-step" :class="{ on: i <= level }"
+        /></span>
+        Charge: {{ indicatorNames[advice.indicator!] }}
       </span>
     </div>
-    <div v-if="advice.confidence" class="small muted" data-testid="advice-confidence">
-      Confidence: {{ confidenceLabel(advice.confidence) }}
-    </div>
-    <p class="my-3">{{ advice.summary }}</p>
+    <p class="m-0">{{ advice.summary }}</p>
 
-    <dl class="kv small">
-      <template v-if="advice.price">
-        <dt>Price</dt>
+    <dl class="facts">
+      <div v-if="price && advice.price" class="fact">
+        <dt><AppIcon name="tag" />Price</dt>
+        <dd class="fact-value num">{{ price.value }}</dd>
+        <dd v-if="price.detail" class="small muted num">{{ price.detail }}</dd>
         <dd>
-          {{ priceText }}
           <span
             class="pill"
             :class="advice.price.basis === 'published' ? 'tone-ok' : 'tone-warn'"
@@ -96,25 +112,30 @@ const priceText = computed(() => {
             >{{ basisNames[advice.price.basis] }}{{ advice.price.stale ? ' · stale' : '' }}</span
           >
         </dd>
-      </template>
-      <dt>Sun</dt>
-      <dd data-testid="advice-sun">
-        <template v-if="advice.sunSource"
-          >{{ sunText(advice) }} <span class="muted">({{ sunSourceNames[advice.sunSource] }})</span></template
-        >
-        <span v-else class="muted">No forecast for this day</span>
-      </dd>
-      <template v-if="windText(advice)">
-        <dt>Wind</dt>
-        <dd data-testid="advice-wind">{{ windText(advice) }}</dd>
-      </template>
-      <template v-if="tempText(advice)">
-        <dt>Temperature</dt>
-        <dd>{{ tempText(advice) }}</dd>
-      </template>
+      </div>
+      <div class="fact" data-testid="advice-sun">
+        <dt>
+          <AppIcon name="sun" />Sun
+          <span v-if="sun" class="fact-source">{{ advice.sunSource === 'evcc' ? 'EVCC' : 'KNMI' }}</span>
+        </dt>
+        <template v-if="sun">
+          <dd class="fact-value num">{{ sun.value }}</dd>
+          <dd v-if="sun.detail" class="small muted">{{ sun.detail }}</dd>
+        </template>
+        <dd v-else class="small muted">No forecast for this day</dd>
+      </div>
+      <div v-if="wind" class="fact" data-testid="advice-wind">
+        <dt><AppIcon name="wind" />Wind</dt>
+        <dd class="fact-value">{{ wind.value }}</dd>
+        <dd v-if="wind.detail" class="small muted">{{ wind.detail }}</dd>
+      </div>
+      <div v-if="temp" class="fact">
+        <dt><AppIcon name="thermometer" />Temperature</dt>
+        <dd class="fact-value num">{{ temp }}</dd>
+      </div>
     </dl>
 
-    <div v-if="adj" class="banner tone-info small m-0 mt-3" data-testid="advice-adjustment">
+    <div v-if="adj" class="banner tone-info small m-0" data-testid="advice-adjustment">
       <template v-if="adj.kind === 'extra_plan'">
         Extra plan active{{ adj.source === 'auto' ? ' (automatic)' : '' }}: {{ adj.plan?.soc }}% by
         {{ dateTime(adj.plan!.time) }}.
@@ -126,18 +147,18 @@ const priceText = computed(() => {
         <button class="btn sm" type="button" @click="emit('cancel', adj.id)">End now and restore</button>
       </div>
     </div>
-    <p v-else-if="advice.dismissed" class="small muted m-0 mt-3">
+    <p v-else-if="advice.dismissed" class="small muted m-0">
       Dismissed; nothing was changed.
       <button class="btn sm ghost" type="button" @click="emit('dismiss', true)">Undo</button>
     </p>
     <p
       v-else-if="!advice.noSuggestion && advice.recommendation !== 'none' && advice.confidence < 2"
-      class="small muted m-0 mt-3"
+      class="small muted m-0"
     >
       Low confidence: no plan action.
     </p>
 
-    <div v-if="!adj && !advice.dismissed" class="row mt-3">
+    <div v-if="!adj && !advice.dismissed && (advice.action || canDismiss)" class="row">
       <button
         v-if="advice.action === 'extra_plan'"
         class="btn primary"
@@ -157,7 +178,7 @@ const priceText = computed(() => {
       <button v-if="canDismiss" class="btn" type="button" @click="emit('dismiss', false)">Dismiss</button>
     </div>
 
-    <details class="mt-3">
+    <details>
       <summary class="small">Why?</summary>
       <ul class="small list-indent my-2">
         <li v-for="r in advice.rationale" :key="r">{{ r }}</li>
@@ -181,3 +202,120 @@ const priceText = computed(() => {
     </details>
   </section>
 </template>
+
+<style scoped>
+.advice {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.advice .card-title {
+  margin-bottom: 0;
+}
+
+.advice-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.advice-icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.advice-icon .icon {
+  width: 16px;
+  height: 16px;
+}
+
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  border: 1px solid currentColor;
+}
+
+.dot.on {
+  background: currentColor;
+}
+
+.bars {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.bar-step {
+  width: 4px;
+  border-radius: 1px;
+  background: var(--control);
+}
+
+.bar-step:nth-child(1) {
+  height: 5px;
+}
+
+.bar-step:nth-child(2) {
+  height: 8px;
+}
+
+.bar-step:nth-child(3) {
+  height: 11px;
+}
+
+.bar-step.on {
+  background: var(--accent-strong);
+}
+
+/* The day's facts as small panels, two per row. */
+.facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.fact {
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+}
+
+.fact dt {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.fact dd {
+  margin: 0;
+}
+
+.fact-value {
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+}
+
+.fact-source {
+  margin-left: auto;
+  letter-spacing: 0;
+}
+
+.fact .pill {
+  margin-top: 2px;
+}
+</style>

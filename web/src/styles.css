@@ -66,8 +66,17 @@
   --chart-soc: var(--accent-ui);
   --chart-required: var(--info);
   --chart-reserve: var(--muted);
-  --chart-price: var(--text);
+  --chart-price: #6d4fd8;
+  --chart-estimate: var(--warn);
+  --chart-weekly: var(--muted);
   --chart-charging: var(--accent);
+  --chart-solar: #b97a00;
+  --chart-away: var(--muted);
+  --chart-now: var(--text);
+  /* Labels on the cheapest and dearest slot, with their text colour. */
+  --chart-low: var(--accent-strong);
+  --chart-high: var(--bad);
+  --chart-label-text: #ffffff;
   color-scheme: light;
 }
 
@@ -93,6 +102,9 @@
     --shadow: none;
     --shadow-lg: 0 8px 28px rgba(0, 0, 0, 0.5);
     --chart-grid: rgba(232, 233, 241, 0.08);
+    --chart-price: #a998ff;
+    --chart-solar: #f5c04a;
+    --chart-label-text: #0b0f1e;
     color-scheme: dark;
   }
 }
@@ -229,6 +241,11 @@ h1 {
   font-variant-numeric: tabular-nums;
 }
 
+/* Key–value pairs whose values are sentences. */
+.kv-left dd {
+  text-align: left;
+}
+
 /* Rows of a list, separated by lines. */
 .list-row {
   padding: var(--space-2) 0;
@@ -326,6 +343,27 @@ summary:focus-visible,
   width: 16px;
   height: 16px;
   flex: none;
+}
+
+/* Two or more choices in one control, e.g. the week view. */
+.segmented {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+}
+
+.segmented .btn {
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+}
+
+.segmented .btn[aria-pressed='true'] {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
 }
 
 /* Pills and badges */
@@ -963,6 +1001,12 @@ details summary {
 
 .block {
   display: block;
+}
+
+/* A heading that looks like its container, e.g. inside a card title. */
+.h-inherit {
+  font: inherit;
+  letter-spacing: inherit;
 }
 
 /* Inside an uppercase card title: a normal-case part, such as a date. */

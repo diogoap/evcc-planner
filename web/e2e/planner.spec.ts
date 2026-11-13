@@ -18,20 +18,43 @@ test('overview shows status, the next departure, and seven days', async ({ page 
   await page.goto('/')
   await expect(page.getByTestId('soc')).toHaveText('38%')
   await expect(page.getByTestId('soc-range')).toHaveText('122 km range')
-  await expect(page.getByTestId('soc-source')).toHaveText('From Home Assistant · 20 min ago')
-  await expect(page.getByTestId('soc-other')).toHaveText('EVCC: 38% · 2 h ago')
-  await expect(page.getByTestId('next-departure')).toHaveText('Tomorrow, leave 07:48')
+  await expect(page.getByTestId('location')).toHaveText('Home')
+  await expect(page.getByTestId('connection')).toHaveText('Unplugged')
+  await expect(page.getByTestId('ready-headline')).toHaveText('Plug in by 06:36 for tomorrow 07:48')
   await expect(page.getByTestId('next-target')).toHaveText('42%')
+  // The published prices in detail, with now's price and the day's range.
+  await expect(page.getByTestId('price-readout')).toHaveText(/^Now · €0\.\d\d\/kWh$/)
+  await expect(page.getByTestId('price-summary')).toContainText('lowest €0.')
   const tue = page.getByTestId('day-2026-11-10')
   await expect(tue).toContainText('100 km')
   await expect(tue).toContainText('18.0 kWh')
   await expect(tue).toContainText('42% by 07:48')
-  await expect(page.getByTestId('day-2026-11-14')).toContainText('1 to review')
+  await expect(page.getByTestId('day-2026-11-14')).toContainText('1 trip to review')
   await page.goto('/trips#day-2026-11-10')
   await expect(page.getByTestId('trip-recurring:1:2026-11-10').getByTestId('departure-target')).toHaveText(
     'Needs 42% at departure',
   )
   await shot(page, 'overview')
+})
+
+test('the week shows as columns or as a list, remembered on this device', async ({ page }) => {
+  await page.goto('/')
+  await expect(page.getByTestId('week-view-columns')).toHaveAttribute('aria-pressed', 'true')
+  await page.getByTestId('week-view-list').click()
+  // The list has every detail of the day's advice.
+  const tue = page.getByTestId('day-2026-11-10')
+  await expect(tue).toContainText('+8% charge')
+  await expect(tue.getByTestId('badge-confidence')).toHaveText('2/3')
+  await expect(tue.getByTestId('badge-sunshine')).toHaveText(/^(\d+%|–)$/)
+  await expect(tue.getByTestId('badge-wind')).toContainText('Bft')
+  await shot(page, 'week-list')
+
+  await page.reload()
+  await expect(page.getByTestId('week-view-list')).toHaveAttribute('aria-pressed', 'true')
+  await page.getByTestId('day-2026-11-10').click()
+  await expect(page.getByTestId('advice-card')).toContainText("Tuesday's advice")
+  await page.getByTestId('week-view-columns').click()
+  await expect(page.getByTestId('day-2026-11-10').getByTestId('badge-confidence')).toHaveCount(0)
 })
 
 test('add a manual trip and keep it after reload', async ({ page }) => {

@@ -2,12 +2,15 @@ import type {
   AheadTrip,
   Block,
   BlockStatus,
+  CarLocation,
   ControlView,
   Day,
   PlanValue,
   SendOption,
+  Status,
   TripPlans,
 } from '../api/types'
+import type { IconName } from '../components/AppIcon.vue'
 import { clock, dateTime, dayShort, duration, localDate, pct, price, relativeDay } from './format'
 
 export type Tone = 'ok' | 'warn' | 'bad' | 'muted' | 'info'
@@ -53,6 +56,81 @@ export function dayLabel(d: Day): { text: string; tone: Tone; detail?: string } 
     default:
       return { text: d.status, tone: 'muted' }
   }
+}
+
+/** A day in the week strip: the charge its departures need, in a word or an icon. */
+export function dayTile(d: Day): { text: string; tone: Tone; icon?: IconName } {
+  switch (d.status) {
+    case 'none':
+      return { text: '–', tone: 'muted' }
+    case 'completed':
+      return { text: 'Done', tone: 'muted' }
+    case 'in_progress':
+      return { text: 'Away', tone: 'info' }
+    case 'charge':
+      if (d.chargePct > 0) return { text: `+${Math.ceil(d.chargePct - 1e-6)}%`, tone: 'info' }
+      return { text: 'OK', tone: 'ok', icon: 'check' }
+    case 'ready':
+      return { text: 'OK', tone: 'ok', icon: 'check' }
+    case 'shortfall':
+      return { text: 'Short', tone: 'bad', icon: 'warning' }
+    case 'exceeds':
+      return { text: 'Too far', tone: 'bad', icon: 'warning' }
+    case 'unknown':
+      return { text: '?', tone: 'warn' }
+    default:
+      return { text: d.status, tone: 'muted' }
+  }
+}
+
+/**
+ * The ready check: one line that says whether the car will be ready for its
+ * next departure, with an icon for it: ready, charging, plugged in and
+ * waiting for its slots, or not enough charge yet.
+ */
+export function readyHeadline(
+  b: Block | null,
+  status: Status | null,
+  now: string,
+): { text: string; tone: Tone; icon: IconName } {
+  if (!b) return { text: 'No trips in the next seven days', tone: 'muted', icon: 'calendar' }
+  const when = `${dayName(localDate(b.departAt), now)} ${clock(b.departAt)}`
+  switch (b.status) {
+    case 'ready':
+      return { text: `Ready for ${when}`, tone: 'ok', icon: 'check' }
+    case 'charge':
+      if (status?.charging) return { text: `Charging for ${when}`, tone: 'ok', icon: 'bolt' }
+      if (status?.connected) return { text: `Plugged in for ${when}`, tone: 'info', icon: 'plug' }
+      return {
+        text: b.latestChargeStart
+          ? `Plug in by ${clock(b.latestChargeStart)} for ${when}`
+          : `Plug in for ${when}`,
+        tone: 'bad',
+        icon: 'close',
+      }
+    case 'shortfall':
+      return { text: `Not enough time to charge for ${when}`, tone: 'bad', icon: 'close' }
+    case 'exceeds':
+      return { text: `More than a full battery for ${when}`, tone: 'bad', icon: 'close' }
+    case 'unknown':
+      return { text: `SoC unknown for ${when}`, tone: 'warn', icon: 'warning' }
+    case 'in_progress':
+      return { text: `On the road: ${b.firstTitle}`, tone: 'info', icon: 'route' }
+    default:
+      return { text: '', tone: 'muted', icon: 'dash' }
+  }
+}
+
+/** The car's location as a badge: Home, Away, or the Home Assistant zone it is in. */
+export function locationLabel(l: CarLocation): { text: string; tone: Tone; icon: IconName } {
+  if (l.home) return { text: 'Home', tone: 'muted', icon: 'home' }
+  if (l.state === 'not_home') return { text: 'Away', tone: 'info', icon: 'route' }
+  return { text: l.state, tone: 'info', icon: 'route' }
+}
+
+/** "1 trip to review", "2 trips to review": calendar trips that may not be car trips. */
+export function reviewText(n: number) {
+  return `${n} trip${n === 1 ? '' : 's'} to review`
 }
 
 /** Explains what a departure needs. */

@@ -76,7 +76,8 @@ type Service struct {
 	haReading *homeassistant.Reading
 	haErr     error
 	haOKAt    time.Time
-	listenErr error // the notification button listener
+	carLoc    *LocationView // from the optional car location sensor
+	listenErr error         // the notification button listener
 	listenOK  bool
 }
 
@@ -149,6 +150,7 @@ func (s *Service) PollHomeAssistant(ctx context.Context) error {
 	if cs.HA == nil {
 		return nil
 	}
+	s.pollLocation(ctx, cs)
 	r, err := cs.HA.SoC(ctx)
 	now := s.now()
 	s.mu.Lock()
@@ -171,6 +173,28 @@ func (s *Service) PollHomeAssistant(ctx context.Context) error {
 	return s.recordSoC(model.SoCReading{
 		Percent: r.Percent, RangeKm: r.RangeKm, ObservedAt: at, ChangedAt: r.ChangedAt, Source: model.SoCSourceHomeAssistant,
 	})
+}
+
+// pollLocation reads the optional car location sensor (Settings →
+// Notifications) for the Overview. Unknown or unavailable states, and
+// errors, show no location.
+func (s *Service) pollLocation(ctx context.Context, cs *connState) {
+	var loc *LocationView
+	settings, err := s.NotificationSettings()
+	if l, ok := cs.HA.(homeassistant.Locator); ok && err == nil && settings.LocationEntity != "" {
+		e, err := l.State(ctx, settings.LocationEntity)
+		switch {
+		case err != nil:
+			s.Log.Warn("car location sensor", "entity", settings.LocationEntity, "err", err)
+		case e.State != "" && e.State != "unknown" && e.State != "unavailable":
+			loc = &LocationView{State: e.State, Home: e.State == "home", Since: e.LastChanged}
+		}
+	}
+	s.mu.Lock()
+	if s.state().gen == cs.gen {
+		s.carLoc = loc
+	}
+	s.mu.Unlock()
 }
 
 // recordSoC persists a source's reading (with its range, if known);

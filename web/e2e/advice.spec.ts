@@ -15,24 +15,22 @@ async function shot(page: Page, name: string) {
 
 test('daily advice per day, with a confirmed extra plan that can be ended', async ({ page }) => {
   await page.goto('/')
-  const tue = page.getByTestId('advice-2026-11-10')
+  // The week strip: each day's advice and price.
+  const tue = page.getByTestId('day-2026-11-10')
   await expect(tue.getByTestId('badge-advice')).toHaveText('Charge ahead')
-  await expect(tue.getByTestId('badge-confidence')).toHaveText('2/3')
   await expect(tue.getByTestId('badge-price')).toHaveText(/^min €0\.\d\d$/)
-  // Sun: EVCC's local forecast today and tomorrow, KNMI's sunshine after.
-  await expect(tue.getByTestId('badge-sun')).toHaveText(/^\d+\.\d kWh$/)
-  const wed = page.getByTestId('advice-2026-11-11')
+  const wed = page.getByTestId('day-2026-11-11')
   await expect(wed.getByTestId('badge-advice')).toHaveText('No data')
-  await expect(wed.getByTestId('badge-sun')).toHaveText(/^\d+%$/)
   await expect(wed.getByTestId('badge-price')).toHaveText('~€0.25')
-  await expect(page.getByTestId('advice-2026-11-09').getByTestId('badge-advice')).toHaveText('Defer')
+  await expect(page.getByTestId('day-2026-11-09').getByTestId('badge-advice')).toHaveText('Defer')
 
-  await page.getByTestId('advice-2026-11-10').click()
+  await page.getByTestId('day-2026-11-10').click()
   const card = page.getByTestId('advice-card')
   await expect(card).toContainText("Tuesday's advice")
-  await expect(card.getByTestId('advice-confidence')).toHaveText('Confidence: 2/3 — Medium')
+  await expect(card.getByTestId('advice-confidence')).toHaveText('Medium confidence')
   await expect(card.getByTestId('advice-basis')).toHaveText('Published')
-  await expect(card.getByTestId('advice-sun')).toContainText('while home (EVCC solar forecast, local)')
+  await expect(card.getByTestId('advice-sun')).toContainText('while home')
+  await expect(card.getByTestId('advice-sun')).toContainText('EVCC')
   await card.getByText('Why?').click()
   await expect(card.getByTestId('advice-sources')).toContainText('Tibber outlook')
   await shot(page, 'advice')
@@ -63,7 +61,7 @@ test('daily advice per day, with a confirmed extra plan that can be ended', asyn
 
 test('dismissing advice changes nothing and can be undone', async ({ page }) => {
   await page.goto('/')
-  await page.getByTestId('advice-2026-11-10').click()
+  await page.getByTestId('day-2026-11-10').click()
   const card = page.getByTestId('advice-card')
   await card.getByRole('button', { name: 'Dismiss' }).click()
   await expect(card).toContainText('Dismissed; nothing was changed.')
@@ -75,11 +73,12 @@ test('dismissing advice changes nothing and can be undone', async ({ page }) => 
 
 test('weak or missing advice offers no plan action', async ({ page }) => {
   await page.goto('/')
-  await page.getByTestId('advice-2026-11-11').click()
+  await page.getByTestId('day-2026-11-11').click()
   const card = page.getByTestId('advice-card')
   await expect(card.getByTestId('advice-label')).toHaveText('No data / no suggestion')
   await expect(card.getByTestId('advice-basis')).toHaveText('Weekly average')
-  await expect(card.getByTestId('advice-sun')).toContainText('of possible sunshine (KNMI outlook, national)')
+  await expect(card.getByTestId('advice-sun')).toContainText('of possible sunshine')
+  await expect(card.getByTestId('advice-sun')).toContainText('KNMI')
   await expect(
     card.getByRole('button', { name: /Create extra plan|Review postponement|Dismiss/ }),
   ).toHaveCount(0)
@@ -87,7 +86,7 @@ test('weak or missing advice offers no plan action', async ({ page }) => {
 
 test('review a postponement of cheap-grid charging', async ({ page }) => {
   await page.goto('/')
-  await page.getByTestId('advice-2026-11-09').click()
+  await page.getByTestId('day-2026-11-09').click()
   const card = page.getByTestId('advice-card')
   await card.getByRole('button', { name: 'Review postponement' }).click()
   const dialog = page.getByRole('dialog', { name: /Review postponement/ })
@@ -122,7 +121,7 @@ test('advice auto-apply is off by default and needs a policy', async ({ page }) 
   await page.getByRole('link', { name: 'Advice' }).click()
   await expect(page.getByTestId('advice-auto')).toHaveAttribute('aria-checked', 'true')
   await page.goto('/')
-  await expect(page.getByTestId('auto-apply')).toHaveText('On')
+  await expect(page.getByTestId('auto-apply')).toHaveText('Plans created automatically')
 
   // Turning daily advice off hides it.
   await page.goto('/settings')
@@ -132,7 +131,7 @@ test('advice auto-apply is off by default and needs a policy', async ({ page }) 
   await expect(page.getByText('Advice settings saved')).toBeVisible()
   await page.goto('/')
   await expect(page.getByTestId('advice-card')).toHaveCount(0)
-  await expect(page.getByTestId('advice-2026-11-10')).toHaveCount(0)
+  await expect(page.getByTestId('day-2026-11-10').getByTestId('badge-advice')).toHaveCount(0)
 })
 
 test('connections show the forecast sources and price provenance', async ({ page }) => {

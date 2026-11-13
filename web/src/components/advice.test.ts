@@ -3,7 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AdviceSource, Day, DayAdvice, Proposal } from '../api/types'
 import AdviceBadges from './AdviceBadges.vue'
 import AdviceCard from './AdviceCard.vue'
-import DaysTable from './DaysTable.vue'
+import WeekList from './WeekList.vue'
+import WeekStrip from './WeekStrip.vue'
 
 const api = vi.hoisted(() => ({
   proposal: vi.fn(),
@@ -51,12 +52,13 @@ describe('AdviceCard', () => {
     const w = card(advice({}))
     expect(w.text()).toContain("Tuesday's advice")
     expect(w.get('[data-testid=advice-label]').text()).toBe('Charge ahead')
-    expect(w.get('[data-testid=advice-confidence]').text()).toBe('Confidence: 2/3 — Medium')
-    expect(w.get('[data-testid=advice-indicator]').text()).toContain('High (more)')
+    expect(w.get('[data-testid=advice-confidence]').text()).toBe('Medium confidence')
+    expect(w.get('[data-testid=advice-indicator]').text()).toBe('Charge: High (more)')
     expect(w.get('[data-testid=advice-basis]').text()).toBe('Published')
-    expect(w.get('[data-testid=advice-sun]').text()).toBe(
-      '7.6 kWh · 2.1 kWh while home (EVCC solar forecast, local)',
-    )
+    // The sun names its source in one word.
+    const sun = w.get('[data-testid=advice-sun]')
+    for (const text of ['EVCC', '7.6 kWh', '2.1 kWh while home']) expect(sun.text()).toContain(text)
+    expect(sun.text()).not.toContain('solar forecast')
     await w.get('button.primary').trigger('click')
     expect(w.emitted('propose')).toEqual([['extra_plan']])
     const dismiss = w.findAll('button').find((b) => b.text() === 'Dismiss')!
@@ -91,7 +93,10 @@ describe('AdviceCard', () => {
         },
       }),
     )
-    expect(w.text()).toContain('€0.510/kWh avg incl. VAT · lowest €0.370 at 03:45')
+    const facts = w.get('.facts').text()
+    expect(facts).toContain('€0.51 avg')
+    expect(facts).toContain('lowest €0.37 at 03:45')
+    expect(facts).not.toContain('incl. VAT')
   })
 
   it('labels estimates and shows an active change with a way to end it', async () => {
@@ -218,8 +223,8 @@ describe('AdviceBadges', () => {
   })
 })
 
-describe('DaysTable advice column', () => {
-  it('shows each day’s advice and selects it without leaving the page', async () => {
+describe('WeekStrip advice', () => {
+  it('shows each day’s advice and price, and selects the day', async () => {
     const days: Day[] = [
       {
         date: '2026-11-10',
@@ -233,14 +238,73 @@ describe('DaysTable advice column', () => {
         chargePct: 4,
       },
     ]
-    const w = mount(DaysTable, { props: { days, advice: [advice({})], selected: '2026-11-10' } })
-    const cell = w.get('[data-testid="advice-2026-11-10"]')
-    expect(cell.text()).toContain('Charge ahead')
-    expect(cell.text()).toContain('2/3')
-    expect(cell.attributes('aria-pressed')).toBe('true')
-    await cell.trigger('click')
-    expect(w.emitted('advice')).toEqual([['2026-11-10']])
-    expect(w.emitted('select')).toBeUndefined()
+    const w = mount(WeekStrip, {
+      props: {
+        days,
+        advice: [advice({ price: { ...advice({}).price!, min: 0.14 } })],
+        selected: '2026-11-10',
+      },
+    })
+    const tile = w.get('[data-testid="day-2026-11-10"]')
+    expect(tile.get('[data-testid=badge-advice]').text()).toBe('Charge ahead')
+    expect(tile.get('[data-testid=badge-price]').text()).toBe('min €0.14')
+    expect(tile.text()).toContain('Charge ahead, confidence medium')
+    expect(tile.attributes('aria-pressed')).toBe('true')
+    await tile.trigger('click')
+    expect(w.emitted('select')).toEqual([['2026-11-10']])
+  })
+})
+
+describe('WeekList', () => {
+  it('lists each day with its figures, plan, and full advice, and selects the day', async () => {
+    const days: Day[] = [
+      {
+        date: '2026-11-10',
+        distanceKm: 100,
+        energyKWh: 18,
+        tripCount: 3,
+        disabledCount: 0,
+        doneCount: 0,
+        reviewCount: 1,
+        status: 'charge',
+        chargePct: 3.8,
+        targetSoc: 42,
+        firstDepartAt: '2026-11-10T06:48:00Z',
+      },
+    ]
+    const w = mount(WeekList, {
+      props: {
+        days,
+        advice: [
+          advice({
+            weather: { ...weather, windBft: 5 },
+            price: { ...advice({}).price!, min: 0.14, minAt: '2026-11-10T02:00:00Z' },
+          }),
+        ],
+        selected: '2026-11-10',
+      },
+    })
+    const row = w.get('[data-testid="day-2026-11-10"]')
+    for (const text of ['Tue 10', '100 km', '18.0 kWh', '+4% charge', '42% by 07:48'])
+      expect(row.text()).toContain(text)
+    // Calendar trips to review sit with the advice.
+    expect(row.get('.wl-advice [data-testid=review-count]').text()).toBe('1 trip to review')
+    expect(row.get('[data-testid=badge-advice]').text()).toBe('Charge ahead')
+    expect(row.get('[data-testid=badge-confidence]').text()).toBe('2/3')
+    // Price and weather in their own columns.
+    expect(row.get('[data-testid=badge-price]').text()).toBe('€0.22 avg')
+    const lowest = row.get('[data-testid=price-min]')
+    expect(lowest.text()).toBe('€0.14 at 03:00')
+    expect(lowest.get('[role=img]').attributes('aria-label')).toBe('Lowest')
+    expect(row.findAll('[data-testid=badge-price]')).toHaveLength(1)
+    expect(row.get('[data-testid=badge-sunshine]').text()).toBe('70%')
+    expect(row.get('[data-testid=badge-wind]').text()).toBe('5 Bft')
+    expect(row.get('[data-testid=solar]').text()).toBe('7.6 kWh')
+    expect(row.get('[data-testid=solar] [role=img]').attributes('aria-label')).toBe('Solar forecast')
+    expect(row.find('[data-testid=badge-sun]').exists()).toBe(false)
+    expect(row.attributes('aria-pressed')).toBe('true')
+    await row.trigger('click')
+    expect(w.emitted('select')).toEqual([['2026-11-10']])
   })
 })
 

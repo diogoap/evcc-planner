@@ -23,6 +23,13 @@ const settingsTab = (tab: string) => async (page: Page) => {
 
 const screens: Screen[] = [
   { name: 'overview', open: (page) => page.goto('/') },
+  {
+    name: 'overview-list',
+    open: async (page) => {
+      await page.goto('/')
+      await page.getByTestId('week-view-list').click()
+    },
+  },
   { name: 'trips', open: (page) => page.goto('/trips') },
   { name: 'recurring', open: (page) => page.goto('/recurring') },
   { name: 'settings-home', open: settingsTab('Home & vehicle') },

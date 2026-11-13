@@ -411,7 +411,24 @@ export interface Status {
   pvPowerW: number
   currency?: string
   priceSlots: Rate[]
+  /** EVCC's PV forecast from the current hour (today and tomorrow). */
+  solar: SolarPoint[]
   plan: EVCCPlan | null
+  /** Where Home Assistant's car location sensor puts the car, if one is set. */
+  location: CarLocation | null
+}
+
+/** "home", "not_home", or the name of a Home Assistant zone. */
+export interface CarLocation {
+  state: string
+  home: boolean
+  since: string
+}
+
+/** Forecast PV power at an instant, linear in between, with EVCC's correction. */
+export interface SolarPoint {
+  time: string
+  kw: number
 }
 
 export interface Preview {

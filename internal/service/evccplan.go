@@ -36,7 +36,26 @@ type StatusView struct {
 	PVPowerW     float64       `json:"pvPowerW"`
 	Currency     string        `json:"currency,omitempty"`
 	PriceSlots   []evcc.Rate   `json:"priceSlots"`
+	Solar        []SolarView   `json:"solar"`
 	Plan         *EVCCPlanView `json:"plan"`
+	// Location is where Home Assistant's car location sensor puts the car;
+	// nil without a sensor or a known state.
+	Location *LocationView `json:"location"`
+}
+
+// LocationView is the car's location: "home", "not_home", or the name of a
+// Home Assistant zone.
+type LocationView struct {
+	State string    `json:"state"`
+	Home  bool      `json:"home"`
+	Since time.Time `json:"since"`
+}
+
+// SolarView is a point of EVCC's PV forecast for the chart: power at an
+// instant, linear in between, with EVCC's correction applied.
+type SolarView struct {
+	Time time.Time `json:"time"`
+	KW   float64   `json:"kw"`
 }
 
 // EVCCPlanView is the vehicle's current one-off plan in EVCC.
@@ -49,7 +68,10 @@ type EVCCPlanView struct {
 // Status returns the cached EVCC state for the UI.
 func (s *Service) Status() StatusView {
 	snap := s.snapshot()
-	v := StatusView{Mode: s.Cfg.EVCC.Mode, PriceSlots: []evcc.Rate{}}
+	v := StatusView{Mode: s.Cfg.EVCC.Mode, PriceSlots: []evcc.Rate{}, Solar: []SolarView{}}
+	s.mu.RLock()
+	v.Location = s.carLoc
+	s.mu.RUnlock()
 	if snap.err != nil {
 		v.Error = snap.err.Error()
 	}
@@ -75,7 +97,28 @@ func (s *Service) Status() StatusView {
 			v.PriceSlots = append(v.PriceSlots, r)
 		}
 	}
+	v.Solar = solarView(st.Solar, cutoff)
 	return v
+}
+
+// solarView lists the forecast from its last point at or before from, so the
+// line starts at the chart's left edge.
+func solarView(f *evcc.SolarForecast, from time.Time) []SolarView {
+	out := []SolarView{}
+	if f == nil {
+		return out
+	}
+	scale := f.Scale
+	if scale <= 0 {
+		scale = 1
+	}
+	for i, p := range f.Points {
+		if i+1 < len(f.Points) && !f.Points[i+1].Time.After(from) {
+			continue
+		}
+		out = append(out, SolarView{Time: p.Time, KW: math.Round(p.PowerW*scale) / 1000})
+	}
+	return out
 }
 
 func (s *Service) planView(veh evcc.Vehicle) *EVCCPlanView {

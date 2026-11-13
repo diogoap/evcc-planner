@@ -14,8 +14,9 @@ import (
 // StubVehicle is the vehicle name the stub reports.
 const StubVehicle = "demo-leaf"
 
-// Stub is an in-memory EVCC used by demo mode and tests. Prices follow a
-// plausible Dutch daily curve and are published for tomorrow from 14:00.
+// Stub is an in-memory EVCC used by demo mode and tests. Quarter-hour prices
+// follow a plausible Dutch daily curve and are published for tomorrow from
+// 14:00.
 type Stub struct {
 	clock    clock.Clock
 	loc      *time.Location
@@ -219,23 +220,37 @@ var stubDayLevel = map[time.Weekday]float64{
 	time.Friday: -0.005, time.Saturday: -0.02, time.Sunday: -0.025,
 }
 
-// stubPrice returns a retail price incl. VAT in EUR/kWh: cheap at night and
-// midday, peaks in the morning and evening.
+// stubHourly is the demo's daily price curve incl. VAT in EUR/kWh, one value
+// per hour (at its middle): cheap at night, a morning peak, a midday dip
+// from solar, and the evening peak.
+var stubHourly = [24]float64{
+	0.215, 0.205, 0.198, 0.195, 0.200, 0.215, 0.255, 0.305, 0.315, 0.275, 0.235, 0.205,
+	0.180, 0.172, 0.185, 0.215, 0.265, 0.330, 0.385, 0.375, 0.330, 0.285, 0.255, 0.230,
+}
+
+// stubPrice returns a quarter-hour retail price incl. VAT in EUR/kWh: the
+// daily curve, shifted per weekday, with the jitter and saw-tooth of real
+// quarter-hour prices. The same time always gives the same price.
 func stubPrice(t time.Time) float64 {
-	h := float64(t.Hour()) + float64(t.Minute())/60
-	base := 0.24
-	switch {
-	case h < 6:
-		base = 0.21
-	case h < 9:
-		base = 0.30
-	case h >= 11 && h < 15:
-		base = 0.19
-	case h >= 17 && h < 21:
-		base = 0.37
+	h := float64(t.Hour()) + float64(t.Minute())/60 + 7.5/60 // the quarter's middle
+	curve := func(h float64) float64 {
+		// Cosine interpolation between the hourly values, wrapping at midnight.
+		x := math.Mod(h-0.5+24, 24)
+		i := int(x)
+		f := (1 - math.Cos((x-float64(i))*math.Pi)) / 2
+		return stubHourly[i]*(1-f) + stubHourly[(i+1)%24]*f
 	}
-	wobble := 0.015 * math.Sin(float64(t.YearDay())+h/3)
-	return math.Round((base+stubDayLevel[t.Weekday()]+wobble)*10000) / 10000
+	base := curve(h)
+	// Quarter-hours run against the hour's trend (first quarter high in a
+	// falling hour, low in a rising one), as on the intraday market.
+	slope := curve(float64(t.Hour())+1) - curve(float64(t.Hour()))
+	q := float64(t.Minute()/15) - 1.5
+	saw := -math.Copysign(math.Min(math.Abs(slope)*0.5, 0.012), slope) * q / 1.5
+	// Deterministic jitter per quarter-hour, and a slow drift between days.
+	n := math.Sin(float64(t.Unix()/900)*12.9898) * 43758.5453
+	jitter := (n - math.Floor(n) - 0.5) * 0.02
+	drift := 0.008 * math.Sin(float64(t.YearDay())+h/4)
+	return math.Round((base+stubDayLevel[t.Weekday()]+saw+jitter+drift)*10000) / 10000
 }
 
 // stubSolarPeakW varies the demo PV peak by weekday (a cloudy Monday, a

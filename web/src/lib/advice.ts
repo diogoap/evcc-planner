@@ -1,4 +1,5 @@
 import type { AdviceSource, Day, DayAdvice, DayPrice, Indicator } from '../api/types'
+import { clock } from './format'
 import type { Tone } from './status'
 
 export const confidenceNames = ['', 'Low', 'Medium', 'High'] as const
@@ -66,6 +67,28 @@ export function adviceLabel(a: DayAdvice, day?: Day): Label {
 }
 
 /**
+ * The day's price as a short badge: the lowest slot for published days
+ * ("min €0.14"), else the day level ("~€0.30" for estimates).
+ */
+export function priceBadge(a: DayAdvice): { text: string; basis: DayPrice['basis']; title: string } | null {
+  const p = a.price
+  if (!p) return null
+  if (p.basis === 'published' && p.min != null) {
+    return {
+      text: `min €${p.min.toFixed(2)}`,
+      basis: p.basis,
+      title: `Lowest published price €${p.min.toFixed(3)}/kWh${p.minAt ? ` at ${clock(p.minAt)}` : ''} (average €${p.value.toFixed(3)})`,
+    }
+  }
+  const value = `€${p.value.toFixed(2)}`
+  return {
+    text: p.basis === 'published' ? value : `~${value}`,
+    basis: p.basis,
+    title: `${basisNames[p.basis]}: ${p.detail}`,
+  }
+}
+
+/**
  * The day's sun: "8.2 kWh · 6.5 kWh while home" from EVCC's local solar
  * forecast (today and tomorrow), else "30% of possible sunshine" from KNMI.
  */
@@ -84,6 +107,37 @@ export const sunSourceNames = {
   knmi: 'KNMI outlook, national',
   '': '',
 } as const
+
+/** One fact about a day for the advice card: a main value and a detail line. */
+export interface Fact {
+  value: string
+  detail: string
+}
+
+/** "€0.26 avg", "lowest €0.16 at 13:30" (lowest: published days). */
+export function priceFact(a: DayAdvice): Fact | null {
+  const p = a.price
+  if (!p) return null
+  const lowest = p.min != null ? `lowest €${p.min.toFixed(2)}${p.minAt ? ` at ${clock(p.minAt)}` : ''}` : ''
+  return { value: `€${p.value.toFixed(2)} avg`, detail: lowest }
+}
+
+/** "7.0 kWh", "6.0 kWh while home" from EVCC; "40%", "of possible sunshine" from KNMI. */
+export function sunFact(a: DayAdvice): Fact | null {
+  if (a.sunSource === 'evcc' && a.solarKWh != null) {
+    const home = a.solarHomeKWh != null ? `${a.solarHomeKWh.toFixed(1)} kWh while home` : ''
+    return { value: `${a.solarKWh.toFixed(1)} kWh`, detail: home }
+  }
+  if (a.sunSource === 'knmi' && a.weather?.sunshinePct != null)
+    return { value: `${a.weather.sunshinePct}%`, detail: 'of possible sunshine' }
+  return null
+}
+
+/** "Bft 5 W", "market high (6.5 GW)". */
+export function windFact(a: DayAdvice): Fact | null {
+  const [value, ...rest] = windText(a).split(' · ')
+  return value ? { value, detail: rest.join(' · ') } : null
+}
 
 /** "Bft 5 W · market high (6.5 GW)" from KNMI and the price outlook. */
 export function windText(a: DayAdvice) {

@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import type { Block, ControlView, Day, SendOption } from '../api/types'
-import { aheadText, blockLabel, controlLabel, dayLabel, dayName, onDay, sendOptionLabel } from './status'
+import {
+  aheadText,
+  blockLabel,
+  controlLabel,
+  dayLabel,
+  dayName,
+  onDay,
+  reviewText,
+  sendOptionLabel,
+} from './status'
 
 const day = (over: Partial<Day>): Day => ({
   date: '2026-11-10',
@@ -179,5 +188,12 @@ describe('aheadText', () => {
     expect(aheadText({ ...trip, priceLater: null })).toBe(
       'Includes Utrecht (Thu 12 17:00): too little time at home before it to charge.',
     )
+  })
+})
+
+describe('reviewText', () => {
+  it('counts the trips to review', () => {
+    expect(reviewText(1)).toBe('1 trip to review')
+    expect(reviewText(3)).toBe('3 trips to review')
   })
 })

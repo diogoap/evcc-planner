@@ -7,19 +7,20 @@ Illustrative demo data only, set on Monday evening, 9 November 2026. EVCC-inspir
 ```text
 EVCC Trip Planner                DEMO   Updated 19:00 ⟳
 
-NISSAN LEAF                                  Unplugged
+NISSAN LEAF                         [Home] [Unplugged]
 38%   122 km
-[###########--------|-----------------]   target 42%
-From Home Assistant · 20 min ago
+[###########--------|-----------------]
 
-Plug in by 06:36
-Tomorrow, leave 07:48 · needs 42% · 2.3 kWh to charge
+(x) Plug in by 06:36 for tomorrow 07:48     [needs 42%]
 School drop-off, at School by 08:15 · then Office visit
-Automatic: sends 42% when plugged in
-Now EUR 0.38/kWh · solar 0.0 kW
-[Send plan to EVCC v]                       [Tomorrow >]
+2.3 kWh to charge, about 42 min
 
-THIS WEEK
+Trip plans    Automatic: sends 42% when plugged in
+EVCC plan     None
+Energy now    EUR 0.38/kWh incl. VAT · solar 0.0 kW
+[Send plan to EVCC v]  [View trips]  [Plan history]
+
+THIS WEEK                          [columns|list] [+ Add trip]
  Mon   Tue   Wed   Thu   Fri   Sat   Sun
   9    10    11    12    13    14    15
  done  +8%  +21%  +10%  +8%  +12%   -
@@ -40,11 +41,18 @@ Tue 10, 03:00 · SoC 42% · EUR 0.19/kWh published   <- readout
          dashed, expected charging shaded, solar forecast]
   Mon    Tue    Wed    Thu    Fri    Sat    Sun
 
+PUBLISHED PRICES                               incl. VAT
+Now · EUR 0.37/kWh
+[quarter-hour prices, the axis zoomed to their range;
+ the cheapest and dearest slot labelled; expected
+ charging shaded; | now]
+Average EUR 0.23 · lowest EUR 0.13 (Tue 13:15) · highest EUR 0.40 (Mon 19:30)
+
 -------------------------------------------------------
  Overview   Trips   Recurring   Activity   Settings
 ```
 
-The headline follows the next departure's state: **Ready for tomorrow 07:48**, **Plug in by 06:36**, **Charging: 42% by 07:48**, or **Can't reach 42% by 07:48** with the most it can reach. A paused automatic plan shows why, with **Resume**; a charge-ahead target says which later trips it includes and the prices compared; active extra plans show their expiry and **End now**. When unplugged, the SoC comes from Home Assistant or is EVCC's last reading; the card shows its source and age and marks old readings **last known**, never as current. On desktop the main card and the advice sit side by side, and the week strip also shows km, kWh, and price per day. Tap a day (strip or chart) to open its panel. Confidence **1 low / 2 medium / 3 high** is separate from the **little / medium / high** charge indicator. Weak/no-data advice shows its reason and no plan action. Deferred charging has **Review postponement**; keeping a plan needs no action. Long-range days use qualitative signals unless numerical estimates are actually available.
+The headline names the next departure and its state, with an icon: a green check for **Ready for tomorrow 07:48**, a bolt for **Charging for …**, a plug for **Plugged in for …** (waiting for its slots), and a red cross while the charge is not enough yet (**Plug in by 06:36 for …**, **Not enough time to charge for …**). The badge beside it says what the departure needs. The badges at the top show where Home Assistant's car location sensor puts the car (Home, Away, or a zone) and whether it is unplugged, plugged in, or charging. A paused automatic plan shows why, with **Resume**; a charge-ahead target says which later trips it includes and the prices compared; active extra plans show their expiry and **End now**. The card shows only the SoC and range; each source's reading and age is in the SoC's tooltip and under Settings → Connections, and an old reading says **last known**, never current. On desktop the main card and the advice sit side by side, and the week strip also shows km, kWh, and price per day. Tap a day (strip or chart) to open its panel. Confidence **1 low / 2 medium / 3 high** is separate from the **little / medium / high** charge indicator. Weak/no-data advice shows its reason and no plan action. Deferred charging has **Review postponement**; keeping a plan needs no action. Long-range days use qualitative signals unless numerical estimates are actually available.
 
 **Day panel — one day in detail (V6).** A bottom sheet on phones and a side panel on desktop, over the Overview. The back gesture or Escape closes it; arrows (or a swipe on phones) move between days.
 

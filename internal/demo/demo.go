@@ -4,6 +4,7 @@ package demo
 import (
 	"time"
 
+	"github.com/diogoap/evcc-planner/internal/homeassistant"
 	"github.com/diogoap/evcc-planner/internal/localtime"
 	"github.com/diogoap/evcc-planner/internal/model"
 	"github.com/diogoap/evcc-planner/internal/store"
@@ -11,8 +12,8 @@ import (
 )
 
 // Seed fills an empty demo database: home and places, school-run schedules,
-// a disabled manual trip, a skipped school day, and a SoC reading from
-// earlier today (the demo car is unplugged).
+// a disabled manual trip, a skipped school day, a SoC reading from earlier
+// today (the demo car is unplugged), and the car location sensor.
 func Seed(s *store.Store, now time.Time, loc *time.Location, defaults model.Settings) error {
 	empty, err := s.IsEmpty()
 	if err != nil || !empty {
@@ -21,6 +22,12 @@ func Seed(s *store.Store, now time.Time, loc *time.Location, defaults model.Sett
 	settings := defaults
 	settings.HomeAddress = "Demo Home 1, Demo Town"
 	if err := s.SaveSettings(settings); err != nil {
+		return err
+	}
+	// The demo car's location comes from the Home Assistant stub.
+	notify := model.DefaultNotificationSettings()
+	notify.LocationEntity = homeassistant.StubLocationEntity
+	if err := s.SaveNotificationSettings(notify); err != nil {
 		return err
 	}
 	for _, p := range []model.Place{

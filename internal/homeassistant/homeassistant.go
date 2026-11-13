@@ -26,6 +26,11 @@ type Reader interface {
 	SoC(ctx context.Context) (*Reading, error)
 }
 
+// Locator reads one entity, such as the car's device tracker.
+type Locator interface {
+	State(ctx context.Context, entityID string) (*EntityState, error)
+}
+
 // SensorLister lists sensors that could hold the car's SoC, range, or
 // reading time.
 type SensorLister interface {
@@ -365,6 +370,8 @@ const (
 	StubEntity        = "sensor.demo_leaf_battery"
 	StubRangeEntity   = "sensor.demo_leaf_range"
 	StubUpdatedEntity = "sensor.demo_leaf_last_update"
+	// StubLocationEntity is the demo car's device tracker; the car is home.
+	StubLocationEntity = "device_tracker.demo_leaf"
 )
 
 // stubLag is how far the stub's readings trail the car, like a cloud
@@ -384,6 +391,15 @@ func (s Stub) SoC(ctx context.Context) (*Reading, error) {
 	soc, rangeKm := s.Car()
 	at := s.Now().Add(-stubLag).Truncate(time.Minute)
 	return &Reading{Entity: StubEntity, Percent: soc, RangeKm: &rangeKm, ObservedAt: at, ChangedAt: at}, nil
+}
+
+// State reports the demo car's location (home); other entities are unknown.
+func (s Stub) State(ctx context.Context, entityID string) (*EntityState, error) {
+	if entityID != StubLocationEntity {
+		return nil, fmt.Errorf("%s: %w", entityID, ErrNotFound)
+	}
+	at := s.Now().Add(-stubLag).Truncate(time.Minute)
+	return &EntityState{EntityID: entityID, State: "home", LastChanged: at, LastUpdated: at, LastReported: at}, nil
 }
 
 // Sensors lists the demo car's sensors.

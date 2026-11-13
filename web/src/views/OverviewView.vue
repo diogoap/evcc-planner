@@ -1,22 +1,18 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../api/client'
 import type { AdjustmentKind, Place, SendOption } from '../api/types'
 import AdviceCard from '../components/AdviceCard.vue'
 import AppIcon from '../components/AppIcon.vue'
-import DaysTable from '../components/DaysTable.vue'
-import EnergyCard from '../components/EnergyCard.vue'
-import NextDepartureCard from '../components/NextDepartureCard.vue'
+import PlanChart from '../components/PlanChart.vue'
 import PriceChart from '../components/PriceChart.vue'
 import ProposalDialog from '../components/ProposalDialog.vue'
+import ReadyCard from '../components/ReadyCard.vue'
 import SendPlanDialog from '../components/SendPlanDialog.vue'
-import SocChart from '../components/SocChart.vue'
 import TripEditor from '../components/TripEditor.vue'
-import VehicleCard from '../components/VehicleCard.vue'
-import { historyLink } from '../lib/activity'
-import { dateTime } from '../lib/format'
-import { aheadText, controlLabel } from '../lib/status'
+import WeekList from '../components/WeekList.vue'
+import WeekStrip from '../components/WeekStrip.vue'
 import { mutate, notify, refresh, resumeAutomaticPlans, state } from '../store'
 
 const router = useRouter()
@@ -41,23 +37,38 @@ const advice = computed(
     adviceDays.value.find((d) => !d.noSuggestion) ??
     adviceDays.value[0],
 )
-const activeAdjustments = computed(
-  () => plan.value?.advice.adjustments.filter((a) => a.status === 'active') ?? [],
-)
 const proposing = ref<AdjustmentKind | null>(null)
-const control = computed(() =>
-  plan.value ? controlLabel(plan.value.control, !!status.value?.connected) : null,
-)
-// Later trips the automatic target charges ahead, and the estimated slots.
-const ahead = computed(() =>
-  plan.value?.control.mode === 'automatic' && !plan.value.control.paused
-    ? (plan.value.control.target?.ahead ?? [])
-    : [],
-)
+// The planner's estimate of the charging slots for the automatic target.
 const expected = computed(() => {
   const t = plan.value?.control.target
   return t && !t.covered ? t.charging : []
 })
+
+// The week as columns (a tile per day) or as a list with every detail; the
+// choice is remembered on this device.
+type WeekView = 'columns' | 'list'
+const viewKey = 'evcc-planner.week-view'
+function savedView(): WeekView {
+  try {
+    return localStorage.getItem(viewKey) === 'list' ? 'list' : 'columns'
+  } catch {
+    return 'columns'
+  }
+}
+const weekView = ref<WeekView>(savedView())
+watch(weekView, (v) => {
+  try {
+    localStorage.setItem(viewKey, v)
+  } catch {
+    // Not stored (e.g. private browsing); the choice lasts until reload.
+  }
+})
+
+// A day shows its advice; without advice it opens in Trips.
+function select(date: string) {
+  if (adviceDays.value.some((d) => d.date === date)) selected.value = date
+  else router.push({ path: '/trips', hash: `#day-${date}` })
+}
 
 async function openAdd() {
   places.value = await api.places().catch(() => [])
@@ -89,145 +100,115 @@ function cancelAdjustment(id: number) {
     <template v-else>
       <div v-for="w in plan.warnings" :key="w" class="banner tone-warn" role="status">{{ w }}</div>
 
-      <div class="grid-2">
-        <VehicleCard :soc="plan.soc" :status="status" :now="plan.now" :target="plan.next?.targetSoc" />
-        <EnergyCard :status="status" :now="plan.now" />
-        <NextDepartureCard
-          :block="plan.next"
-          :now="plan.now"
+      <div class="overview" :class="{ 'no-advice': !advice }">
+        <ReadyCard
+          class="ov-ready"
+          :plan="plan"
+          :status="status"
           :can-send="canSend"
-          :options="plan.sendOptions"
           @send="(option?: SendOption) => (sending = { option })"
+          @resume="resumeAutomaticPlans"
+          @cancel="cancelAdjustment"
         />
-        <section class="card" aria-labelledby="control-title">
-          <div id="control-title" class="card-title">Control</div>
-          <dl class="kv">
-            <dt>Trip plans</dt>
-            <dd v-if="control">
-              <span data-testid="trip-plans">{{ control.mode }}</span>
-              <div
-                v-if="control.detail"
-                class="small"
-                :class="`text-${control.tone}`"
-                data-testid="control-detail"
-              >
-                {{ control.detail }}
-              </div>
-              <ul v-if="ahead.length" class="small muted list-indent mt-1" data-testid="ahead">
-                <li v-for="a in ahead" :key="a.tripKey">{{ aheadText(a) }}</li>
-              </ul>
-              <button
-                v-if="plan.control.paused"
-                class="btn sm mt-2"
-                type="button"
-                data-testid="resume"
-                @click="resumeAutomaticPlans"
-              >
-                Resume
-              </button>
-            </dd>
-            <dt>EVCC plan</dt>
-            <dd data-testid="evcc-plan">
-              <template v-if="status?.plan">
-                {{ Math.round(status.plan.soc) }}% by {{ dateTime(status.plan.time) }}
-                <div class="small muted">
-                  {{ status.plan.setByPlanner ? 'Set by planner' : 'Set in EVCC' }}
-                </div>
-              </template>
-              <template v-else>None</template>
-            </dd>
-            <dt>Advice auto-apply</dt>
-            <dd data-testid="auto-apply">{{ plan.advice.autoApply ? 'On' : 'Off' }}</dd>
-            <template v-for="a in activeAdjustments" :key="a.id">
-              <dt>{{ a.kind === 'extra_plan' ? 'Extra plan' : 'Postponed' }}</dt>
-              <dd data-testid="active-adjustment">
-                <template v-if="a.kind === 'extra_plan' && a.plan"
-                  >{{ a.plan.soc }}% by {{ dateTime(a.plan.time) }}</template
+
+        <section class="ov-week" aria-labelledby="week-title">
+          <div class="card-title">
+            <h2 id="week-title" class="h-inherit">This week</h2>
+            <span class="row gap-2">
+              <span class="segmented" role="group" aria-label="Week view">
+                <button
+                  type="button"
+                  class="btn sm icon-only"
+                  :aria-pressed="weekView === 'columns'"
+                  aria-label="Columns"
+                  title="Columns"
+                  data-testid="week-view-columns"
+                  @click="weekView = 'columns'"
                 >
-                <template v-else>Cheap charging paused</template>
-                <div class="small muted">
-                  Restores {{ dateTime(a.expiresAt) }}
-                  <button class="btn sm ghost" type="button" @click="cancelAdjustment(a.id)">End now</button>
-                </div>
-              </dd>
-            </template>
-          </dl>
-          <div class="row mt-3">
-            <RouterLink class="btn" to="/settings">Settings</RouterLink>
-            <RouterLink class="btn" :to="historyLink('plan', 'the EVCC plan')" data-testid="plan-history"
-              >Plan history</RouterLink
-            >
+                  <AppIcon name="columns" />
+                </button>
+                <button
+                  type="button"
+                  class="btn sm icon-only"
+                  :aria-pressed="weekView === 'list'"
+                  aria-label="List"
+                  title="List"
+                  data-testid="week-view-list"
+                  @click="weekView = 'list'"
+                >
+                  <AppIcon name="rows" />
+                </button>
+              </span>
+              <button class="btn sm" type="button" @click="openAdd"><AppIcon name="plus" />Add trip</button>
+            </span>
           </div>
+          <WeekStrip
+            v-if="weekView === 'columns'"
+            :days="plan.days"
+            :advice="adviceDays"
+            :selected="advice?.date"
+            @select="select"
+          />
+          <WeekList v-else :days="plan.days" :advice="adviceDays" :selected="advice?.date" @select="select" />
+          <p v-if="weekView === 'columns' && adviceDays.length" class="small muted m-0 mt-2 week-legend">
+            <AppIcon name="bolt" /> charge ahead · <AppIcon name="clock" /> defer ·
+            <AppIcon name="check" /> keep or no plan · <AppIcon name="dash" /> no data. Tap a day for its
+            advice.
+          </p>
         </section>
-      </div>
 
-      <section class="card mt-4" aria-labelledby="days-title">
-        <div id="days-title" class="card-title">
-          Next seven days
-          <button class="btn sm" type="button" @click="openAdd"><AppIcon name="plus" />Add trip</button>
-        </div>
-        <DaysTable
-          :days="plan.days"
-          :advice="adviceDays"
-          :selected="advice?.date"
-          @select="(d) => router.push({ path: '/trips', hash: `#day-${d}` })"
-          @advice="(d) => (selected = d)"
+        <AdviceCard
+          v-if="advice"
+          class="ov-advice"
+          :advice="advice"
+          :day="plan.days.find((d) => d.date === advice!.date)"
+          :sources="plan.advice.sources"
+          :now="plan.now"
+          :dates="adviceDays.map((d) => d.date)"
+          @select="(d) => (selected = d)"
+          @propose="(k) => (proposing = k)"
+          @dismiss="dismiss"
+          @cancel="cancelAdjustment"
         />
-        <p class="small muted m-0 mt-3">
-          Plan is the SoC the day's departures need added, if each leaves with just its target; then the first
-          departure and the SoC it needs.
-          <template v-if="adviceDays.length">
-            Daily advice compares the day's prices with later days; select it for details.
-          </template>
-        </p>
-      </section>
 
-      <AdviceCard
-        v-if="advice"
-        class="mt-4"
-        :advice="advice"
-        :day="plan.days.find((d) => d.date === advice!.date)"
-        :sources="plan.advice.sources"
-        :now="plan.now"
-        :dates="adviceDays.map((d) => d.date)"
-        @select="(d) => (selected = d)"
-        @propose="(k) => (proposing = k)"
-        @dismiss="dismiss"
-        @cancel="cancelAdjustment"
-      />
-
-      <div class="grid-2 mt-4">
-        <section class="card" aria-labelledby="soc-title">
-          <div id="soc-title" class="card-title">Projected SoC</div>
-          <SocChart
-            v-if="plan.timeline.length"
+        <section class="card ov-chart" aria-labelledby="chart-title">
+          <div id="chart-title" class="card-title">
+            SoC and prices <span class="normal-case">incl. VAT</span>
+          </div>
+          <PlanChart
+            v-if="plan.timeline.length || status?.priceSlots.length"
             :timeline="plan.timeline"
             :blocks="plan.blocks"
-            :from="plan.from"
-            :to="plan.to"
+            :slots="status?.priceSlots ?? []"
+            :solar="status?.solar ?? []"
+            :charging="expected"
+            :advice="adviceDays"
+            :dates="plan.days.map((d) => d.date)"
             :reserve="plan.settings.arrivalReservePct"
+            :now="plan.now"
+            :to="plan.to"
           />
-          <p v-else class="muted small">Shown once EVCC has read the SoC.</p>
-          <p class="small muted m-0 mt-2">
-            Minimum charging: each departure reaches its target, charging as soon as the car is home.
+          <p v-else class="muted small m-0">Shown once EVCC has read the SoC or published prices.</p>
+          <p class="small muted m-0 mt-3">
+            The projected SoC charges as soon as the car is home; each departure leaves with its target.
+            Shaded prices are the planner's estimate of when the target charges (cheapest slots, solar first);
+            EVCC picks the actual slots.
           </p>
         </section>
-        <section class="card" aria-labelledby="price-title">
-          <div id="price-title" class="card-title">Published prices <span>incl. VAT</span></div>
+
+        <section v-if="status?.priceSlots.length" class="card ov-prices" aria-labelledby="prices-title">
+          <div id="prices-title" class="card-title">
+            Published prices <span class="normal-case">incl. VAT</span>
+          </div>
           <PriceChart
-            v-if="status?.priceSlots.length"
             :slots="status.priceSlots"
             :planned="expected"
-            planned-label="Expected charging (estimate)"
+            planned-label="Expected charging"
+            :now="plan.now"
+            :blocks="plan.blocks"
+            :height="200"
           />
-          <p v-else class="muted small">No published prices from EVCC.</p>
-          <p class="small muted m-0 mt-2">
-            From EVCC; tomorrow's prices appear around 14:00.
-            <template v-if="expected.length">
-              Shaded: the planner's estimate of when the target charges (cheapest slots, solar first); EVCC
-              picks the actual slots.
-            </template>
-          </p>
+          <p class="small muted m-0 mt-2">From EVCC; tomorrow's prices appear around 14:00.</p>
         </section>
       </div>
     </template>
@@ -258,3 +239,52 @@ function cancelAdjustment(id: number) {
     />
   </main>
 </template>
+
+<style scoped>
+/* Phones: the ready check, the week, its advice, the chart. Wide screens put
+   the advice beside the ready check. */
+.overview {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: 'ready' 'week' 'advice' 'chart' 'prices';
+}
+
+.ov-ready {
+  grid-area: ready;
+}
+
+.ov-week {
+  grid-area: week;
+  min-width: 0;
+}
+
+.ov-advice {
+  grid-area: advice;
+}
+
+.ov-chart {
+  grid-area: chart;
+}
+
+.ov-prices {
+  grid-area: prices;
+}
+
+@media (min-width: 900px) {
+  .overview {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    grid-template-areas: 'ready advice' 'week week' 'chart chart' 'prices prices';
+  }
+
+  .overview.no-advice {
+    grid-template-areas: 'ready ready' 'week week' 'chart chart' 'prices prices';
+  }
+}
+
+@media (min-width: 720px) {
+  .week-legend {
+    display: none;
+  }
+}
+</style>

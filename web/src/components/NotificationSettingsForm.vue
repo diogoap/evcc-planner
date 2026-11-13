@@ -173,7 +173,7 @@ async function press(n: PhoneNotification, verb: NotificationVerb) {
           />
           <span id="hint-location" class="field-hint">
             A Home Assistant entity that is “home” while the car is home; plug-in reminders wait while it is
-            elsewhere.
+            elsewhere, and the Overview shows Home or Away.
           </span>
         </label>
       </div>

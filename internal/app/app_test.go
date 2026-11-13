@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/diogoap/evcc-planner/internal/config"
 )
@@ -594,5 +595,77 @@ func TestSendOptionsCoverMoreDays(t *testing.T) {
 	}
 	if events[0].Summary != "Automatic plans paused: plan sent from the planner (67% by 2026-11-10 07:48)" {
 		t.Errorf("pause = %+v", events[0])
+	}
+}
+
+func TestStatusIncludesSolarForecast(t *testing.T) {
+	ta := newTestApp(t, "")
+	var status struct {
+		Solar []struct {
+			Time time.Time `json:"time"`
+			KW   float64   `json:"kw"`
+		} `json:"solar"`
+	}
+	ta.json("GET", "/api/status", nil, http.StatusOK, &status)
+	// The demo forecast covers today and tomorrow in 15-minute steps; the
+	// list starts at the current hour.
+	if len(status.Solar) < 2 {
+		t.Fatalf("solar forecast has %d points", len(status.Solar))
+	}
+	first, last := status.Solar[0], status.Solar[len(status.Solar)-1]
+	at := func(s string) time.Time {
+		v, err := time.Parse(time.RFC3339, s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return v
+	}
+	if want := at("2026-11-09T19:00:00+01:00"); !first.Time.Equal(want) || first.KW != 0 {
+		t.Errorf("first point = %+v, want 0 kW at %s", first, want)
+	}
+	if want := at("2026-11-11T00:00:00+01:00"); !last.Time.Equal(want) {
+		t.Errorf("last point at %s, want %s", last.Time, want)
+	}
+	loc, _ := time.LoadLocation("Europe/Amsterdam")
+	peak := 0.0
+	for _, p := range status.Solar {
+		if h := p.Time.In(loc).Hour(); p.KW > 0 && (h < 8 || h > 16) {
+			t.Errorf("solar %.3f kW at night (%s)", p.KW, p.Time)
+		}
+		peak = math.Max(peak, p.KW)
+	}
+	if peak <= 0 {
+		t.Error("no solar during Tuesday's daylight")
+	}
+}
+
+func TestStatusShowsCarLocationFromHomeAssistant(t *testing.T) {
+	ta := newTestApp(t, "")
+	type status struct {
+		Location *struct {
+			State string `json:"state"`
+			Home  bool   `json:"home"`
+		} `json:"location"`
+	}
+	if err := ta.app.Service.PollHomeAssistant(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	var st status
+	ta.json("GET", "/api/status", nil, http.StatusOK, &st)
+	if st.Location == nil || st.Location.State != "home" || !st.Location.Home {
+		t.Fatalf("location = %+v, want home (demo sensor)", st.Location)
+	}
+
+	// A sensor Home Assistant does not know, or none, shows no location.
+	var settings map[string]any
+	ta.json("GET", "/api/settings/notifications", nil, http.StatusOK, &settings)
+	for _, entity := range []string{"device_tracker.unknown", ""} {
+		settings["locationEntity"] = entity
+		ta.json("PUT", "/api/settings/notifications", settings, http.StatusOK, nil)
+		st = status{}
+		ta.json("GET", "/api/status", nil, http.StatusOK, &st)
+		if st.Location != nil {
+			t.Errorf("location with sensor %q = %+v, want none", entity, st.Location)
+		}
 	}
 }

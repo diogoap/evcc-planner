@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // Small line icons drawn on a 24×24 grid. Decorative unless given a label.
 export type IconName =
+  | 'arrow-down'
   | 'battery'
   | 'bolt'
   | 'calendar'
@@ -10,6 +11,7 @@ export type IconName =
   | 'chevron-right'
   | 'clock'
   | 'close'
+  | 'columns'
   | 'dash'
   | 'home'
   | 'info'
@@ -19,14 +21,19 @@ export type IconName =
   | 'refresh'
   | 'repeat'
   | 'route'
+  | 'rows'
   | 'sliders'
+  | 'solar-panel'
   | 'sun'
+  | 'tag'
+  | 'thermometer'
   | 'warning'
   | 'wind'
 
 defineProps<{ name: IconName; label?: string }>()
 
 const paths: Record<IconName, string[]> = {
+  'arrow-down': ['M12 5v14', 'M6 13l6 6 6-6'],
   battery: ['M4 7h13a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2z', 'M22 11v2'],
   bolt: ['M13 2 4 14h7l-1 8 9-12h-7l1-8z'],
   calendar: [
@@ -41,6 +48,7 @@ const paths: Record<IconName, string[]> = {
   'chevron-right': ['M9 18l6-6-6-6'],
   clock: ['M12 3a9 9 0 1 0 0 18 9 9 0 1 0 0-18z', 'M12 7v5l3 2'],
   close: ['M18 6 6 18', 'M6 6l12 12'],
+  columns: ['M4 4h4v16H4z', 'M10 4h4v16h-4z', 'M16 4h4v16h-4z'],
   dash: ['M6 12h12'],
   home: ['M3 10.5 12 3l9 7.5', 'M5 9v11h14V9', 'M10 20v-6h4v6'],
   info: ['M12 3a9 9 0 1 0 0 18 9 9 0 1 0 0-18z', 'M12 16v-5', 'M12 8h.01'],
@@ -54,6 +62,8 @@ const paths: Record<IconName, string[]> = {
     'M18 3a2 2 0 1 0 0 4 2 2 0 1 0 0-4z',
     'M8 19h8.5a3.5 3.5 0 0 0 0-7h-9a3.5 3.5 0 0 1 0-7H16',
   ],
+  rows: ['M4 4h16v4H4z', 'M4 10h16v4H4z', 'M4 16h16v4H4z'],
+  'solar-panel': ['M3 4h18v10H3z', 'M3 9h18', 'M9 4v10', 'M15 4v10', 'M12 14v4', 'M8 20h8'],
   sliders: [
     'M4 21v-7',
     'M4 10V3',
@@ -76,6 +86,8 @@ const paths: Record<IconName, string[]> = {
     'M4.9 19.1l1.4-1.4',
     'M17.7 6.3l1.4-1.4',
   ],
+  tag: ['M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z', 'M7.5 7.5h.01'],
+  thermometer: ['M14 14.8V4a2 2 0 1 0-4 0v10.8a4 4 0 1 0 4 0z'],
   warning: [
     'M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z',
     'M12 9v4',

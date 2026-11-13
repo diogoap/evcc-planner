@@ -3,42 +3,26 @@ import { computed } from 'vue'
 import type { Day, DayAdvice } from '../api/types'
 import {
   adviceLabel,
-  basisNames,
   confidenceNames,
   indicatorLevel,
   indicatorNames,
+  priceBadge,
   sunSourceNames,
   sunText,
 } from '../lib/advice'
-import { clock } from '../lib/format'
 import AppIcon from './AppIcon.vue'
 
 // A day's advice as compact badges for the seven-day grid: recommendation,
 // confidence, charge indicator, price and its basis, local sun, and wind.
-const props = defineProps<{ advice: DayAdvice; day?: Day }>()
+// hidePrice and hideWeather leave out the price, or sun and wind, for a list
+// that shows them in their own columns.
+const props = defineProps<{ advice: DayAdvice; day?: Day; hidePrice?: boolean; hideWeather?: boolean }>()
 
 const label = computed(() => adviceLabel(props.advice, props.day))
 const level = computed(() =>
   props.advice.indicator && !props.advice.noSuggestion ? indicatorLevel[props.advice.indicator] : 0,
 )
-// Published days show their lowest price; estimates only have a day level.
-const price = computed(() => {
-  const p = props.advice.price
-  if (!p) return null
-  if (p.basis === 'published' && p.min != null) {
-    return {
-      text: `min €${p.min.toFixed(2)}`,
-      basis: p.basis,
-      title: `Lowest published price €${p.min.toFixed(3)}/kWh${p.minAt ? ` at ${clock(p.minAt)}` : ''} (average €${p.value.toFixed(3)})`,
-    }
-  }
-  const value = `€${p.value.toFixed(2)}`
-  return {
-    text: p.basis === 'published' ? value : `~${value}`,
-    basis: p.basis,
-    title: `${basisNames[p.basis]}: ${p.detail}`,
-  }
-})
+const price = computed(() => priceBadge(props.advice))
 const bft = computed(() => props.advice.weather?.windBft ?? null)
 // EVCC's local kWh for today and tomorrow; KNMI's national % after that.
 const sun = computed(() => {
@@ -76,16 +60,16 @@ const sun = computed(() => {
       <span v-for="i in 3" :key="i" class="bar-step" :class="{ on: i <= level }" />
     </span>
     <span
-      v-if="price"
+      v-if="price && !hidePrice"
       class="badge"
       :class="`basis-${price.basis}`"
       :title="price.title"
       data-testid="badge-price"
     >
-      {{ price.text }}
+      <AppIcon name="tag" />{{ price.text }}
     </span>
     <span
-      v-if="sun"
+      v-if="sun && !hideWeather"
       class="badge"
       :class="{ 'basis-weekly': sun.knmi }"
       :title="`Sun (${sunSourceNames[advice.sunSource]}): ${sunText(advice)}`"
@@ -93,7 +77,12 @@ const sun = computed(() => {
     >
       <AppIcon name="sun" :label="sun.knmi ? 'Sunshine (KNMI)' : 'Local solar (EVCC)'" />{{ sun.text }}
     </span>
-    <span v-if="bft != null" class="badge" :title="`Wind Bft ${bft} (KNMI)`" data-testid="badge-wind">
+    <span
+      v-if="bft != null && !hideWeather"
+      class="badge"
+      :title="`Wind Bft ${bft} (KNMI)`"
+      data-testid="badge-wind"
+    >
       <AppIcon name="wind" label="Wind" />{{ bft }} Bft
     </span>
   </span>

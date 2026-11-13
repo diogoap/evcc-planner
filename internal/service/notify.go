@@ -55,6 +55,10 @@ func (s *Service) SaveNotificationSettings(ctx context.Context, v model.Notifica
 		}
 		return nil
 	})
+	// The Overview shows the car's location from the new sensor right away.
+	if cs := s.state(); err == nil && cs.HA != nil {
+		s.pollLocation(ctx, cs)
+	}
 	return v, err
 }
 

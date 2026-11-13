@@ -448,10 +448,13 @@ func TestAdviceSettingsAndAutoApply(t *testing.T) {
 			extra = &a
 		}
 	}
-	if extra == nil || extra.Source != "auto" || extra.Plan.SoC != 60 || !strings.HasPrefix(extra.ExpiresAt, "2026-11-10T07:00:00") {
-		t.Fatalf("auto extra plan = %+v", extra)
+	// The target set for Tuesday's charge indicator.
+	want := map[string]int{"little": 60, "medium": 70, "high": 80}[ta.advice().day("2026-11-10").Indicator]
+	if want == 0 || extra == nil || extra.Source != "auto" || extra.Plan.SoC != float64(want) ||
+		!strings.HasPrefix(extra.ExpiresAt, "2026-11-10T07:00:00") {
+		t.Fatalf("auto extra plan = %+v, want %d%%", extra, want)
 	}
-	if plan := ta.evccPlan(); plan == nil || plan.Soc != 60 {
+	if plan := ta.evccPlan(); plan == nil || plan.Soc != float64(want) {
 		t.Errorf("EVCC plan = %+v", plan)
 	}
 }
