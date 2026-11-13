@@ -402,4 +402,11 @@ describe('ModalDialog', () => {
     expect(document.activeElement).toBe(opener)
     opener.remove()
   })
+
+  it('stops the page behind from scrolling while open', () => {
+    const w = mount(ModalDialog, { props: { title: 'Edit trip' }, attachTo: document.body })
+    expect(document.documentElement.classList.contains('modal-open')).toBe(true)
+    w.unmount()
+    expect(document.documentElement.classList.contains('modal-open')).toBe(false)
+  })
 })

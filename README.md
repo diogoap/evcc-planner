@@ -232,8 +232,11 @@ reverse proxy:
 - **Android (Chrome):** open the site → menu → **Install app**.
 - **iPhone (Safari):** open the site → Share → **Add to Home Screen**.
 
-It always shows live data, so there is no offline mode. The icons are generated
-from one design: `cd web && pnpm icons`.
+It always shows live data, so there is no offline mode: pull down from the top
+of the installed app, or use the refresh button next to the "Updated" time, to
+reload it. On phones the navigation sits at the bottom of the screen. The icons
+and the iPhone launch screens (light and dark) are generated from one design:
+`cd web && pnpm icons`.
 
 ## Deployment
 

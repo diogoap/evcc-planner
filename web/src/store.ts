@@ -68,6 +68,11 @@ export async function refresh() {
   }
 }
 
+/** A refresh the user asked for (button or pull): also notices a deploy. */
+export async function refreshNow() {
+  await Promise.all([checkVersion(), refresh()])
+}
+
 /** Runs a mutation, reports its outcome, and reloads the plan. */
 export async function mutate(action: () => Promise<unknown>, success?: string) {
   try {

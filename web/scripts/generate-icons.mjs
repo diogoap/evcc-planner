@@ -1,12 +1,15 @@
-// Generates the app icons (SVG favicon, PWA and Apple touch PNGs) from one
-// design: EVCC's green charging bolt inside a clock-like ring whose arc ends
-// in an arrow (planning and automation). Run with `pnpm icons`.
+// Generates the app icons (SVG favicon, PWA and Apple touch PNGs) and the iOS
+// launch images from one design: EVCC's green charging bolt inside a
+// clock-like ring whose arc ends in an arrow (planning and automation). Run
+// with `pnpm icons`.
 import { chromium } from '@playwright/test'
-import { writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import * as prettier from 'prettier'
 
 const out = join(dirname(fileURLToPath(import.meta.url)), '..', 'public')
+const indexFile = join(out, '..', 'index.html')
 
 const green = '#0fdd42'
 const C = 256 // centre of the 512 × 512 canvas
@@ -89,5 +92,60 @@ for (const [file, variant, size] of pngs) {
   )
   await page.locator('svg').screenshot({ path: join(out, file), omitBackground: true })
 }
+
+// iOS launch images, shown while the installed app starts (Android draws its
+// own from the manifest). Portrait, for the iPhone screens current iOS
+// supports, in CSS px with their pixel ratio, in light and dark. The colours
+// match --bg and --text in src/styles.css.
+const iphones = [
+  [375, 667, 2], // SE
+  [375, 812, 3], // 11 Pro, 12 and 13 mini
+  [390, 844, 3], // 12 to 14
+  [393, 852, 3], // 14 Pro to 16
+  [402, 874, 3], // 16 Pro, 17
+  [414, 896, 2], // 11
+  [414, 896, 3], // 11 Pro Max
+  [420, 912, 3], // Air
+  [428, 926, 3], // 12 and 13 Pro Max, 14 Plus
+  [430, 932, 3], // 14 Pro Max to 16 Plus
+  [440, 956, 3], // 16 Pro Max, 17 Pro Max
+]
+const themes = {
+  light: { bg: '#f3f3f7', text: '#28293e' },
+  dark: { bg: '#0b0f1e', text: '#e8e9f1' },
+}
+mkdirSync(join(out, 'splash'), { recursive: true })
+const links = []
+for (const ratio of [2, 3]) {
+  const splash = await browser.newPage({ deviceScaleFactor: ratio })
+  for (const [width, height] of iphones.filter((d) => d[2] === ratio)) {
+    await splash.setViewportSize({ width, height })
+    for (const [theme, c] of Object.entries(themes)) {
+      const file = `splash/iphone-${width}x${height}@${ratio}x-${theme}.png`
+      await splash.setContent(
+        `<html><body style="margin:0;height:100vh;display:grid;place-content:center;justify-items:center;gap:20px;` +
+          `background:${c.bg};color:${c.text};font:600 22px system-ui,-apple-system,sans-serif">` +
+          `${variants.any.replace('<svg ', '<svg width="128" height="128" ')}<div>Trip Planner</div></body></html>`,
+      )
+      await splash.screenshot({ path: join(out, file) })
+      links.push(
+        `<link rel="apple-touch-startup-image" media="(device-width: ${width}px) and (device-height: ${height}px)` +
+          ` and (-webkit-device-pixel-ratio: ${ratio}) and (orientation: portrait) and (prefers-color-scheme: ${theme})"` +
+          ` href="/${file}" />`,
+      )
+    }
+  }
+  await splash.close()
+}
 await browser.close()
-console.log(`wrote icon.svg and ${pngs.map((p) => p[0]).join(', ')} to ${out}`)
+
+// The links go between the splash markers in index.html.
+const html = readFileSync(indexFile, 'utf8')
+const markers = /<!-- splash:start -->[\s\S]*?<!-- splash:end -->/
+if (!markers.test(html)) throw new Error('index.html has no splash markers')
+const updated = html.replace(markers, `<!-- splash:start -->\n${links.join('\n')}\n<!-- splash:end -->`)
+const options = { ...(await prettier.resolveConfig(indexFile)), filepath: indexFile }
+writeFileSync(indexFile, await prettier.format(updated, options))
+console.log(
+  `wrote icon.svg, ${pngs.map((p) => p[0]).join(', ')}, and ${links.length} launch images to ${out}`,
+)

@@ -34,11 +34,14 @@ function onKey(e: KeyboardEvent) {
 onMounted(async () => {
   opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
   document.addEventListener('keydown', onKey)
+  // The page behind doesn't scroll while the dialog is open.
+  document.documentElement.classList.add('modal-open')
   await nextTick()
   root.value?.querySelector<HTMLElement>('input, select, button')?.focus()
 })
 onUnmounted(() => {
   document.removeEventListener('keydown', onKey)
+  document.documentElement.classList.remove('modal-open')
   if (opener?.isConnected) opener.focus()
 })
 </script>

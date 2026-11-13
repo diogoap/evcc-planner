@@ -1,7 +1,19 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted } from 'vue'
 import { RouterLink, RouterView } from 'vue-router'
-import { checkVersion, loadMeta, refresh, state } from './store'
+import AppIcon, { type IconName } from './components/AppIcon.vue'
+import PullToRefresh from './components/PullToRefresh.vue'
+import { clock } from './lib/format'
+import { checkVersion, loadMeta, refresh, refreshNow, state } from './store'
+
+// The main destinations: tabs at the top on wide screens, a bar at the bottom on phones.
+const nav: { to: string; label: string; short?: string; icon: IconName }[] = [
+  { to: '/', label: 'Overview', icon: 'home' },
+  { to: '/trips', label: 'Trips', icon: 'route' },
+  { to: '/recurring', label: 'Recurring trips', short: 'Recurring', icon: 'repeat' },
+  { to: '/activity', label: 'Activity', icon: 'list' },
+  { to: '/settings', label: 'Settings', icon: 'sliders' },
+]
 
 let timer: number | undefined
 
@@ -47,25 +59,41 @@ function reload() {
 <template>
   <header class="topbar">
     <div class="topbar-inner">
-      <div class="brand">
-        <img class="brand-mark" src="/icon.svg" alt="" />
-        <span>EVCC Trip Planner</span>
-        <span v-if="state.meta?.demo" class="pill tone-warn" title="Seeded demo data and stubbed integrations"
-          >DEMO</span
-        >
-        <span
-          v-else-if="state.meta?.stubs"
-          class="pill tone-warn"
-          title="Some integrations use stubs; see Settings → Connections"
-          >STUB DATA</span
-        >
+      <div class="topbar-row">
+        <div class="brand">
+          <img class="brand-mark" src="/icon.svg" alt="" />
+          <span><span class="brand-evcc">EVCC </span>Trip Planner</span>
+          <span
+            v-if="state.meta?.demo"
+            class="pill tone-warn"
+            title="Seeded demo data and stubbed integrations"
+            >DEMO</span
+          >
+          <span
+            v-else-if="state.meta?.stubs"
+            class="pill tone-warn"
+            title="Some integrations use stubs; see Settings → Connections"
+            >STUB DATA</span
+          >
+        </div>
+        <div class="updated">
+          <span v-if="state.plan" class="small muted num" data-testid="updated"
+            ><span class="updated-label">Updated </span>{{ clock(state.plan.now) }}</span
+          >
+          <button
+            class="btn sm ghost icon-only"
+            type="button"
+            aria-label="Refresh"
+            :disabled="state.loading"
+            data-testid="refresh"
+            @click="refreshNow"
+          >
+            <AppIcon name="refresh" :class="{ spinning: state.loading }" />
+          </button>
+        </div>
       </div>
       <nav class="tabs" aria-label="Main">
-        <RouterLink to="/">Overview</RouterLink>
-        <RouterLink to="/trips">Trips</RouterLink>
-        <RouterLink to="/recurring">Recurring trips</RouterLink>
-        <RouterLink to="/settings">Settings</RouterLink>
-        <RouterLink to="/activity">Activity</RouterLink>
+        <RouterLink v-for="n in nav" :key="n.to" :to="n.to">{{ n.label }}</RouterLink>
       </nav>
     </div>
   </header>
@@ -81,6 +109,14 @@ function reload() {
   </div>
 
   <RouterView />
+
+  <nav class="bottom-nav" aria-label="Main" data-testid="bottom-nav">
+    <RouterLink v-for="n in nav" :key="n.to" :to="n.to">
+      <AppIcon :name="n.icon" />
+      <span>{{ n.short ?? n.label }}</span>
+    </RouterLink>
+  </nav>
+  <PullToRefresh :refresh="refreshNow" />
 
   <div class="toasts" aria-live="polite">
     <div v-for="t in state.toasts" :key="t.id" class="toast" :class="t.kind">{{ t.text }}</div>

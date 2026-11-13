@@ -311,4 +311,12 @@ test('installable as an app: manifest and icons', async ({ page, request }) => {
     expect(icon.status(), src).toBe(200)
     expect(icon.headers()['content-type'], src).toMatch(/^image\//)
   }
+  // iOS launch images: every current iPhone screen, light and dark.
+  const splash = page.locator('link[rel="apple-touch-startup-image"]')
+  await expect(splash).toHaveCount(22)
+  for (const href of await splash.evaluateAll((links) => links.map((l) => l.getAttribute('href')!))) {
+    const image = await request.get(href)
+    expect(image.status(), href).toBe(200)
+    expect(image.headers()['content-type'], href).toBe('image/png')
+  }
 })
