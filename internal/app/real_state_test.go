@@ -93,18 +93,20 @@ func TestAdviceWithRealEVCCState(t *testing.T) {
 	if thu.SunSource != "knmi" || thu.SolarKWh != nil {
 		t.Errorf("after tomorrow = %v (%s)", val(thu.SolarKWh), thu.SunSource)
 	}
+	// Every price before tomorrow is far above the real €0.20 limit, so
+	// postponing would change nothing and is not offered.
+	if tue.Recommendation != "defer" || tue.Action != "" ||
+		!strings.Contains(tue.ActionNote, "cheap-grid limit (€0.20/kWh; cheapest €0.39)") {
+		t.Errorf("today = %+v", tue)
+	}
 	var prop struct {
 		Available      bool     `json:"available"`
+		Reason         string   `json:"reason"`
 		SmartCostLimit *float64 `json:"smartCostLimit"`
-		Notes          []string `json:"notes"`
 	}
 	ta.json("GET", "/api/advice/2026-11-10/proposal?kind=postpone", nil, http.StatusOK, &prop)
-	if !prop.Available || prop.SmartCostLimit == nil || *prop.SmartCostLimit != 0.2 {
+	if prop.Available || prop.Reason != tue.ActionNote || prop.SmartCostLimit == nil || *prop.SmartCostLimit != 0.2 {
 		t.Errorf("postpone proposal should see the real cheap-charging limit: %+v", prop)
-	}
-	// Every price before tomorrow is far above the €0.20 limit.
-	if !strings.Contains(strings.Join(prop.Notes, " "), "postponing changes nothing in practice") {
-		t.Errorf("notes = %v", prop.Notes)
 	}
 }
 

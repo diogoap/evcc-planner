@@ -176,6 +176,9 @@ const level = computed(() =>
     >
       Low confidence: no plan action.
     </p>
+    <p v-else-if="advice.actionNote" class="small muted m-0" data-testid="advice-action-note">
+      {{ advice.actionNote }}
+    </p>
 
     <div v-if="!adj && !advice.dismissed && (advice.action || canDismiss)" class="row">
       <button

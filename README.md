@@ -355,7 +355,9 @@ to `main` deploy automatically, run `make verify` before pushing.
   expires: the target is at least the next departure's and ready before it
   leaves. **Review postponement** (today only) pauses EVCC's cheap-grid
   charging (its smart cost limit) until the cheaper day; trip plans keep
-  charging. Nothing is written before **Confirm**; **Dismiss** changes nothing.
+  charging. It is not offered when it would change nothing: EVCC has no limit
+  set, or every price until then is published and above it. Nothing is
+  written before **Confirm**; **Dismiss** changes nothing.
 - At expiry (or **End now**) the previous plan or limit is restored, unless it
   was changed in EVCC in the meantime; then your change is kept.
 - **Automatically create plans from daily advice** (Settings → Advice) is off by

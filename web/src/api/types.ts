@@ -322,6 +322,8 @@ export interface DayAdvice {
   dismissed: boolean
   /** Plan action offered; absent for weak, no-data, dismissed, or "none" advice. */
   action?: AdjustmentKind
+  /** Why advice that would offer an action offers none: it would change nothing in EVCC. */
+  actionNote?: string
   /**
    * Charge ahead from solar: keep the car plugged in while the sun shines
    * (solarFrom to solarUntil), at solarPrice for up to solarPct; no plan.

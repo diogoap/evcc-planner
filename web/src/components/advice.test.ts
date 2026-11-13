@@ -102,6 +102,23 @@ describe('AdviceCard', () => {
     expect(weak.find('button.primary').exists()).toBe(false)
   })
 
+  it('says why a postponement that would change nothing is not offered', () => {
+    const note =
+      "No postponement needed: every price until then is above EVCC's cheap-grid limit (€0.20/kWh; cheapest €0.38), so EVCC will not charge from the grid anyway."
+    const w = card(
+      advice({
+        recommendation: 'defer',
+        confidence: 3,
+        deferUntil: '2026-11-11',
+        action: undefined,
+        actionNote: note,
+      }),
+    )
+    expect(w.get('[data-testid=advice-action-note]').text()).toBe(note)
+    expect(w.find('button.primary').exists()).toBe(false)
+    expect(w.findAll('button').some((b) => b.text() === 'Dismiss')).toBe(true)
+  })
+
   it('shows the lowest published price with its time', () => {
     const w = card(
       advice({

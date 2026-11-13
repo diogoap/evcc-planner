@@ -30,6 +30,7 @@ type adviceDay struct {
 	Confidence     int    `json:"confidence"`
 	Indicator      string `json:"indicator"`
 	Action         string `json:"action"`
+	ActionNote     string `json:"actionNote"`
 	Dismissed      bool   `json:"dismissed"`
 	DeferUntil     string `json:"deferUntil"`
 	Price          *struct {
@@ -341,7 +342,7 @@ func TestPostponeRestoresCheapCharging(t *testing.T) {
 		ExpiresAt      string   `json:"expiresAt"`
 	}
 	ta.json("GET", "/api/advice/2026-11-09/proposal?kind=postpone", nil, http.StatusOK, &p)
-	if !p.Available || p.SmartCostLimit == nil || *p.SmartCostLimit != 0.2 || !strings.HasPrefix(p.ExpiresAt, "2026-11-10T00:00:00") {
+	if !p.Available || p.SmartCostLimit == nil || *p.SmartCostLimit != 0.25 || !strings.HasPrefix(p.ExpiresAt, "2026-11-10T00:00:00") {
 		t.Fatalf("proposal = %+v", p)
 	}
 	// Future days' deferrals are not offered (a pause starts right away).
@@ -361,10 +362,60 @@ func TestPostponeRestoresCheapCharging(t *testing.T) {
 	}
 	var cancelled adjustment
 	ta.json("POST", "/api/adjustments/"+itoa(a.ID)+"/cancel", map[string]any{}, http.StatusOK, &cancelled)
-	if cancelled.Status != "cancelled" || ta.smartCostLimit() == nil || *ta.smartCostLimit() != 0.2 {
+	if cancelled.Status != "cancelled" || ta.smartCostLimit() == nil || *ta.smartCostLimit() != 0.25 {
 		t.Fatalf("cancel = %+v, limit %v", cancelled, ta.smartCostLimit())
 	}
 	ta.json("POST", "/api/adjustments/"+itoa(a.ID)+"/cancel", map[string]any{}, http.StatusBadRequest, nil)
+}
+
+// A postponement that would change nothing is not offered: EVCC has no
+// cheap-grid limit, or every price until the cheaper day is above it.
+func TestNeedlessPostponementIsNotOffered(t *testing.T) {
+	ta := newTestApp(t, "")
+	ctx := context.Background()
+	// Monday's remaining prices are €0.24 and up.
+	low := 0.2
+	if err := ta.app.Stub.SetSmartCostLimit(ctx, 1, &low); err != nil {
+		t.Fatal(err)
+	}
+	ta.poll()
+	mon := ta.advice().Advice.Days[0]
+	if mon.Recommendation != "defer" || mon.Action != "" ||
+		!strings.Contains(mon.ActionNote, "every price until then is above EVCC's cheap-grid limit (€0.20/kWh; cheapest €0.24)") {
+		t.Fatalf("Monday = %+v", mon)
+	}
+	var p struct {
+		Available bool   `json:"available"`
+		Reason    string `json:"reason"`
+	}
+	ta.json("GET", "/api/advice/2026-11-09/proposal?kind=postpone", nil, http.StatusOK, &p)
+	if p.Available || p.Reason != mon.ActionNote {
+		t.Errorf("proposal = %+v", p)
+	}
+	ta.json("POST", "/api/adjustments", map[string]any{"kind": "postpone", "date": "2026-11-09", "confirm": true,
+		"expiresAt": "2026-11-10T00:00:00+01:00"}, http.StatusBadRequest, nil)
+
+	// Automatic postponement does nothing either.
+	var s map[string]any
+	ta.json("GET", "/api/settings/advice", nil, http.StatusOK, &s)
+	s["autoApply"], s["autoPostpone"], s["autoMinConfidence"] = true, true, 2
+	s["targetLittle"], s["targetMedium"], s["targetHigh"] = 60, 70, 80
+	s["readyBy"], s["expiryHours"] = "06:00", 1
+	ta.json("PUT", "/api/settings/advice", s, http.StatusOK, nil)
+	if err := ta.app.Service.AutoApply(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if adj := ta.advice().Advice.Adjustments; len(adj) != 0 || *ta.smartCostLimit() != 0.2 {
+		t.Fatalf("auto postpone = %+v", adj)
+	}
+
+	if err := ta.app.Stub.SetSmartCostLimit(ctx, 1, nil); err != nil {
+		t.Fatal(err)
+	}
+	ta.poll()
+	if mon := ta.advice().Advice.Days[0]; mon.Action != "" || !strings.Contains(mon.ActionNote, "no cheap-grid limit") {
+		t.Errorf("without a limit = %+v", mon)
+	}
 }
 
 func TestWeakAdviceHasNoPlanAction(t *testing.T) {

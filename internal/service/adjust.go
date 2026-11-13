@@ -115,15 +115,11 @@ func (s *Service) Proposal(ctx context.Context, kind, date string) (*ProposalVie
 			fmt.Sprintf("Pauses EVCC's cheap-grid charging (at or below €%.2f/kWh) until the cheaper day.", *p.SmartCostLimit),
 			"Then it is restored, unless you change it in EVCC in the meantime.",
 			"Plans for your trips stay in EVCC and still charge in time.")
-		// Say so when no published price before then reaches the limit.
-		cheapest, known := math.Inf(1), false
-		for _, r := range snap.state.PriceSlots {
-			if r.End.After(now) && r.Start.Before(until) {
-				cheapest, known = math.Min(cheapest, r.Value), true
-			}
-		}
-		if known && cheapest > *p.SmartCostLimit {
-			p.Notes = append(p.Notes, fmt.Sprintf("No published price before then is at or below €%.2f/kWh (cheapest €%.2f), so EVCC would not charge from the grid anyway: postponing changes nothing in practice.",
+		// When every price until then is published and above the limit, the
+		// advice offers no postponement (see postponeNeedless); say so when
+		// the prices published so far are.
+		if cheapest, _ := cheapestPrice(snap.state.PriceSlots, now, until); !math.IsInf(cheapest, 1) && cheapest > *p.SmartCostLimit {
+			p.Notes = append(p.Notes, fmt.Sprintf("No price published so far is at or below €%.2f/kWh (cheapest €%.2f): postponing matters only if a later price is.",
 				*p.SmartCostLimit, cheapest))
 		}
 		p.Available = true
@@ -198,6 +194,8 @@ func (s *Service) Proposal(ctx context.Context, kind, date string) (*ProposalVie
 
 func noActionReason(day *DayAdviceView, kind string) string {
 	switch {
+	case day.ActionNote != "":
+		return day.ActionNote
 	case day.NoSuggestion:
 		return "There is not enough data for a suggestion on this day."
 	case day.Confidence < 2 && day.Recommendation != "none":
@@ -208,6 +206,43 @@ func noActionReason(day *DayAdviceView, kind string) string {
 		return "This day's advice is not to postpone."
 	}
 	return "This day's advice is not to charge ahead."
+}
+
+// postponeNeedless says why pausing cheap-grid charging until a later day
+// would change nothing: EVCC has no limit set, or every price until then is
+// published and above it. Empty when it would, or when EVCC's state is
+// unknown.
+func (s *Service) postponeNeedless(snap evccSnapshot, now time.Time, deferUntil string) string {
+	if snap.state == nil || snap.err != nil {
+		return ""
+	}
+	lp, ok := s.loadpoint(snap.state)
+	until, err := localtime.ParseDate(s.loc(), deferUntil)
+	if !ok || err != nil || !until.After(now) {
+		return ""
+	}
+	if lp.SmartCostLimit == nil {
+		return "EVCC has no cheap-grid limit set, so there is no optional charging to postpone."
+	}
+	cheapest, covered := cheapestPrice(snap.state.PriceSlots, now, until)
+	if !covered || cheapest <= *lp.SmartCostLimit {
+		return ""
+	}
+	return fmt.Sprintf("No postponement needed: every price until then is above EVCC's cheap-grid limit (€%.2f/kWh; cheapest €%.2f), so EVCC will not charge from the grid anyway.",
+		*lp.SmartCostLimit, cheapest)
+}
+
+// cheapestPrice returns the lowest published price in [from, to) and
+// whether the published slots cover all of it.
+func cheapestPrice(slots []evcc.Rate, from, to time.Time) (float64, bool) {
+	cheapest, covered := math.Inf(1), time.Duration(0)
+	for _, r := range slots {
+		if start, end := maxTime(r.Start, from), minTime(r.End, to); end.After(start) {
+			cheapest = math.Min(cheapest, r.Value)
+			covered += end.Sub(start)
+		}
+	}
+	return cheapest, covered >= to.Sub(from)
 }
 
 // ApplyAdjustment writes a confirmed proposal to EVCC and records it so the

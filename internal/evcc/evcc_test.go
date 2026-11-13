@@ -202,7 +202,7 @@ func TestStubPlanDeleteAndSmartCostLimit(t *testing.T) {
 	s := NewStub(clock.Fixed{T: now}, ams)
 	ctx := context.Background()
 	st, _ := s.State(ctx)
-	if lp, _ := st.Loadpoint(1); lp.SmartCostLimit == nil || *lp.SmartCostLimit != 0.2 {
+	if lp, _ := st.Loadpoint(1); lp.SmartCostLimit == nil || *lp.SmartCostLimit != 0.25 {
 		t.Fatalf("demo limit = %v", lp.SmartCostLimit)
 	}
 	s.SetSmartCostLimit(ctx, 1, nil)

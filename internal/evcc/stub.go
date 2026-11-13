@@ -29,8 +29,9 @@ type Stub struct {
 	smart    *float64
 }
 
-// stubSmartCostLimit is the demo cheap-grid charging limit.
-const stubSmartCostLimit = 0.2
+// stubSmartCostLimit is the demo cheap-grid charging limit: Monday's last
+// evening hour reaches it, so the demo's postponement changes something.
+const stubSmartCostLimit = 0.25
 
 // stubKmPerPct is the demo range per SoC point (a Leaf: about 3.2 km).
 const stubKmPerPct = 3.2

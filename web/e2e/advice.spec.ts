@@ -90,7 +90,7 @@ test('review a postponement of cheap-grid charging', async ({ page }) => {
   const card = page.getByTestId('panel-advice')
   await card.getByRole('button', { name: 'Review postponement' }).click()
   const dialog = page.getByRole('dialog', { name: /Review postponement/ })
-  await expect(dialog).toContainText('€0.20/kWh → paused')
+  await expect(dialog).toContainText('€0.25/kWh → paused')
   await expect(dialog.getByTestId('proposal-until')).toHaveValue('00:00')
   await dialog.getByRole('button', { name: 'Confirm postponement' }).click()
   await expect(page.getByText('Cheap-grid charging paused until Tue 10 Nov, 00:00')).toBeVisible()

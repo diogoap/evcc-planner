@@ -48,7 +48,10 @@ type DayAdviceView struct {
 	Dismissed    bool                 `json:"dismissed"`
 	// Action is the plan action offered (extra_plan or postpone); empty for
 	// weak, no-data, dismissed, or "none" advice.
-	Action     string            `json:"action,omitempty"`
+	Action string `json:"action,omitempty"`
+	// ActionNote says why advice that would offer an action offers none
+	// because it would change nothing in EVCC.
+	ActionNote string            `json:"actionNote,omitempty"`
 	Adjustment *model.Adjustment `json:"adjustment,omitempty"` // active for this day
 }
 
@@ -291,7 +294,9 @@ func (s *Service) buildAdvice(view *PlanView, result planner.Result, socKnown bo
 			case a.Recommendation == advice.ChargeAhead && !a.Solar:
 				dv.Action = model.AdjustExtraPlan
 			case a.Recommendation == advice.Defer && a.Date == today:
-				dv.Action = model.AdjustPostpone
+				if dv.ActionNote = s.postponeNeedless(snap, now, a.DeferUntil); dv.ActionNote == "" {
+					dv.Action = model.AdjustPostpone
+				}
 			}
 		}
 		out.Days = append(out.Days, dv)
