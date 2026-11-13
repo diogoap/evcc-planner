@@ -149,6 +149,14 @@ export function sunFact(a: DayAdvice): Fact | null {
   return null
 }
 
+/**
+ * Windy (Bft 5 or more) and sunny (more than 50% of possible sunshine) days
+ * usually have cheaper prices; their badges are highlighted.
+ */
+export const windy = (bft: number | null | undefined) => bft != null && bft >= 5
+export const sunny = (pct: number | null | undefined) => pct != null && pct > 50
+export const cheapHint = 'usually cheaper prices'
+
 /** "Bft 5 W", "market high (6.5 GW)". */
 export function windFact(a: DayAdvice): Fact | null {
   const [value, ...rest] = windText(a).split(' · ')

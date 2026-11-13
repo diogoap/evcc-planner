@@ -3,12 +3,15 @@ import { computed } from 'vue'
 import type { Day, DayAdvice } from '../api/types'
 import {
   adviceLabel,
+  cheapHint,
   confidenceNames,
   indicatorLevel,
   indicatorNames,
   priceBadge,
+  sunny,
   sunSourceNames,
   sunText,
+  windy,
 } from '../lib/advice'
 import AppIcon from './AppIcon.vue'
 
@@ -24,13 +27,14 @@ const level = computed(() =>
 )
 const price = computed(() => priceBadge(props.advice))
 const bft = computed(() => props.advice.weather?.windBft ?? null)
-// EVCC's local kWh for today and tomorrow; KNMI's national % after that.
+// EVCC's local kWh for today and tomorrow; KNMI's national % after that,
+// highlighted when sunny.
 const sun = computed(() => {
   const a = props.advice
   if (a.sunSource === 'evcc' && a.solarKWh != null)
-    return { text: `${a.solarKWh.toFixed(1)} kWh`, knmi: false }
+    return { text: `${a.solarKWh.toFixed(1)} kWh`, knmi: false, sunny: false }
   if (a.sunSource === 'knmi' && a.weather?.sunshinePct != null)
-    return { text: `${a.weather.sunshinePct}%`, knmi: true }
+    return { text: `${a.weather.sunshinePct}%`, knmi: true, sunny: sunny(a.weather.sunshinePct) }
   return null
 })
 </script>
@@ -73,8 +77,8 @@ const sun = computed(() => {
     <span
       v-if="sun && !hideWeather"
       class="badge"
-      :class="{ 'basis-weekly': sun.knmi }"
-      :title="`Sun (${sunSourceNames[advice.sunSource]}): ${sunText(advice)}`"
+      :class="{ 'basis-weekly': sun.knmi && !sun.sunny, 'tone-ok': sun.sunny }"
+      :title="`Sun (${sunSourceNames[advice.sunSource]}): ${sunText(advice)}${sun.sunny ? `, ${cheapHint}` : ''}`"
       data-testid="badge-sun"
     >
       <AppIcon name="sun" :label="sun.knmi ? 'Sunshine (KNMI)' : 'Local solar (EVCC)'" />{{ sun.text }}
@@ -82,7 +86,8 @@ const sun = computed(() => {
     <span
       v-if="bft != null && !hideWeather"
       class="badge"
-      :title="`Wind Bft ${bft} (KNMI)`"
+      :class="{ 'tone-ok': windy(bft) }"
+      :title="`Wind Bft ${bft} (KNMI)${windy(bft) ? `: windy, ${cheapHint}` : ''}`"
       data-testid="badge-wind"
     >
       <AppIcon name="wind" label="Wind" />{{ bft }} Bft

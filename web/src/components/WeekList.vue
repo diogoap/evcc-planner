@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { Day, DayAdvice } from '../api/types'
-import { basisNames } from '../lib/advice'
+import { basisNames, cheapHint, sunny, windy } from '../lib/advice'
 import { dayShort, km, kwh } from '../lib/format'
 import { dayLabel, reviewText } from '../lib/status'
 import AdviceBadges from './AdviceBadges.vue'
@@ -73,22 +73,26 @@ const rows = computed(() => {
           :class="`basis-${r.price.basis}`"
           :title="`${basisNames[r.price.basis]}: ${r.price.detail}`"
           data-testid="badge-price"
-          ><template v-if="r.price.min != null"
-            ><AppIcon name="arrow-down" label="Lowest" />€{{ r.price.min.toFixed(2) }}</template
-          ><template v-else
-            >{{ r.price.basis === 'published' ? '' : '~' }}€{{ r.price.value.toFixed(2) }} avg</template
-          ></span
+          >{{ r.price.basis === 'published' ? '' : '~' }}€{{ r.price.value.toFixed(2) }} avg</span
         >
         <span v-else class="muted">–</span>
-        <span v-if="r.price?.min != null" class="small muted num" data-testid="price-avg"
-          >€{{ r.price.value.toFixed(2) }} avg</span
+        <span v-if="r.price?.min != null" class="small muted num" data-testid="price-min"
+          >€{{ r.price.min.toFixed(2) }} min</span
         >
       </span>
       <span v-if="r.advice" class="wl-weather">
-        <span class="badge" title="Sunshine (KNMI outlook)" data-testid="badge-sunshine"
+        <span
+          class="badge"
+          :class="{ 'tone-ok': sunny(r.sunshine) }"
+          :title="`Sunshine (KNMI outlook)${sunny(r.sunshine) ? `: sunny, ${cheapHint}` : ''}`"
+          data-testid="badge-sunshine"
           ><AppIcon name="sun" label="Sunshine" />{{ r.sunshine != null ? `${r.sunshine}%` : '–' }}</span
         >
-        <span class="badge" title="Wind (KNMI outlook)" data-testid="badge-wind"
+        <span
+          class="badge"
+          :class="{ 'tone-ok': windy(r.wind) }"
+          :title="`Wind (KNMI outlook)${windy(r.wind) ? `: windy, ${cheapHint}` : ''}`"
+          data-testid="badge-wind"
           ><AppIcon name="wind" label="Wind" />{{ r.wind != null ? `${r.wind} Bft` : '–' }}</span
         >
         <span

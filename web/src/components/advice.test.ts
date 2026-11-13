@@ -224,6 +224,7 @@ describe('AdviceBadges', () => {
     expect(w.get('[data-testid=badge-sun]').text()).toBe('7.6 kWh')
     expect(w.get('[data-testid=badge-sun]').attributes('title')).toContain('EVCC solar forecast, local')
     expect(w.get('[data-testid=badge-wind]').text()).toBe('5 Bft')
+    expect(w.get('[data-testid=badge-wind]').classes()).toContain('tone-ok')
   })
 
   it('marks estimates and KNMI sunshine, and drops what is unknown', () => {
@@ -247,6 +248,10 @@ describe('AdviceBadges', () => {
     expect(w.get('[data-testid=badge-price]').classes()).toContain('basis-estimate')
     expect(w.get('[data-testid=badge-sun]').text()).toBe('70%')
     expect(w.get('[data-testid=badge-sun]').attributes('title')).toContain('KNMI outlook, national')
+    // Sunny is highlighted; Bft 2 is not windy.
+    expect(w.get('[data-testid=badge-sun]').classes()).toEqual(expect.arrayContaining(['tone-ok']))
+    expect(w.get('[data-testid=badge-sun]').classes()).not.toContain('basis-weekly')
+    expect(w.get('[data-testid=badge-wind]').classes()).not.toContain('tone-ok')
 
     const none = mount(AdviceBadges, {
       props: {
@@ -336,21 +341,30 @@ describe('WeekList', () => {
     expect(row.get('.wl-advice [data-testid=review-count]').text()).toBe('1 trip to review')
     expect(row.get('[data-testid=badge-advice]').text()).toBe('Charge ahead')
     expect(row.get('[data-testid=badge-confidence]').text()).toBe('2/3')
-    // Price and weather in their own columns.
-    // Published days lead with the lowest slot; the average goes below.
-    const lowest = row.get('[data-testid=badge-price]')
-    expect(lowest.text()).toBe('€0.14')
-    expect(lowest.get('[role=img]').attributes('aria-label')).toBe('Lowest')
-    expect(row.get('[data-testid=price-avg]').text()).toBe('€0.22 avg')
+    // Price and weather in their own columns: the average, as for estimates,
+    // over the lowest published slot.
+    expect(row.get('[data-testid=badge-price]').text()).toBe('€0.22 avg')
+    expect(row.get('[data-testid=price-min]').text()).toBe('€0.14 min')
     expect(row.findAll('[data-testid=badge-price]')).toHaveLength(1)
-    expect(row.get('[data-testid=badge-sunshine]').text()).toBe('70%')
-    expect(row.get('[data-testid=badge-wind]').text()).toBe('5 Bft')
+    // Sunny (over 50%) and windy (Bft 5 or more) days are highlighted.
+    const [sunshine, wind] = [row.get('[data-testid=badge-sunshine]'), row.get('[data-testid=badge-wind]')]
+    expect(sunshine.text()).toBe('70%')
+    expect(wind.text()).toBe('5 Bft')
+    expect(sunshine.classes()).toContain('tone-ok')
+    expect(wind.classes()).toContain('tone-ok')
+    expect(wind.attributes('title')).toBe('Wind (KNMI outlook): windy, usually cheaper prices')
     expect(row.get('[data-testid=solar]').text()).toBe('7.6 kWh')
     expect(row.get('[data-testid=solar] [role=img]').attributes('aria-label')).toBe('Solar forecast')
     expect(row.find('[data-testid=badge-sun]').exists()).toBe(false)
     expect(row.attributes('aria-pressed')).toBe('true')
     await row.trigger('click')
     expect(w.emitted('select')).toEqual([['2026-11-10']])
+
+    const calm = mount(WeekList, {
+      props: { days, advice: [advice({ weather: { ...weather, sunshinePct: 50, windBft: 4 } })] },
+    })
+    expect(calm.get('[data-testid=badge-sunshine]').classes()).not.toContain('tone-ok')
+    expect(calm.get('[data-testid=badge-wind]').classes()).not.toContain('tone-ok')
   })
 })
 

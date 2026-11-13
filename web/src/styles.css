@@ -436,6 +436,11 @@ summary:focus-visible,
   color: var(--muted);
 }
 
+/* A figure that usually means cheaper prices, e.g. a windy or sunny day. */
+.badge.tone-ok {
+  border-color: var(--accent-ui);
+}
+
 .tone-ok {
   background: var(--accent-soft);
   color: var(--accent-strong);
