@@ -111,7 +111,7 @@ function onTouchEnd(e: TouchEvent) {
     >
       <header class="dp-head">
         <button
-          class="btn ghost icon-only"
+          class="btn nav-btn"
           type="button"
           aria-label="Previous day"
           :disabled="!prev"
@@ -124,7 +124,7 @@ function onTouchEnd(e: TouchEvent) {
           <span v-if="relative" class="small muted">{{ relative }}</span>
         </div>
         <button
-          class="btn ghost icon-only"
+          class="btn nav-btn"
           type="button"
           aria-label="Next day"
           :disabled="!next"

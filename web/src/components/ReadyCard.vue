@@ -202,8 +202,14 @@ const adjustments = computed(() => props.plan.advice.adjustments.filter((a) => a
         >
       </template>
       <RouterLink v-else class="btn" to="/trips">Add a trip</RouterLink>
-      <RouterLink class="btn" :to="historyLink('plan', 'the EVCC plan')" data-testid="plan-history"
-        >Plan history</RouterLink
+      <RouterLink
+        class="btn history-link"
+        :to="historyLink('plan', 'the EVCC plan')"
+        title="Plan history"
+        data-testid="plan-history"
+        ><AppIcon name="clock" class="history-icon" /><span class="history-label"
+          >Plan history</span
+        ></RouterLink
       >
     </div>
   </section>
@@ -257,5 +263,28 @@ const adjustments = computed(() => props.plan.advice.adjustments.filter((a) => a
 /* With the card stretched beside the advice, the buttons stay at the bottom. */
 .ready-actions {
   margin-top: auto;
+}
+
+/* Phones: Plan history as an icon, so the buttons fit on one line. */
+.history-icon {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .ready-actions {
+    gap: 6px;
+  }
+
+  .history-icon {
+    display: inline;
+  }
+
+  .history-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
 }
 </style>

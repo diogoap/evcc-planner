@@ -1,12 +1,17 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { api } from '../api/client'
 import type { NotificationSettings, NotificationVerb, PhoneNotification } from '../api/types'
 import { dateTime } from '../lib/format'
+import { useUnsaved } from '../lib/unsaved'
 import { notify, refresh, state } from '../store'
+import SaveBar from './SaveBar.vue'
 import ToggleSwitch from './ToggleSwitch.vue'
 
 const settings = ref<NotificationSettings | null>(null)
+const emit = defineEmits<{ dirty: [dirty: boolean] }>()
+const unsaved = useUnsaved(settings)
+watch(unsaved.dirty, (d) => emit('dirty', d))
 const phones = ref<string[]>([])
 const phonesError = ref('')
 const recent = ref<PhoneNotification[]>([])
@@ -54,6 +59,7 @@ async function loadRecent() {
 onMounted(async () => {
   try {
     settings.value = await api.notificationSettings()
+    unsaved.mark()
   } catch (e) {
     error.value = (e as Error).message
   }
@@ -78,6 +84,7 @@ async function save() {
   error.value = ''
   try {
     settings.value = await api.saveNotificationSettings(s)
+    unsaved.mark()
     notify('Notification settings saved')
     refresh()
   } catch (e) {
@@ -238,8 +245,12 @@ async function press(n: PhoneNotification, verb: NotificationVerb) {
           <div class="field-hint">{{ t.hint }}</div>
         </div>
       </div>
-      <div class="row">
-        <button class="btn primary" type="submit" :disabled="saving">Save notification settings</button>
+      <SaveBar
+        :dirty="unsaved.dirty.value"
+        :saving="saving"
+        label="Save notification settings"
+        @discard="unsaved.discard"
+      >
         <button
           class="btn"
           type="button"
@@ -249,7 +260,7 @@ async function press(n: PhoneNotification, verb: NotificationVerb) {
         >
           Send test notification
         </button>
-      </div>
+      </SaveBar>
     </form>
 
     <div v-if="recent.length" class="mt-5">

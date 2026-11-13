@@ -6,6 +6,12 @@ export const router = createRouter({
   routes: [
     { path: '/', name: 'overview', component: OverviewView, meta: { title: 'Overview' } },
     {
+      path: '/charts',
+      name: 'charts',
+      component: () => import('./views/ChartsView.vue'),
+      meta: { title: 'Charts' },
+    },
+    {
       path: '/trips',
       name: 'trips',
       component: () => import('./views/TripsView.vue'),

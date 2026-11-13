@@ -68,7 +68,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', outside))
 <template>
   <div ref="root" class="split" @keydown.esc="open && close()">
     <button class="btn primary split-main" type="button" :disabled="disabled" @click="emit('send')">
-      Send plan to EVCC
+      Send plan<span class="split-more"> to EVCC</span>
     </button>
     <button
       ref="toggleBtn"
@@ -126,6 +126,17 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', outside))
 .split-main {
   border-top-right-radius: 0;
   border-bottom-right-radius: 0;
+}
+
+/* Phones say "Send plan"; screen readers still hear "to EVCC". */
+@media (max-width: 640px) {
+  .split-more {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
 }
 
 .split-toggle {

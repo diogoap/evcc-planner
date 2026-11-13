@@ -60,9 +60,9 @@ const level = computed(() =>
   >
     <div v-if="!bare" id="advice-title" class="card-title">
       <span>{{ weekday }}'s advice</span>
-      <span class="row gap-1">
+      <span class="row gap-2">
         <button
-          class="btn sm ghost icon-only"
+          class="btn nav-btn"
           type="button"
           aria-label="Previous day"
           :disabled="index <= 0"
@@ -72,7 +72,7 @@ const level = computed(() =>
         </button>
         <span class="small num normal-case">{{ dayShort(advice.date) }}</span>
         <button
-          class="btn sm ghost icon-only"
+          class="btn nav-btn"
           type="button"
           aria-label="Next day"
           :disabled="index >= dates.length - 1"

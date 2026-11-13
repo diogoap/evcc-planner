@@ -1,7 +1,7 @@
 # Agent guide
 
 Instructions for AI coding agents working in this repository. Read
-[PLAN.md](PLAN.md) for scope (V1–V4 are done; V5 and V6 are in progress) and [AUTOMATION.md](AUTOMATION.md) for the
+[PLAN.md](PLAN.md) for scope (V1–V4 and V6 are done; V5 is in progress) and [AUTOMATION.md](AUTOMATION.md) for the
 rules of automatic plans and notifications, and
 [README.md](README.md) for configuration and deployment.
 

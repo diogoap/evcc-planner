@@ -5,6 +5,7 @@ export type IconName =
   | 'battery'
   | 'bolt'
   | 'calendar'
+  | 'chart'
   | 'check'
   | 'chevron'
   | 'chevron-left'
@@ -42,6 +43,7 @@ const paths: Record<IconName, string[]> = {
     'M8 2v4',
     'M3 10h18',
   ],
+  chart: ['M3 3v18h18', 'M7 15l4-4 3 3 5-6'],
   check: ['M5 12.5l4.5 4.5L19 7'],
   chevron: ['M6 9l6 6 6-6'],
   'chevron-left': ['M15 18l-6-6 6-6'],

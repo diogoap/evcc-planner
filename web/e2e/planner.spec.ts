@@ -14,7 +14,7 @@ async function shot(page: Page, name: string) {
   await page.screenshot({ path: test.info().outputPath(`${name}.png`), fullPage: true })
 }
 
-test('overview shows status, the next departure, and seven days', async ({ page }) => {
+test('overview shows status, the next departure, and seven days', async ({ page, isMobile }) => {
   await page.goto('/')
   await expect(page.getByTestId('soc')).toHaveText('38%')
   await expect(page.getByTestId('soc-range')).toHaveText('122 km range')
@@ -22,14 +22,16 @@ test('overview shows status, the next departure, and seven days', async ({ page 
   await expect(page.getByTestId('connection')).toHaveText('Unplugged')
   await expect(page.getByTestId('ready-headline')).toHaveText('Plug in by 06:36 for tomorrow 07:48')
   await expect(page.getByTestId('next-target')).toHaveText('42%')
-  // The published prices in detail, with now's price and the day's range.
-  await expect(page.getByTestId('price-readout')).toHaveText(/^Now · €0\.\d\d\/kWh$/)
-  await expect(page.getByTestId('price-summary')).toContainText('lowest €0.')
   const tue = page.getByTestId('day-2026-11-10')
   await expect(tue).toContainText('100 km')
   await expect(tue).toContainText('18.0 kWh')
   await expect(tue).toContainText('42% by 07:48')
   await expect(page.getByTestId('day-2026-11-14')).toContainText('1 trip to review')
+  // The published prices in detail, with now's price and the day's range
+  // (on their own page on phones).
+  if (isMobile) await page.getByTestId('bottom-nav').getByRole('link', { name: 'Charts' }).click()
+  await expect(page.getByTestId('price-readout')).toHaveText(/^Now · €0\.\d\d\/kWh$/)
+  await expect(page.getByTestId('price-summary')).toContainText('lowest €0.')
   await page.goto('/trips#day-2026-11-10')
   await expect(page.getByTestId('trip-recurring:1:2026-11-10').getByTestId('departure-target')).toHaveText(
     'Needs 42% at departure',
@@ -60,7 +62,7 @@ test('the week shows as columns or as a list, remembered on this device', async 
 
 test('add a manual trip and keep it after reload', async ({ page }) => {
   await page.goto('/trips')
-  await page.getByRole('button', { name: 'Add trip' }).click()
+  await page.getByRole('button', { name: 'Add trip', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: 'Add trip' })
   await dialog.getByLabel('Destination').fill('Bouwmarkt 5, Demo Town')
   await dialog.getByLabel('Title').fill('Hardware store')

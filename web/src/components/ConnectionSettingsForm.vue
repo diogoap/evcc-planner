@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { api } from '../api/client'
 import type { Connection, ConnectionSettings, ConnectionSettingsView, EnvValue, HASensor } from '../api/types'
+import { useUnsaved } from '../lib/unsaved'
 import { notify, refresh } from '../store'
 import AppIcon from './AppIcon.vue'
+import SaveBar from './SaveBar.vue'
 import ToggleSwitch from './ToggleSwitch.vue'
 
-const emit = defineEmits<{ saved: [connections: Connection[]] }>()
+const emit = defineEmits<{ saved: [connections: Connection[]]; dirty: [dirty: boolean] }>()
 
 type Key = keyof ConnectionSettings
 interface Field {
@@ -213,6 +215,8 @@ const groups: Group[] = [
 
 const view = ref<ConnectionSettingsView | null>(null)
 const settings = ref<ConnectionSettings | null>(null)
+const unsaved = useUnsaved(settings)
+watch(unsaved.dirty, (d) => emit('dirty', d))
 const sensors = ref<HASensor[]>([])
 const saving = ref(false)
 const error = ref('')
@@ -227,6 +231,7 @@ onMounted(async () => {
   try {
     view.value = await api.connectionSettings()
     settings.value = { ...view.value.settings }
+    unsaved.mark()
   } catch (e) {
     error.value = (e as Error).message
   }
@@ -267,6 +272,7 @@ async function save() {
     const saved = await api.saveConnectionSettings(s)
     view.value = saved
     settings.value = { ...saved.settings }
+    unsaved.mark()
     confirmLower.value = false
     emit('saved', saved.connections ?? [])
     notify('Connection settings saved')
@@ -351,14 +357,17 @@ async function save() {
         Keeping history for {{ settings.retentionDays }} days deletes older entries at the next daily cleanup.
         Save again to confirm.
       </div>
-      <div class="row">
-        <button class="btn primary" type="submit" :disabled="saving" data-testid="save-connections">
-          {{ confirmLower ? 'Delete older history and save' : 'Save connection settings' }}
-        </button>
+      <SaveBar
+        :dirty="unsaved.dirty.value"
+        :saving="saving"
+        :label="confirmLower ? 'Delete older history and save' : 'Save connection settings'"
+        testid="save-connections"
+        @discard="unsaved.discard"
+      >
         <button class="btn" type="button" data-testid="reset-connections" @click="resetToDefaults">
           Reset to defaults
         </button>
-      </div>
+      </SaveBar>
     </form>
   </section>
 </template>

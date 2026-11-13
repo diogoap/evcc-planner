@@ -3,12 +3,16 @@ import { onMounted, onUnmounted } from 'vue'
 import { RouterLink, RouterView } from 'vue-router'
 import AppIcon, { type IconName } from './components/AppIcon.vue'
 import PullToRefresh from './components/PullToRefresh.vue'
+import { chartsApart } from './layout'
 import { clock } from './lib/format'
 import { checkVersion, loadMeta, refresh, refreshNow, state } from './store'
 
-// The main destinations: tabs at the top on wide screens, a bar at the bottom on phones.
-const nav: { to: string; label: string; short?: string; icon: IconName }[] = [
+// The main destinations: tabs at the top on wide screens, a bar at the bottom
+// on phones. Charts has its own page only on phones whose screen would not
+// fit the Overview with its charts.
+const nav: { to: string; label: string; short?: string; icon: IconName; apart?: boolean }[] = [
   { to: '/', label: 'Overview', icon: 'home' },
+  { to: '/charts', label: 'Charts', icon: 'chart', apart: true },
   { to: '/trips', label: 'Trips', icon: 'route' },
   { to: '/recurring', label: 'Recurring trips', short: 'Recurring', icon: 'repeat' },
   { to: '/activity', label: 'Activity', icon: 'list' },
@@ -76,14 +80,21 @@ function reload() {
             >STUB DATA</span
           >
         </div>
-        <div class="updated">
-          <span v-if="state.plan" class="small muted num" data-testid="updated"
-            ><span class="updated-label">Updated </span>{{ clock(state.plan.now) }}</span
+        <!-- When a refresh fails, the last data stays on screen with its time. -->
+        <div class="updated" :title="state.error || undefined">
+          <span
+            v-if="state.plan"
+            class="small num"
+            :class="state.error ? 'text-warn' : 'muted'"
+            data-testid="updated"
+            ><AppIcon v-if="state.error" name="warning" />
+            <span class="updated-label">{{ state.error ? 'Not updated ' : 'Updated ' }}</span
+            >{{ clock(state.plan.now) }}</span
           >
           <button
             class="btn sm ghost icon-only"
             type="button"
-            aria-label="Refresh"
+            :aria-label="state.error ? 'Retry' : 'Refresh'"
             :disabled="state.loading"
             data-testid="refresh"
             @click="refreshNow"
@@ -93,7 +104,7 @@ function reload() {
         </div>
       </div>
       <nav class="tabs" aria-label="Main">
-        <RouterLink v-for="n in nav" :key="n.to" :to="n.to">{{ n.label }}</RouterLink>
+        <RouterLink v-for="n in nav.filter((n) => !n.apart)" :key="n.to" :to="n.to">{{ n.label }}</RouterLink>
       </nav>
     </div>
   </header>
@@ -104,14 +115,11 @@ function reload() {
       <button class="btn sm" type="button" @click="reload">Reload</button>
     </div>
   </div>
-  <div v-if="state.error" class="page pb-0">
-    <div class="banner tone-bad" role="alert">{{ state.error }}</div>
-  </div>
 
   <RouterView />
 
   <nav class="bottom-nav" aria-label="Main" data-testid="bottom-nav">
-    <RouterLink v-for="n in nav" :key="n.to" :to="n.to">
+    <RouterLink v-for="n in nav.filter((n) => !n.apart || chartsApart)" :key="n.to" :to="n.to">
       <AppIcon :name="n.icon" />
       <span>{{ n.short ?? n.label }}</span>
     </RouterLink>

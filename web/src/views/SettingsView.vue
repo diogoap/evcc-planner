@@ -1,19 +1,56 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { onBeforeRouteLeave } from 'vue-router'
 import { api } from '../api/client'
 import type { Connection, Place, Settings, TripPlans } from '../api/types'
 import AdviceSettingsForm from '../components/AdviceSettingsForm.vue'
 import ConnectionSettingsForm from '../components/ConnectionSettingsForm.vue'
+import ErrorBanner from '../components/ErrorBanner.vue'
 import ForecastDetails from '../components/ForecastDetails.vue'
 import NotificationSettingsForm from '../components/NotificationSettingsForm.vue'
+import PageSkeleton from '../components/PageSkeleton.vue'
+import SaveBar from '../components/SaveBar.vue'
 import ToggleSwitch from '../components/ToggleSwitch.vue'
 import { ago } from '../lib/format'
 import { controlLabel } from '../lib/status'
+import { useUnsaved } from '../lib/unsaved'
 import { mutate, notify, refresh, resumeAutomaticPlans, state } from '../store'
 
 type Tab = 'home' | 'planning' | 'places' | 'advice' | 'notifications' | 'connections'
+const tabs: [Tab, string][] = [
+  ['home', 'Home & vehicle'],
+  ['planning', 'Planning'],
+  ['places', 'Places'],
+  ['advice', 'Advice'],
+  ['notifications', 'Notifications'],
+  ['connections', 'Connections'],
+]
 const tab = ref<Tab>('home')
 const settings = ref<Settings | null>(null)
+// Home & vehicle and Planning edit the same settings; the other tabs' forms
+// report their own unsaved changes.
+const unsaved = useUnsaved(settings)
+const childDirty = ref(false)
+const dirty = computed(() => unsaved.dirty.value || childDirty.value)
+const leaveText = 'You have unsaved changes. Leave without saving?'
+
+function go(next: Tab) {
+  if (next === tab.value) return
+  const shared = (t: Tab) => t === 'home' || t === 'planning'
+  const losing = shared(tab.value) && shared(next) ? childDirty.value : dirty.value
+  if (losing && !confirm(leaveText)) return
+  if (!(shared(tab.value) && shared(next))) unsaved.discard()
+  childDirty.value = false
+  tab.value = next
+}
+
+onBeforeRouteLeave(() => !dirty.value || confirm(leaveText))
+// Closing or reloading the page asks too, while changes are unsaved.
+function beforeUnload(e: BeforeUnloadEvent) {
+  if (dirty.value) e.preventDefault()
+}
+window.addEventListener('beforeunload', beforeUnload)
+onUnmounted(() => window.removeEventListener('beforeunload', beforeUnload))
 const places = ref<Place[]>([])
 const connections = ref<Connection[]>([])
 const newPlace = reactive({ name: '', address: '' })
@@ -158,6 +195,8 @@ async function load() {
       api.places(),
       api.connections(),
     ])
+    unsaved.mark()
+    error.value = ''
     if (state.status) demo.connected = state.status.connected
   } catch (e) {
     error.value = (e as Error).message
@@ -171,6 +210,7 @@ async function saveSettings() {
   error.value = ''
   try {
     settings.value = await api.saveSettings(settings.value)
+    unsaved.mark()
     notify('Settings saved')
     refresh()
   } catch (e) {
@@ -241,36 +281,20 @@ async function applyDemo() {
 <template>
   <main class="page">
     <div class="page-head"><h1>Settings</h1></div>
-    <nav class="tabs m-0 mt-n2 mb-4" aria-label="Settings sections">
-      <a href="#" :class="{ 'router-link-exact-active': tab === 'home' }" @click.prevent="tab = 'home'"
-        >Home &amp; vehicle</a
-      >
+    <nav class="tabs settings-tabs m-0 mt-n2 mb-4" aria-label="Settings sections">
       <a
+        v-for="[t, name] in tabs"
+        :key="t"
         href="#"
-        :class="{ 'router-link-exact-active': tab === 'planning' }"
-        @click.prevent="tab = 'planning'"
-        >Planning</a
-      >
-      <a href="#" :class="{ 'router-link-exact-active': tab === 'places' }" @click.prevent="tab = 'places'"
-        >Places</a
-      >
-      <a href="#" :class="{ 'router-link-exact-active': tab === 'advice' }" @click.prevent="tab = 'advice'"
-        >Advice</a
-      >
-      <a
-        href="#"
-        :class="{ 'router-link-exact-active': tab === 'notifications' }"
-        @click.prevent="tab = 'notifications'"
-        >Notifications</a
-      >
-      <a
-        href="#"
-        :class="{ 'router-link-exact-active': tab === 'connections' }"
-        @click.prevent="tab = 'connections'"
-        >Connections</a
+        :class="{ 'router-link-exact-active': tab === t }"
+        :aria-current="tab === t ? 'page' : undefined"
+        @click.prevent="go(t)"
+        >{{ name }}</a
       >
     </nav>
-    <div v-if="error" class="banner tone-bad" role="alert">{{ error }}</div>
+    <ErrorBanner v-if="error && !settings" :message="error" @retry="load" />
+    <div v-else-if="error" class="banner tone-bad" role="alert">{{ error }}</div>
+    <PageSkeleton v-if="!settings && !error && (tab === 'home' || tab === 'planning')" kind="form" />
 
     <section v-if="tab === 'home' && settings" class="card">
       <div class="card-title">Home &amp; vehicle</div>
@@ -309,7 +333,12 @@ async function applyDemo() {
           Saved privately in the planner's database. Config files only seed the vehicle and buffer values on
           first use.
         </p>
-        <div><button class="btn primary" type="submit" :disabled="saving">Save settings</button></div>
+        <SaveBar
+          :dirty="unsaved.dirty.value"
+          :saving="saving"
+          label="Save settings"
+          @discard="unsaved.discard"
+        />
       </form>
     </section>
 
@@ -383,7 +412,12 @@ async function applyDemo() {
             <span :id="`hint-${f.key}`" class="field-hint">{{ f.hint }}</span>
           </label>
         </div>
-        <div><button class="btn primary" type="submit" :disabled="saving">Save settings</button></div>
+        <SaveBar
+          :dirty="unsaved.dirty.value"
+          :saving="saving"
+          label="Save settings"
+          @discard="unsaved.discard"
+        />
       </form>
     </section>
 
@@ -427,9 +461,9 @@ async function applyDemo() {
       </form>
     </section>
 
-    <AdviceSettingsForm v-if="tab === 'advice'" />
+    <AdviceSettingsForm v-if="tab === 'advice'" @dirty="(d) => (childDirty = d)" />
 
-    <NotificationSettingsForm v-if="tab === 'notifications'" />
+    <NotificationSettingsForm v-if="tab === 'notifications'" @dirty="(d) => (childDirty = d)" />
 
     <div v-if="tab === 'connections'" class="stack">
       <section class="card">
@@ -468,7 +502,7 @@ async function applyDemo() {
         <div class="mt-5"><ForecastDetails ref="forecastDetails" /></div>
       </section>
 
-      <ConnectionSettingsForm @saved="(c) => (connections = c)" />
+      <ConnectionSettingsForm @saved="(c) => (connections = c)" @dirty="(d) => (childDirty = d)" />
 
       <section v-if="state.meta?.demo" class="card">
         <div>
@@ -492,6 +526,32 @@ async function applyDemo() {
 </template>
 
 <style scoped>
+/* Phones: the sections as a grid of buttons instead of a row that scrolls. */
+@media (max-width: 640px) {
+  .settings-tabs {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    overflow: visible;
+  }
+
+  .settings-tabs a {
+    justify-content: center;
+    padding: var(--space-2) var(--space-1);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-pill);
+    background: var(--surface);
+    font-size: var(--text-sm);
+    text-align: center;
+  }
+
+  .settings-tabs a.router-link-exact-active {
+    border-color: transparent;
+    background: var(--accent-soft);
+    color: var(--accent-strong);
+  }
+}
+
 .place-name {
   max-width: 200px;
 }

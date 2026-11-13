@@ -73,12 +73,16 @@ test('move between days, then close with Escape or the back gesture', async ({ p
   await expect(page).toHaveURL(/\/$/)
 })
 
-test('tapping the chart opens that day', async ({ page }) => {
-  await page.goto('/')
-  const chart = page.locator('.ov-chart .chart-price canvas')
+test('tapping the chart opens that day', async ({ page, isMobile }) => {
+  // Phones have the charts on their own page; closing the panel returns there.
+  await page.goto(isMobile ? '/charts' : '/')
+  const chart = page.getByTestId('chart-card').locator('.chart-price canvas')
   const box = (await chart.boundingBox())!
   // Halfway along the week.
   await chart.click({ position: { x: box.width / 2, y: box.height / 2 } })
   await expect(page.getByTestId('day-panel')).toBeVisible()
   await expect(page).toHaveURL(/day=2026-11-1[1-3]/)
+  await page.keyboard.press('Escape')
+  await expect(page.getByTestId('day-panel')).toBeHidden()
+  if (isMobile) await expect(page).toHaveURL(/\/charts$/)
 })

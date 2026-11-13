@@ -37,7 +37,7 @@ test('a trip change appears in its history with before and after', async ({ page
   await shot(page, 'activity-history')
 })
 
-test('filter, export, and see external API usage', async ({ page, request }) => {
+test('filter, export, and see external API usage', async ({ page, request, isMobile }) => {
   await request.post('/api/places', { data: { name: 'Pool', address: 'Badweg 1, Demo Town' } })
   await request.patch('/api/trips/recurring:1:2026-11-13', { data: { start: '08:45' } })
   await request.post('/api/evcc/plan', {
@@ -53,13 +53,15 @@ test('filter, export, and see external API usage', async ({ page, request }) => 
 
   await page.goto('/activity')
   await expect(page.locator('li.activity')).toHaveCount(3)
+  // Phones fold the filters away.
+  if (isMobile) await page.getByRole('button', { name: 'Filters' }).click()
   await page.getByLabel('Type').selectOption('place')
   await expect(page).toHaveURL(/type=place/)
   await expect(page.locator('li.activity')).toHaveCount(1)
   await expect(page.locator('li.activity')).toContainText('Added place Pool')
   await page.getByLabel('Source').selectOption('job')
   await expect(page.getByTestId('activity-empty')).toContainText('No activity matches these filters')
-  await page.getByRole('button', { name: 'Clear filters' }).click()
+  await page.getByTestId('activity-empty').getByRole('button', { name: 'Clear filters' }).click()
   await expect(page.locator('li.activity')).toHaveCount(3)
 
   const download = page.waitForEvent('download')

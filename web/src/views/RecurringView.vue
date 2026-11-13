@@ -4,6 +4,9 @@ import { RouterLink } from 'vue-router'
 import { api } from '../api/client'
 import type { Occurrence, Place, Template, TemplateView } from '../api/types'
 import AppIcon from '../components/AppIcon.vue'
+import EmptyState from '../components/EmptyState.vue'
+import ErrorBanner from '../components/ErrorBanner.vue'
+import PageSkeleton from '../components/PageSkeleton.vue'
 import RecurringEditor from '../components/RecurringEditor.vue'
 import { historyLink } from '../lib/activity'
 import { dayShort, weekdays } from '../lib/format'
@@ -77,11 +80,19 @@ async function onSaved(message: string) {
         <AppIcon name="plus" />Add schedule
       </button>
     </div>
-    <div v-if="error" class="banner tone-bad">{{ error }}</div>
-    <div v-if="!templates" class="muted">Loading…</div>
-    <p v-else-if="!templates.length" class="card muted">
-      No schedules yet. Add one for regular trips such as school runs.
-    </p>
+    <ErrorBanner v-if="error" :message="error" @retry="load" />
+    <PageSkeleton v-if="!templates && !error" kind="list" />
+    <div v-else-if="templates && !templates.length" class="card">
+      <EmptyState
+        icon="repeat"
+        title="No recurring trips yet"
+        text="Add the drives you make every week, such as the school run; each date can still be changed or skipped."
+      >
+        <button class="btn primary" type="button" @click="editor = {}">
+          <AppIcon name="plus" />Add schedule
+        </button>
+      </EmptyState>
+    </div>
     <div class="stack">
       <section v-for="t in templates" :key="t.id" class="card" :data-testid="`template-${t.id}`">
         <div class="row">

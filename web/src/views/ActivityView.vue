@@ -4,6 +4,10 @@ import { useRoute, useRouter } from 'vue-router'
 import { api } from '../api/client'
 import type { ActivityFilter, ActivitySource, ActivityType, ActivityUsage, AuditEvent } from '../api/types'
 import ActivityItem from '../components/ActivityItem.vue'
+import AppIcon from '../components/AppIcon.vue'
+import EmptyState from '../components/EmptyState.vue'
+import ErrorBanner from '../components/ErrorBanner.vue'
+import PageSkeleton from '../components/PageSkeleton.vue'
 import { groupByDay, historyLink, size, sourceLabels, typeLabels } from '../lib/activity'
 import { dayLong, localDate } from '../lib/format'
 import { state } from '../store'
@@ -19,6 +23,11 @@ const retentionDays = ref(0)
 const loading = ref(false)
 const error = ref('')
 const usage = ref<ActivityUsage | null>(null)
+// Phones fold the filters away behind a button that counts the active ones.
+const showFilters = ref(false)
+const activeFilters = computed(
+  () => [filter.type, filter.source, filter.from, filter.to].filter(Boolean).length,
+)
 const month = ref('')
 
 const groups = computed(() => groupByDay(events.value))
@@ -45,6 +54,12 @@ async function load(more = false) {
   } finally {
     loading.value = false
   }
+}
+
+// Retry after an error: the log and the usage table.
+function reload() {
+  load()
+  loadUsage()
 }
 
 async function loadUsage() {
@@ -118,7 +133,7 @@ const number = (n: number) => n.toLocaleString('en-GB')
         >
       </div>
     </div>
-    <div v-if="error" class="banner tone-bad" role="alert">{{ error }}</div>
+    <ErrorBanner v-if="error" :message="error" @retry="reload" />
 
     <section class="card" aria-labelledby="usage-title">
       <div id="usage-title" class="card-title">
@@ -171,8 +186,25 @@ const number = (n: number) => n.toLocaleString('en-GB')
     </section>
 
     <section class="card mt-4" aria-labelledby="log-title">
-      <div id="log-title" class="card-title">Activity log</div>
-      <form class="filters" @submit.prevent="apply" @change="apply">
+      <div id="log-title" class="card-title">
+        Activity log
+        <button
+          class="btn sm filters-toggle normal-case"
+          type="button"
+          :aria-expanded="showFilters"
+          aria-controls="activity-filters"
+          @click="showFilters = !showFilters"
+        >
+          <AppIcon name="sliders" />Filters<template v-if="activeFilters"> ({{ activeFilters }})</template>
+        </button>
+      </div>
+      <form
+        id="activity-filters"
+        class="filters"
+        :class="{ folded: !showFilters }"
+        @submit.prevent="apply"
+        @change="apply"
+      >
         <select v-model="filter.type" aria-label="Type">
           <option value="">All types</option>
           <option v-for="[v, l] in typeOptions" :key="v" :value="v">{{ l }}</option>
@@ -197,9 +229,23 @@ const number = (n: number) => n.toLocaleString('en-GB')
         <button class="btn sm ghost" type="button" @click="clearSubject">Show all</button>
       </div>
 
-      <p v-if="!loading && !events.length" class="muted m-0 mt-4" data-testid="activity-empty">
-        No activity{{ filtered ? ' matches these filters' : ' yet' }}.
-      </p>
+      <div v-if="!loading && !events.length && !error" data-testid="activity-empty">
+        <EmptyState
+          v-if="filtered"
+          icon="list"
+          title="No activity matches these filters"
+          text="Try another type, source, or dates."
+        >
+          <button class="btn" type="button" @click="clearAll">Clear filters</button>
+        </EmptyState>
+        <EmptyState
+          v-else
+          icon="list"
+          title="No activity yet"
+          text="Trip edits, plans sent to EVCC, settings changes, and calls to outside services appear here."
+        />
+      </div>
+      <PageSkeleton v-if="loading && !events.length" kind="list" />
       <section v-for="g in groups" :key="g.date" class="activity-day">
         <h3 class="small muted">{{ dayLong(g.date) }}</h3>
         <ul class="m-0 p-0">
@@ -224,6 +270,21 @@ const number = (n: number) => n.toLocaleString('en-GB')
 </template>
 
 <style scoped>
+/* Wide screens always show the filters; phones fold them. */
+.filters-toggle {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .filters-toggle {
+    display: inline-flex;
+  }
+
+  .filters.folded {
+    display: none;
+  }
+}
+
 .usage-bar {
   max-width: 220px;
 }

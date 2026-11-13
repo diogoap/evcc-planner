@@ -1,13 +1,14 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api } from '../api/client'
 import type { AdjustmentKind, Place, SendOption, Trip } from '../api/types'
 import AdviceCard from '../components/AdviceCard.vue'
 import AppIcon from '../components/AppIcon.vue'
+import ChartCards from '../components/ChartCards.vue'
 import DayPanel from '../components/DayPanel.vue'
-import PlanChart from '../components/PlanChart.vue'
-import PriceChart from '../components/PriceChart.vue'
+import ErrorBanner from '../components/ErrorBanner.vue'
+import PageSkeleton from '../components/PageSkeleton.vue'
 import ProposalDialog from '../components/ProposalDialog.vue'
 import ReadyCard from '../components/ReadyCard.vue'
 import SendPlanDialog from '../components/SendPlanDialog.vue'
@@ -16,7 +17,9 @@ import WeekList from '../components/WeekList.vue'
 import WeekStrip from '../components/WeekStrip.vue'
 import { historyLink } from '../lib/activity'
 import { dayShort } from '../lib/format'
-import { mutate, notify, refresh, resumeAutomaticPlans, state } from '../store'
+import { chartsApart, layout } from '../layout'
+import { expectedCharging } from '../lib/status'
+import { mutate, notify, refresh, refreshNow, resumeAutomaticPlans, state } from '../store'
 
 const route = useRoute()
 const router = useRouter()
@@ -44,10 +47,24 @@ const advice = computed(
 )
 const proposing = ref<{ kind: AdjustmentKind; date: string } | null>(null)
 // The planner's estimate of the charging slots for the automatic target.
-const expected = computed(() => {
-  const t = plan.value?.control.target
-  return t && !t.covered ? t.charging : []
+const expected = computed(() => (plan.value ? expectedCharging(plan.value) : []))
+
+// The page's height without its charts, and the charts' own height, decide
+// whether the charts move to their own page on phones (see layout.ts).
+const chartsBox = ref<HTMLElement | null>(null)
+function measure() {
+  if (!plan.value) return
+  const charts = chartsBox.value ? chartsBox.value.offsetHeight + 16 : 0
+  if (charts) layout.charts = charts
+  layout.page = document.body.getBoundingClientRect().height - charts
+}
+let observer: ResizeObserver | undefined
+onMounted(() => {
+  observer = window.ResizeObserver ? new ResizeObserver(() => measure()) : undefined
+  observer?.observe(document.body)
 })
+onUnmounted(() => observer?.disconnect())
+watch(chartsApart, () => nextTick(measure))
 
 // The week as columns (a tile per day) or as a list with every detail; the
 // choice is remembered on this device.
@@ -86,7 +103,8 @@ function openDay(date: string) {
   router.push({ query: { ...route.query, day: date } })
 }
 function closeDay() {
-  if (pushed) {
+  // Back to where the panel was opened from: this page or the Charts page.
+  if (pushed || window.history.state?.back === '/charts') {
     pushed = false
     router.back()
     return
@@ -124,7 +142,12 @@ function cancelAdjustment(id: number) {
 
 <template>
   <main class="page">
-    <div v-if="!plan" class="muted">Loading the plan…</div>
+    <ErrorBanner
+      v-if="!plan && state.error"
+      :message="`Couldn't load the plan: ${state.error}`"
+      @retry="refreshNow"
+    />
+    <PageSkeleton v-else-if="!plan" kind="overview" />
     <template v-else>
       <div v-for="w in plan.warnings" :key="w" class="banner tone-warn" role="status">{{ w }}</div>
 
@@ -207,46 +230,10 @@ function cancelAdjustment(id: number) {
           @cancel="cancelAdjustment"
         />
 
-        <section class="card ov-chart" aria-labelledby="chart-title">
-          <div id="chart-title" class="card-title">
-            SoC and prices <span class="normal-case">incl. VAT</span>
-          </div>
-          <PlanChart
-            v-if="plan.timeline.length || status?.priceSlots.length"
-            :timeline="plan.timeline"
-            :blocks="plan.blocks"
-            :slots="status?.priceSlots ?? []"
-            :solar="status?.solar ?? []"
-            :charging="expected"
-            :advice="adviceDays"
-            :dates="plan.days.map((d) => d.date)"
-            :reserve="plan.settings.arrivalReservePct"
-            :now="plan.now"
-            :to="plan.to"
-            @day="openDay"
-          />
-          <p v-else class="muted small m-0">Shown once EVCC has read the SoC or published prices.</p>
-          <p class="small muted m-0 mt-3">
-            The projected SoC charges as soon as the car is home; each departure leaves with its target.
-            Shaded prices are the planner's estimate of when the target charges (cheapest slots, solar first);
-            EVCC picks the actual slots.
-          </p>
-        </section>
-
-        <section v-if="status?.priceSlots.length" class="card ov-prices" aria-labelledby="prices-title">
-          <div id="prices-title" class="card-title">
-            Published prices <span class="normal-case">incl. VAT</span>
-          </div>
-          <PriceChart
-            :slots="status.priceSlots"
-            :planned="expected"
-            planned-label="Expected charging"
-            :now="plan.now"
-            :blocks="plan.blocks"
-            :height="200"
-          />
-          <p class="small muted m-0 mt-2">From EVCC; tomorrow's prices appear around 14:00.</p>
-        </section>
+        <!-- On phones the charts get their own page when they would not fit. -->
+        <div v-if="!chartsApart" ref="chartsBox" class="ov-charts">
+          <ChartCards :plan="plan" :status="status" @day="openDay" />
+        </div>
       </div>
     </template>
 
@@ -302,7 +289,7 @@ function cancelAdjustment(id: number) {
   display: grid;
   gap: var(--space-4);
   grid-template-columns: minmax(0, 1fr);
-  grid-template-areas: 'ready' 'week' 'advice' 'chart' 'prices';
+  grid-template-areas: 'ready' 'week' 'advice' 'charts';
 }
 
 .ov-ready {
@@ -318,22 +305,19 @@ function cancelAdjustment(id: number) {
   grid-area: advice;
 }
 
-.ov-chart {
-  grid-area: chart;
-}
-
-.ov-prices {
-  grid-area: prices;
+.ov-charts {
+  grid-area: charts;
+  min-width: 0;
 }
 
 @media (min-width: 900px) {
   .overview {
     grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
-    grid-template-areas: 'ready advice' 'week week' 'chart chart' 'prices prices';
+    grid-template-areas: 'ready advice' 'week week' 'charts charts';
   }
 
   .overview.no-advice {
-    grid-template-areas: 'ready ready' 'week week' 'chart chart' 'prices prices';
+    grid-template-areas: 'ready ready' 'week week' 'charts charts';
   }
 }
 

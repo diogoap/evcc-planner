@@ -21,16 +21,24 @@ test('main navigation: tabs on wide screens, a bar at the bottom on phones', asy
       'Activity',
       'Settings',
     ])
+    // The charts fit on the Overview.
+    await expect(page.getByTestId('chart-card')).toBeVisible()
     return
   }
   await expect(top).toBeHidden()
+  // A phone screen cannot fit the Overview with its charts: they get a page.
+  await expect(page.getByTestId('chart-card')).toHaveCount(0)
   await expect(bottom.getByRole('link')).toHaveText([
     'Overview',
+    'Charts',
     'Trips',
     'Recurring',
     'Activity',
     'Settings',
   ])
+  await bottom.getByRole('link', { name: 'Charts' }).click()
+  await expect(page).toHaveURL(/\/charts$/)
+  await expect(page.getByTestId('chart-card')).toBeVisible()
   await bottom.getByRole('link', { name: 'Trips' }).click()
   await expect(page).toHaveURL(/\/trips$/)
   await expect(bottom.getByRole('link', { name: 'Trips' })).toHaveAttribute('aria-current', 'page')
@@ -54,7 +62,7 @@ test('refresh reloads the plan and shows when it was updated', async ({ page }) 
 
 test('dialogs open as sheets from the bottom on phones and lock the page', async ({ page, isMobile }) => {
   await page.goto('/trips')
-  await page.getByRole('button', { name: 'Add trip' }).click()
+  await page.getByRole('button', { name: 'Add trip', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: 'Add trip' })
   await expect(dialog).toBeVisible()
   await dialog.evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)))

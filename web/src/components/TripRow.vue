@@ -21,6 +21,25 @@ const source = computed(() => {
   if (t.source === 'calendar') return `Calendar: ${t.sourceLabel}`
   return 'Manual'
 })
+// One line that wraps between words: "Leave 07:48 · until 08:20 · School · Recurring: …".
+const details = computed(() => {
+  const t = props.trip
+  return [`Leave ${t.departLocal}`, `until ${t.endLocal}`, t.placeName || t.destination, source.value]
+    .filter(Boolean)
+    .join(' · ')
+})
+const tags = computed(() => {
+  const t = props.trip
+  return (
+    t.distanceSource === 'manual' ||
+    t.overridden.length > 0 ||
+    t.needsReview ||
+    t.routeStale ||
+    t.state === 'in_progress' ||
+    props.target != null ||
+    !!t.disabledReason
+  )
+})
 </script>
 
 <template>
@@ -39,76 +58,83 @@ const source = computed(() => {
       "
       @update:model-value="emit('toggle', $event)"
     />
-    <div class="trip-main">
-      <div class="trip-line">
-        <span class="num trip-time">{{ trip.arriveLocal }}</span>
-        <strong class="trip-title">{{ trip.title }}</strong>
-        <span class="spacer" />
-        <span class="num">{{ km(trip.distanceKm) }}</span>
-        <span class="num muted trip-energy">{{ kwh(trip.energyKWh) }}</span>
-      </div>
-      <div class="trip-sub small muted">
-        <span>Leave {{ trip.departLocal }} · until {{ trip.endLocal }}</span>
-        <span v-if="trip.placeName || trip.destination">· {{ trip.placeName || trip.destination }}</span>
-        <span>· {{ source }}</span>
-        <span v-if="trip.distanceSource === 'manual'" class="pill">Manual distance</span>
-        <span v-if="trip.overridden.length" class="pill" title="Edited for this date">Edited</span>
-        <span v-if="trip.needsReview" class="pill tone-warn">Needs review</span>
-        <span v-if="trip.routeStale" class="pill tone-warn" title="Routing failed; using an older route"
-          >Old route</span
-        >
-        <span v-if="trip.state === 'in_progress'" class="pill tone-info">On the road</span>
-        <span v-if="target != null" class="pill tone-info" data-testid="departure-target"
-          >Needs {{ target }}% at departure</span
-        >
-        <span v-if="trip.disabledReason" class="pill" data-testid="disabled-reason">{{
-          trip.disabledReason
-        }}</span>
-      </div>
-      <div v-if="trip.disabledReason" class="small muted">
-        Off until it has a route: edit to add a destination or a distance.
-      </div>
-      <div v-else-if="trip.routeError" class="small text-warn">{{ trip.routeError }}</div>
-      <div class="row trip-actions">
-        <button v-if="trip.needsReview" class="btn sm" type="button" @click="emit('review')">
-          Confirm car trip
-        </button>
-        <button class="btn sm" type="button" @click="emit('edit')">Edit</button>
-        <button
-          v-if="trip.overridden.length && trip.source !== 'manual'"
-          class="btn sm ghost"
-          type="button"
-          @click="emit('reset')"
-        >
-          Reset
-        </button>
-        <button
-          v-if="trip.source === 'manual'"
-          class="btn sm ghost danger"
-          type="button"
-          @click="emit('remove')"
-        >
-          Delete
-        </button>
-        <button
-          class="btn sm ghost"
-          type="button"
-          :aria-label="`History of ${trip.title} on ${trip.date}`"
-          @click="emit('history')"
-        >
-          History
-        </button>
-      </div>
+    <div class="trip-head">
+      <span class="num trip-time">{{ trip.arriveLocal }}</span>
+      <strong class="trip-title">{{ trip.title }}</strong>
+    </div>
+    <div class="trip-figures num">
+      <span>{{ km(trip.distanceKm) }}</span>
+      <span class="muted trip-energy">{{ kwh(trip.energyKWh) }}</span>
+    </div>
+    <div class="trip-sub small muted">{{ details }}</div>
+    <div v-if="tags" class="trip-tags">
+      <span v-if="trip.distanceSource === 'manual'" class="pill">Manual distance</span>
+      <span v-if="trip.overridden.length" class="pill" title="Edited for this date">Edited</span>
+      <span v-if="trip.needsReview" class="pill tone-warn">Needs review</span>
+      <span v-if="trip.routeStale" class="pill tone-warn" title="Routing failed; using an older route"
+        >Old route</span
+      >
+      <span v-if="trip.state === 'in_progress'" class="pill tone-info">On the road</span>
+      <span v-if="target != null" class="pill tone-info" data-testid="departure-target"
+        >Needs {{ target }}% at departure</span
+      >
+      <span v-if="trip.disabledReason" class="pill" data-testid="disabled-reason">{{
+        trip.disabledReason
+      }}</span>
+    </div>
+    <div v-if="trip.disabledReason" class="trip-note small muted">
+      Off until it has a route: edit to add a destination or a distance.
+    </div>
+    <div v-else-if="trip.routeError" class="trip-note small text-warn">{{ trip.routeError }}</div>
+    <div class="row trip-actions">
+      <button v-if="trip.needsReview" class="btn sm" type="button" @click="emit('review')">
+        Confirm car trip
+      </button>
+      <button class="btn sm" type="button" @click="emit('edit')">Edit</button>
+      <button
+        v-if="trip.overridden.length && trip.source !== 'manual'"
+        class="btn sm ghost"
+        type="button"
+        @click="emit('reset')"
+      >
+        Reset
+      </button>
+      <button
+        v-if="trip.source === 'manual'"
+        class="btn sm ghost danger"
+        type="button"
+        @click="emit('remove')"
+      >
+        Delete
+      </button>
+      <button
+        class="btn sm ghost"
+        type="button"
+        :aria-label="`History of ${trip.title} on ${trip.date}`"
+        @click="emit('history')"
+      >
+        History
+      </button>
     </div>
   </li>
 </template>
 
 <style scoped>
+/* The switch, then the trip: time and title with distance and energy on the
+   right, its details, tags, and actions below. */
 .trip {
-  display: flex;
-  gap: 12px;
-  align-items: flex-start;
-  padding: 12px 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    'toggle head figures'
+    '. sub figures'
+    '. tags tags'
+    '. note note'
+    '. actions actions';
+  column-gap: var(--space-3);
+  row-gap: 2px;
+  align-items: start;
+  padding: var(--space-3) 0;
   border-top: 1px solid var(--border);
   list-style: none;
 }
@@ -117,42 +143,59 @@ const source = computed(() => {
   border-top: none;
 }
 
-.trip-main {
-  flex: 1;
+.trip > :first-child {
+  grid-area: toggle;
+}
+
+.trip-head {
+  grid-area: head;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
   min-width: 0;
 }
 
-.trip-line {
-  display: flex;
-  gap: 10px;
-  align-items: baseline;
-  flex-wrap: wrap;
-}
-
 .trip-time {
-  font-weight: 650;
+  font-weight: var(--weight-semibold);
 }
 
-.trip-energy {
-  min-width: 64px;
-  text-align: right;
+.trip-title {
+  overflow-wrap: anywhere;
+}
+
+.trip-figures {
+  grid-area: figures;
+  display: grid;
+  justify-items: end;
+  line-height: 1.35;
 }
 
 .trip-sub {
+  grid-area: sub;
+}
+
+.trip-tags {
+  grid-area: tags;
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 6px;
-  align-items: center;
-  margin-top: 2px;
+  gap: var(--space-1) 6px;
+  margin-top: var(--space-1);
+}
+
+.trip-note {
+  grid-area: note;
 }
 
 .trip-actions {
-  margin-top: 6px;
+  grid-area: actions;
+  margin-top: var(--space-1);
 }
 
 /* Off and finished trips are greyed out, still readable. */
-.trip.off .trip-line,
-.trip.done .trip-line {
+.trip.off .trip-head,
+.trip.off .trip-figures,
+.trip.done .trip-head,
+.trip.done .trip-figures {
   color: var(--muted);
 }
 

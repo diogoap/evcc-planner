@@ -4,12 +4,23 @@ import { useRoute, useRouter } from 'vue-router'
 import { api } from '../api/client'
 import type { Place, Trip, TripSource } from '../api/types'
 import AppIcon from '../components/AppIcon.vue'
+import ErrorBanner from '../components/ErrorBanner.vue'
+import PageSkeleton from '../components/PageSkeleton.vue'
 import TripEditor from '../components/TripEditor.vue'
 import TripRow from '../components/TripRow.vue'
 import { historyLink } from '../lib/activity'
 import { dateTime, dayLong, dayShort, km, kwh } from '../lib/format'
 import { departureTarget } from '../lib/status'
-import { confirmTrip, deleteTrip, notify, refresh, resetTrip, setTripEnabled, state } from '../store'
+import {
+  confirmTrip,
+  deleteTrip,
+  notify,
+  refresh,
+  refreshNow,
+  resetTrip,
+  setTripEnabled,
+  state,
+} from '../store'
 
 const route = useRoute()
 const router = useRouter()
@@ -70,12 +81,17 @@ function onSaved(message: string) {
       </div>
     </div>
 
-    <div v-if="!plan" class="muted">Loading…</div>
+    <ErrorBanner
+      v-if="!plan && state.error"
+      :message="`Couldn't load the trips: ${state.error}`"
+      @retry="refreshNow"
+    />
+    <PageSkeleton v-else-if="!plan" kind="list" />
     <template v-else>
       <div v-for="w in plan.warnings" :key="w" class="banner tone-warn" role="status">{{ w }}</div>
       <div class="stack">
         <section v-for="{ day, trips } in days" :id="`day-${day.date}`" :key="day.date" class="card">
-          <div class="card-title">
+          <div class="card-title day-head">
             <span>{{ dayLong(day.date) }}</span>
             <span class="num normal-case">{{ km(day.distanceKm) }} · {{ kwh(day.energyKWh) }}</span>
           </div>
@@ -93,9 +109,19 @@ function onSaved(message: string) {
               @history="history(t)"
             />
           </ul>
-          <p v-else class="muted small m-0">
-            {{ day.doneCount && !source ? 'No more trips.' : 'No trips.' }}
-          </p>
+          <div v-else class="row">
+            <span class="muted small grow">{{
+              day.doneCount && !source ? 'No more trips.' : 'No trips.'
+            }}</span>
+            <button
+              class="btn sm ghost"
+              type="button"
+              :aria-label="`Add trip on ${dayLong(day.date)}`"
+              @click="editor = { date: day.date }"
+            >
+              <AppIcon name="plus" />Add trip
+            </button>
+          </div>
         </section>
       </div>
 
@@ -121,3 +147,15 @@ function onSaved(message: string) {
     />
   </main>
 </template>
+
+<style scoped>
+/* Each day's header stays in view while its trips scroll by. */
+.day-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  margin: -6px 0 4px;
+  padding: 6px 0;
+  background: var(--surface);
+}
+</style>

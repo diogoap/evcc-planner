@@ -1,11 +1,16 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { api } from '../api/client'
 import type { AdviceSettings } from '../api/types'
+import { useUnsaved } from '../lib/unsaved'
 import { notify, refresh } from '../store'
+import SaveBar from './SaveBar.vue'
 import ToggleSwitch from './ToggleSwitch.vue'
 
 const settings = ref<AdviceSettings | null>(null)
+const emit = defineEmits<{ dirty: [dirty: boolean] }>()
+const unsaved = useUnsaved(settings)
+watch(unsaved.dirty, (d) => emit('dirty', d))
 const saving = ref(false)
 const error = ref('')
 
@@ -31,6 +36,7 @@ const policyComplete = computed(() => {
 onMounted(async () => {
   try {
     settings.value = await api.adviceSettings()
+    unsaved.mark()
   } catch (e) {
     error.value = (e as Error).message
   }
@@ -54,6 +60,7 @@ async function save() {
       targetHigh: num(s.targetHigh),
       expiryHours: num(s.expiryHours),
     })
+    unsaved.mark()
     notify('Advice settings saved')
     refresh()
   } catch (e) {
@@ -151,7 +158,12 @@ async function save() {
           Also postpone cheap-grid charging when today's advice is to defer (until the cheaper day)
         </label>
       </fieldset>
-      <div><button class="btn primary" type="submit" :disabled="saving">Save advice settings</button></div>
+      <SaveBar
+        :dirty="unsaved.dirty.value"
+        :saving="saving"
+        label="Save advice settings"
+        @discard="unsaved.discard"
+      />
     </form>
   </section>
 </template>

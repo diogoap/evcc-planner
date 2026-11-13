@@ -37,6 +37,7 @@ const screens: Screen[] = [
       await expect(page.getByTestId('day-panel')).toBeVisible()
     },
   },
+  { name: 'charts', open: (page) => page.goto('/charts') },
   { name: 'trips', open: (page) => page.goto('/trips') },
   { name: 'recurring', open: (page) => page.goto('/recurring') },
   { name: 'settings-home', open: settingsTab('Home & vehicle') },

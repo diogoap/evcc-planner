@@ -130,6 +130,12 @@ export function locationLabel(l: CarLocation): { text: string; tone: Tone; icon:
   return { text: l.state, tone: 'info', icon: 'route' }
 }
 
+/** The planner's expected charging slots for the automatic target, while it still needs charging. */
+export function expectedCharging(plan: Plan) {
+  const t = plan.control.target
+  return t && !t.covered ? t.charging : []
+}
+
 /** The SoC a departure needs, shown on its first trip (not once it has left). */
 export function departureTarget(plan: Plan, t: Trip) {
   const b = t.blockIndex != null ? plan.blocks[t.blockIndex] : undefined

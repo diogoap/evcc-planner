@@ -345,6 +345,21 @@ summary:focus-visible,
   flex: none;
 }
 
+/* Previous / next day: a round button with a clear chevron. */
+.btn.nav-btn {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  justify-content: center;
+  border-color: var(--border);
+  background: var(--surface);
+}
+
+.btn.nav-btn .icon {
+  width: 20px;
+  height: 20px;
+}
+
 /* Two or more choices in one control, e.g. the week view. */
 .segmented {
   display: inline-flex;
@@ -841,6 +856,25 @@ html.modal-open {
   color: #fff;
 }
 
+/* Placeholders shaped like the content while it loads. */
+.skeleton {
+  display: block;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(90deg, var(--surface-2) 25%, var(--border) 50%, var(--surface-2) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+
+  to {
+    background-position: -200% 0;
+  }
+}
+
 .chart-box {
   position: relative;
   height: 220px;
@@ -1057,7 +1091,8 @@ details summary {
 
   .bottom-nav {
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
     position: fixed;
     inset: auto 0 0;
     z-index: 40;
@@ -1135,6 +1170,13 @@ details summary {
   }
 }
 
+/* Narrow phones: six destinations still fit the bottom bar. */
+@media (max-width: 380px) {
+  .bottom-nav a {
+    font-size: 0.68rem;
+  }
+}
+
 /* Narrow phones: the time alone says when the data was loaded. */
 @media (max-width: 400px) {
   .updated-label {
@@ -1160,6 +1202,11 @@ details summary {
   .btn {
     min-width: var(--touch);
     justify-content: center;
+  }
+
+  .btn.nav-btn {
+    width: var(--touch);
+    height: var(--touch);
   }
 
   /* Taller small buttons stay pill-shaped. */
