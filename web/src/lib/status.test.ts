@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { Block, ControlView, Day, SendOption } from '../api/types'
+import type { Block, ControlView, Day, Preview, SendOption } from '../api/types'
 import {
   aheadText,
   blockLabel,
@@ -7,6 +7,7 @@ import {
   dayLabel,
   dayName,
   onDay,
+  plannedCost,
   reviewText,
   sendOptionLabel,
 } from './status'
@@ -195,5 +196,34 @@ describe('reviewText', () => {
   it('counts the trips to review', () => {
     expect(reviewText(1)).toBe('1 trip to review')
     expect(reviewText(3)).toBe('3 trips to review')
+  })
+})
+
+describe('plannedCost', () => {
+  const preview = (over: Partial<Preview>): Preview => ({
+    available: true,
+    soc: 60,
+    time: '2026-11-10T06:33:00Z',
+    durationMinutes: 90,
+    powerW: 3680,
+    slots: [
+      { start: '2026-11-10T01:00:00Z', end: '2026-11-10T02:00:00Z', value: 0.2 },
+      { start: '2026-11-10T03:00:00Z', end: '2026-11-10T03:30:00Z', value: 0.3 },
+    ],
+    priceSlots: [],
+    currentPlan: null,
+    vehicle: 'demo',
+    ...over,
+  })
+
+  it('prices the planned slots at the planned power', () => {
+    // 3.68 kWh at €0.20 and 1.84 kWh at €0.30.
+    const c = plannedCost(preview({}))!
+    expect(c.kwh).toBeCloseTo(5.52)
+    expect(c.total).toBeCloseTo(1.288)
+    expect(c.avg).toBeCloseTo(0.2333, 4)
+    expect(plannedCost(preview({ slots: [] }))).toBeNull()
+    expect(plannedCost(preview({ powerW: 0 }))).toBeNull()
+    expect(plannedCost(preview({ available: false }))).toBeNull()
   })
 })

@@ -26,7 +26,7 @@ notifications is in [AUTOMATION.md](AUTOMATION.md).
 
 ## Charging plans in EVCC
 
-- Send a plan (target SoC and deadline) to EVCC yourself. A confirmation first shows EVCC's preview.
+- Send a plan (target SoC and deadline) to EVCC yourself. A confirmation first shows EVCC's preview, with the planned charging's average price and total cost (also for extra plans).
 - Three modes: Manual; On plug-in (sends once when you plug in); Automatic (the default: keeps EVCC's single plan in line with your trips).
 - A plan you set yourself pauses Automatic until that plan is done, or until you press Resume.
 - Charge ahead: the target also covers later trips when charging now is at least €0.05/kWh cheaper (solar counts first), up to 90%.

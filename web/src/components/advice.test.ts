@@ -596,6 +596,36 @@ describe('ProposalDialog', () => {
     expect(w.emitted('applied')?.[0]?.[0]).toBe('Extra plan sent to EVCC: 60% by Tue 10 Nov, 07:48')
   })
 
+  it("shows what EVCC's planned slots cost", async () => {
+    api.preview.mockResolvedValue({
+      available: true,
+      soc: 60,
+      time: '2026-11-10T06:48:00Z',
+      durationMinutes: 90,
+      powerW: 3680,
+      slots: [
+        { start: '2026-11-10T01:00:00Z', end: '2026-11-10T02:00:00Z', value: 0.2 },
+        { start: '2026-11-10T03:00:00Z', end: '2026-11-10T03:30:00Z', value: 0.3 },
+      ],
+      priceSlots: [],
+      currentPlan: null,
+      vehicle: 'demo',
+    })
+    vi.useFakeTimers()
+    try {
+      const w = mount(ProposalDialog, { props: { date: '2026-11-10', kind: 'extra_plan' } })
+      await flushPromises()
+      // The preview waits a moment after the last change.
+      await vi.advanceTimersByTimeAsync(300)
+      await flushPromises()
+      const cost = w.get('[data-testid=preview-cost]')
+      expect(cost.text()).toBe('Average €0.23/kWh · total about €1.29 for 5.5 kWh')
+      expect(cost.attributes('title')).toContain('at 3.7 kW')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('converts a kWh target to SoC with the usable capacity', async () => {
     const w = mount(ProposalDialog, { props: { date: '2026-11-10', kind: 'extra_plan' } })
     await flushPromises()

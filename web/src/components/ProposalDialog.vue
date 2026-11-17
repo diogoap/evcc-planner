@@ -3,7 +3,8 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { api } from '../api/client'
 import type { AdjustmentKind, Preview, Proposal } from '../api/types'
 import { confidenceLabel, indicationNames } from '../lib/advice'
-import { clock, dateTime, dayLong, duration, localDate, zonedToISO } from '../lib/format'
+import { clock, dateTime, dayLong, duration, kwh, localDate, price, zonedToISO } from '../lib/format'
+import { plannedCost } from '../lib/status'
 import ModalDialog from './ModalDialog.vue'
 import PriceChart from './PriceChart.vue'
 
@@ -12,6 +13,13 @@ const emit = defineEmits<{ close: []; applied: [message: string] }>()
 
 const proposal = ref<Proposal | null>(null)
 const preview = ref<Preview | null>(null)
+// What EVCC's planned slots cost at grid prices.
+const cost = computed(() => (preview.value ? plannedCost(preview.value) : null))
+const costTitle = computed(() =>
+  preview.value
+    ? `EVCC's planned time at ${(preview.value.powerW / 1000).toFixed(1)} kW, at each slot's grid price; solar in those slots costs less`
+    : '',
+)
 const error = ref('')
 const saving = ref(false)
 const form = reactive({
@@ -205,6 +213,10 @@ async function confirm() {
             <template v-if="preview?.available">
               <p class="small m-0 mb-2">
                 EVCC plans {{ duration(preview.durationMinutes) }} of charging in the highlighted slots.
+              </p>
+              <p v-if="cost" class="small m-0 mb-2" :title="costTitle" data-testid="preview-cost">
+                Average <strong>{{ price(cost.avg) }}</strong> · total about
+                <strong>€{{ cost.total.toFixed(2) }}</strong> for {{ kwh(cost.kwh) }}
               </p>
               <PriceChart :slots="preview.priceSlots" :planned="preview.slots" :height="170" />
             </template>

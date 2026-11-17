@@ -307,7 +307,16 @@ test('send a plan to EVCC only after confirmation', async ({ page }) => {
   dialog = page.getByRole('dialog')
   await expect(dialog).toContainText('EVCC plans')
   await expect(page.getByTestId('plan-soc')).toHaveValue('42')
+  // The car already has 42%: nothing to charge, so no cost. At 60%, what
+  // EVCC's planned slots cost.
+  await expect(dialog.getByTestId('preview-cost')).toHaveCount(0)
+  await page.getByTestId('plan-soc').fill('60')
+  await expect(dialog.getByTestId('preview-cost')).toHaveText(
+    /Average €0\.\d\d\/kWh · total about €\d+\.\d\d for \d+\.\d kWh$/,
+  )
   await shot(page, 'send-plan')
+  await page.getByTestId('plan-soc').fill('42')
+  await expect(dialog.getByTestId('preview-cost')).toHaveCount(0)
   await dialog.getByRole('button', { name: 'Confirm and send' }).click()
   await expect(page.getByText('Plan sent to EVCC: 42% by Tue 10 Nov, 07:48')).toBeVisible()
   await expect(page.getByTestId('evcc-plan')).toContainText('42% by Tue 10 Nov, 07:48')

@@ -7,6 +7,7 @@ import type {
   Day,
   Plan,
   PlanValue,
+  Preview,
   SendOption,
   Status,
   Trip,
@@ -205,6 +206,24 @@ export const tripPlansText: Record<TripPlans, string> = {
 /** "80% by Wed 11 Nov, 07:00". */
 export function planText(p: PlanValue) {
   return `${Math.round(p.soc)}% by ${dateTime(p.time)}`
+}
+
+/**
+ * What EVCC's previewed plan costs at its slots' grid prices: the energy
+ * (each slot's time at the planned charging power), the average price, and
+ * the total. Null without planned slots or power.
+ */
+export function plannedCost(p: Preview): { kwh: number; avg: number; total: number } | null {
+  const kw = p.powerW / 1000
+  if (!p.available || kw <= 0) return null
+  let kwh = 0
+  let total = 0
+  for (const s of p.slots) {
+    const e = (Math.max(0, Date.parse(s.end) - Date.parse(s.start)) / 3_600_000) * kw
+    kwh += e
+    total += e * s.value
+  }
+  return kwh > 0 ? { kwh, avg: total / kwh, total } : null
 }
 
 /** The trip plan mode, and what automatic plans do right now. */
