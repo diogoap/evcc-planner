@@ -98,6 +98,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/activity", s.activity)
 	mux.HandleFunc("GET /api/activity/usage", s.activityUsage)
 	mux.HandleFunc("GET /api/activity/export", s.exportActivity)
+	mux.HandleFunc("GET /api/history", s.history)
 
 	if s.Demo != nil {
 		mux.HandleFunc("POST /api/demo/vehicle", s.demoVehicle)
@@ -809,6 +810,18 @@ func (s *Server) activity(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) activityUsage(w http.ResponseWriter, r *http.Request) {
 	v, err := s.Svc.APIUsage(r.URL.Query().Get("month"))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, v)
+}
+
+// history returns each day's saved figures, from ?from= through ?to= (local
+// dates; both optional).
+func (s *Server) history(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	v, err := s.Svc.History(q.Get("from"), q.Get("to"))
 	if err != nil {
 		s.fail(w, err)
 		return

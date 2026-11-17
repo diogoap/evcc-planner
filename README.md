@@ -4,7 +4,8 @@ Have enough charge for upcoming trips by departure time. The planner combines
 Google Calendar events, recurring trips (such as school runs), and manual trips;
 calculates routes, energy, and the state of charge (SoC) needed at each
 departure; and sends a charging plan to [EVCC](https://evcc.io), which does the
-charging. See [PLAN.md](PLAN.md) for the roadmap and [UI-MOCKUP.md](UI-MOCKUP.md)
+charging. See [FEATURES.md](FEATURES.md) for everything it does in short,
+[PLAN.md](PLAN.md) for the roadmap and [UI-MOCKUP.md](UI-MOCKUP.md)
 for the UI direction, and [AUTOMATION.md](AUTOMATION.md) for every rule of
 the automatic plans and notifications.
 
@@ -36,6 +37,13 @@ ahead when the night is clearly cheaper (solar first); phone notifications
 through the Home Assistant Companion app: plug-in reminders, charging
 problems, and questions about unclear calendar events, with buttons that act
 on the planner.
+
+**Price history:** each day's lowest, average, and highest published price,
+planned km and their energy, and KNMI's wind and sun, saved as the day starts
+and again at 23:45 (for trips changed during the day), from the day it is
+installed, and kept indefinitely; a chart below the week's
+charts shows the prices as a band over a chosen period (a month by default),
+with wind and sun on request.
 
 ## Quick start
 
@@ -396,8 +404,9 @@ Once a day the planner deletes history older than the retention in Settings →
 Connections (90 days by
 default): activity entries, manual trips that have ended, per-date edits of
 past dates, cached routes, plan records (keeping the latest), advice
-dismissals, ended EVCC changes, and notifications. Schedules, places, and settings are kept;
-calendar events only ever cover the next eight days.
+dismissals, ended EVCC changes, and notifications. Schedules, places, settings, and
+the price history (one row per day) are kept; calendar events only ever cover the
+next eight days.
 
 ## Diagnostics
 
@@ -406,7 +415,8 @@ calendar events only ever cover the next eight days.
   `docker run --rm -it --network container:evcc-planner -v /opt/evcc-planner/data:/data busybox sh`
 - `GET /healthz`, `GET /readyz`, `GET /api/connections` (integration status, no secrets),
   `GET /api/forecasts` (the stored outlook and weather payloads),
-  `GET /api/activity` (the activity log, including failed external calls).
+  `GET /api/activity` (the activity log, including failed external calls),
+  `GET /api/history?from=YYYY-MM-DD` (the saved days of the price history).
 - Browser test failures: screenshots and traces in `web/test-results/`, HTML
   report in `web/playwright-report/`, server log path printed at the start.
 - On TLS-inspecting networks, `make setup` and `make docker-smoke` retry

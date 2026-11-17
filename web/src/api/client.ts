@@ -11,6 +11,7 @@ import type {
   ConnectionSettingsView,
   EVCCPlan,
   HASensor,
+  History,
   Meta,
   NotificationSettings,
   PhoneNotification,
@@ -65,7 +66,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 
 const enc = encodeURIComponent
 
-/** Query string for activity filters; empty values are left out. */
+/** Query string for filters (activity, history); empty values are left out. */
 export function activityQuery(f: ActivityFilter, extra: Record<string, string | number | undefined> = {}) {
   const params = new URLSearchParams()
   for (const [k, v] of Object.entries({ ...f, ...extra })) {
@@ -126,6 +127,7 @@ export const api = {
   cancelAdjustment: (id: number) => request<Adjustment>('POST', `/api/adjustments/${id}/cancel`, {}),
   activity: (f: ActivityFilter, before?: number) =>
     request<ActivityPage>('GET', `/api/activity${activityQuery(f, { before })}`),
+  history: (from?: string) => request<History>('GET', `/api/history${activityQuery({}, { from })}`),
   activityUsage: (month?: string) =>
     request<ActivityUsage>('GET', `/api/activity/usage${activityQuery({}, { month })}`),
   /** Download link for the filtered activity log. */

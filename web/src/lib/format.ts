@@ -71,6 +71,28 @@ export function dayLong(date: string) {
   }).format(noon(date))
 }
 
+/** Tue 10 Nov */
+export function dayMonth(date: string) {
+  return new Intl.DateTimeFormat('en-GB', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    timeZone: 'UTC',
+  })
+    .format(noon(date))
+    .replace(/,/g, '')
+}
+
+/** 10 Nov, or Nov (month), with the year when asked: 10 Nov 2026, Nov 2026 */
+export function shortDate(date: string, opts: { month?: boolean; year?: boolean } = {}) {
+  return new Intl.DateTimeFormat('en-GB', {
+    day: opts.month ? undefined : 'numeric',
+    month: 'short',
+    year: opts.year ? 'numeric' : undefined,
+    timeZone: 'UTC',
+  }).format(noon(date))
+}
+
 /** Tue 10 Nov, 07:48 */
 export function dateTime(v: string | number | Date) {
   const d = toDate(v)

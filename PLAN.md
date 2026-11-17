@@ -211,6 +211,17 @@ Scope:
 
 </details>
 
+<details>
+<summary><b>Price history</b> ✅</summary>
+
+✅ **Done** (2026-11-17). What the app does is now also listed in short in [FEATURES.md](FEATURES.md), which will replace this plan.
+
+- One row per day, kept indefinitely (not pruned with the activity log): EVCC's lowest, average, and highest published price; the km of the day's enabled trips (also those already driven) and their energy; KNMI's wind (Beaufort) and sunshine (%). Saved twice a day (decided 2026-11-17): as the day starts (prices, wind, and sun are known by then; a start later that day catches up, after the first EVCC check) and again at 23:45 for trips changed during the day; a once-a-minute check sees when a save is due. The evening save keeps the first save's prices if EVCC no longer lists the day's earlier slots (not yet checked live). Past days never change. Recording starts on install; past days are not filled in (decided 2026-11-17). Not an action, so not in the activity log (like SoC readings).
+- A **Price history** card below the week's charts (the Overview, or the Charts page on phones; decided 2026-11-17): the prices as a band from lowest to highest with the average line, wind and sun on request, a dashed line at today; reloaded hourly. Period: 1 week, 1 month (default), 3 months, 1 year, or all; remembered on the device. `GET /api/history?from=&to=`.
+- Later: compare today's prices against past prices and how they fluctuate.
+
+</details>
+
 <details open>
 <summary><b>V7 — Reliability</b></summary>
 

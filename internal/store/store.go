@@ -196,6 +196,20 @@ var migrations = []string{
 		data TEXT NOT NULL
 	);
 	CREATE INDEX notifications_state ON notifications(state);`,
+	// Each local day's figures for history charts, kept indefinitely (not
+	// pruned with the activity log).
+	`CREATE TABLE day_stats (
+		date TEXT PRIMARY KEY,
+		price_min REAL,
+		price_avg REAL,
+		price_max REAL,
+		price_hours REAL NOT NULL DEFAULT 0,
+		distance_km REAL,
+		energy_kwh REAL,
+		wind_bft INTEGER,
+		sunshine_pct INTEGER,
+		updated_at TEXT NOT NULL
+	);`,
 }
 
 // Open opens (creating if needed) the database at path and migrates it.
@@ -1171,7 +1185,7 @@ func (s *Store) Cleanup(cutoff time.Time, loc *time.Location) (map[string]int64,
 func (s *Store) Reset() error {
 	for _, table := range []string{"settings", "places", "recurring_templates", "manual_trips", "trip_overrides",
 		"calendar_events", "calendar_sync", "soc_readings", "plan_writes", "forecast_sources", "advice_dismissals",
-		"evcc_adjustments", "audit_events", "notifications"} {
+		"evcc_adjustments", "audit_events", "notifications", "day_stats"} {
 		if _, err := s.q.Exec("DELETE FROM " + table); err != nil {
 			return err
 		}

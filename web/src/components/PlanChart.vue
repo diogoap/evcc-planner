@@ -530,42 +530,6 @@ canvas {
   touch-action: pan-y;
 }
 
-.chart-legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1) var(--space-2);
-}
-
-/* Phones: one row that scrolls sideways instead of four rows of buttons. */
-@media (max-width: 640px) {
-  .chart-legend {
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    scrollbar-width: none;
-    margin-inline: calc(var(--space-4) * -1);
-    padding-inline: var(--space-4);
-  }
-
-  .chart-legend .chip {
-    flex: none;
-  }
-}
-
-.chart-legend .chip[aria-pressed='false'] {
-  text-decoration: none;
-}
-
-.chart-legend .chip[aria-pressed='false'] .swatch {
-  opacity: 0.35;
-}
-
-.swatch {
-  width: 12px;
-  height: 12px;
-  border-radius: 3px;
-  flex: none;
-}
-
 .swatch-soc {
   background: var(--chart-soc);
 }

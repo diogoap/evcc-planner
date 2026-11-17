@@ -72,6 +72,7 @@
   --chart-weekly: var(--muted);
   --chart-charging: var(--accent);
   --chart-solar: #b97a00;
+  --chart-wind: #0e7f94;
   --chart-away: var(--muted);
   --chart-now: var(--text);
   /* Labels on the cheapest and dearest slot, with their text colour. */
@@ -106,6 +107,7 @@
     --chart-day: rgba(232, 233, 241, 0.35);
     --chart-price: #a998ff;
     --chart-solar: #f5c04a;
+    --chart-wind: #4fc3d9;
     --chart-label-text: #0b0f1e;
     color-scheme: dark;
   }
@@ -797,6 +799,43 @@ input[type='radio'] {
   color: var(--muted);
   background: var(--surface-2);
   text-decoration: line-through;
+}
+
+/* A chart's legend: a chip per series that shows or hides it. */
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+}
+
+/* Phones: one row that scrolls sideways instead of rows of buttons. */
+@media (max-width: 640px) {
+  .chart-legend {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    margin-inline: calc(var(--space-4) * -1);
+    padding-inline: var(--space-4);
+  }
+
+  .chart-legend .chip {
+    flex: none;
+  }
+}
+
+.chart-legend .chip[aria-pressed='false'] {
+  text-decoration: none;
+}
+
+.chart-legend .chip[aria-pressed='false'] .swatch {
+  opacity: 0.35;
+}
+
+.swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  flex: none;
 }
 
 /* Modal */

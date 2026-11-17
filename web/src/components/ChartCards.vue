@@ -5,9 +5,11 @@ import { dayRange } from '../lib/planchart'
 import { expectedCharging } from '../lib/status'
 import PlanChart from './PlanChart.vue'
 import PriceChart from './PriceChart.vue'
+import PriceHistoryCard from './PriceHistoryCard.vue'
 
-// The week's charts: SoC over prices, and the published prices in detail.
-// On the Overview, or on their own page on phones when they would not fit.
+// The charts: SoC over prices for the week, the published prices in detail,
+// and the price history. On the Overview, or on their own page on phones
+// when they would not fit.
 // The SoC and prices chart covers the first `shownDays` days (all seven by
 // default).
 const props = defineProps<{ plan: Plan; status: Status | null; shownDays?: number }>()
@@ -67,5 +69,7 @@ const adviceDays = computed(() => (props.plan.advice.enabled ? props.plan.advice
       />
       <p class="small muted m-0 mt-2">From EVCC; tomorrow's prices appear around 14:00.</p>
     </section>
+
+    <PriceHistoryCard :now="plan.now" />
   </div>
 </template>

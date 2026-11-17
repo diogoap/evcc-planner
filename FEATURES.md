@@ -1,0 +1,73 @@
+# Features
+
+What EVCC Trip Planner does today, in short. The goal: the car has enough
+charge for every trip, charged at the cheapest practical time. EVCC does the
+charging; the planner tells it how much and by when.
+
+Setup is in [README.md](README.md), and every rule for automatic plans and
+notifications is in [AUTOMATION.md](AUTOMATION.md).
+
+## Trips
+
+- Trips come from three places: Google Calendar (read-only, through each calendar's secret iCal link, synced every hour), recurring trips such as school runs, and one-off trips you add.
+- A trip's time is when you must arrive. The planner works out when to leave from the route and a buffer. The trip home starts at the trip's end time.
+- Calendar events count as trips when they have a real place other than home. All-day events and video calls are skipped. Unclear events are marked "Needs review".
+- You can turn off, edit, or reset a single trip, or one date of a recurring trip. Your edits survive calendar syncs.
+- Saved places give short names to addresses (for example "School").
+
+## Planning
+
+- Distance and travel time come from Google Routes (with traffic, cached). Energy comes from the car's consumption.
+- For each departure: the battery level needed (state of charge, SoC), with a reserve for arrival, charging losses, and time to charge.
+- The car is assumed to charge whenever it is home. Trips the car can't make in time, or that need more than a full battery, are flagged.
+- The SoC comes from EVCC while the car is plugged in, otherwise from Home Assistant. The app shows where each value comes from and how old it is.
+- A rolling seven-day plan in Amsterdam time, with daylight saving taken into account.
+
+## Charging plans in EVCC
+
+- Send a plan (target SoC and deadline) to EVCC yourself. A confirmation first shows EVCC's preview.
+- Three modes: Manual; On plug-in (sends once when you plug in); Automatic (the default: keeps EVCC's single plan in line with your trips).
+- A plan you set yourself pauses Automatic until that plan is done, or until you press Resume.
+- Charge ahead: the target also covers later trips when charging now is at least €0.05/kWh cheaper (solar counts first), up to 90%.
+- The planner never changes EVCC's limits, repeating plans, or charging mode.
+
+## Prices and daily advice
+
+- Every price is in €/kWh including VAT.
+- Published prices come from EVCC: today, and tomorrow from about 14:00. Later days are estimated from Tibber's weekly outlook (read by AI, with every number checked against the article). Wind and sun come from KNMI's weather outlook.
+- Each day gets one piece of advice: charge extra, wait for a cheaper day, or nothing. It comes with a confidence (1–3) and an amount (little, medium, more).
+- **Create extra plan** and **Review postponement** ask before changing anything and are undone when they expire. Applying advice automatically is optional and off by default.
+- Charge ahead from the sun: "keep the car plugged in" when today's or tomorrow's sun is the cheapest energy.
+
+## Price history
+
+- One row per day, kept indefinitely: the lowest, average, and highest price; the km of the day's trips (trips already driven included) and the energy they need; wind (Beaufort); and sun (share of the possible sunshine).
+- Saved twice a day: as the day starts, and again at 23:45 to include trips that changed during the day. Past days never change. Recording starts the day the feature is installed; earlier days are not filled in.
+- A chart below the week's charts shows the prices as a band (lowest to highest) with the average as a line. Wind and sun can be added. Periods: 1 week, 1 month (default), 3 months, 1 year, or everything. Your choices are remembered on the device.
+- The history is meant for later comparisons, such as today's prices against past prices.
+
+## Phone notifications
+
+- Sent through the Home Assistant Companion app; the buttons act on the planner.
+- Plug-in reminders: early (cheapest time), urgent (latest time), and too late. Buttons: Remind in 30 min, Skip trip, View plan.
+- Problems: charging stopped, unplugged early, EVCC not in Smart mode, target missed. Questions about unclear calendar events. An optional "ready" message. "Plug in for the sun".
+- Quiet hours (23:00–07:00 by default). Each message is sent once and is cleared when you plug in.
+
+## Screens
+
+- **Overview:** a "will the car be ready?" card, the week (tiles or a list, 3–7 days), the day's advice, and the charts (SoC over prices, published prices, price history).
+- **Day panel:** one day's trips, charging, prices, weather, and advice, with quick actions.
+- **Trips**, **Recurring trips**, **Activity**, and **Settings** pages.
+- Works on phones (bottom bar, installable as an app, pull to refresh) and in light and dark mode. Checked for contrast, keyboard focus, screen reader labels, and 44 px touch targets.
+
+## Activity log
+
+- Every change, every write to EVCC, and every call to an outside service, with before → after values. Filter it, or export it as CSV or JSON.
+- Monthly use of outside services, such as Google Routes against its free allowance.
+- Entries older than 90 days are deleted (you can change this). The price history is kept.
+- Keys, tokens, and secret calendar links are never stored.
+
+## Running it
+
+- No login: the app relies on your home network for access. Secrets live only in environment variables; everything else is set in the app.
+- One Docker container (Go server, web app, SQLite file). A demo mode with sample data and stand-in services needs no accounts.

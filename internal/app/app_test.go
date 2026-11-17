@@ -35,6 +35,24 @@ func newTestApp(t *testing.T, dir string) *testApp {
 // planner and the EVCC stub alike.
 func newTestAppAt(t *testing.T, dir, fixed string) *testApp {
 	t.Helper()
+	ta := openTestApp(t, dir, fixed)
+	ctx := context.Background()
+	if err := ta.app.Service.PollEVCC(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := ta.app.Syncer.SyncAll(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := ta.app.Service.RefreshForecasts(ctx, true); err != nil {
+		t.Fatal(err)
+	}
+	return ta
+}
+
+// openTestApp wires the demo without checking EVCC, the calendars, or the
+// forecasts yet, as just after a start.
+func openTestApp(t *testing.T, dir, fixed string) *testApp {
+	t.Helper()
 	if dir == "" {
 		dir = t.TempDir()
 	}
@@ -53,16 +71,6 @@ func newTestAppAt(t *testing.T, dir, fixed string) *testApp {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { a.Close() })
-	ctx := context.Background()
-	if err := a.Service.PollEVCC(ctx); err != nil {
-		t.Fatal(err)
-	}
-	if err := a.Syncer.SyncAll(ctx); err != nil {
-		t.Fatal(err)
-	}
-	if err := a.Service.RefreshForecasts(ctx, true); err != nil {
-		t.Fatal(err)
-	}
 	return &testApp{t: t, app: a, dir: dir}
 }
 

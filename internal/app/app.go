@@ -150,7 +150,10 @@ func New(cfg *config.Config, log *slog.Logger) (*App, error) {
 			if err := svc.CheckNotifications(ctx); err != nil {
 				return err
 			}
-			return svc.RefreshForecasts(ctx, true)
+			if err := svc.RefreshForecasts(ctx, true); err != nil {
+				return err
+			}
+			return svc.RecordHistory(ctx)
 		}
 	}
 	return &App{
@@ -282,11 +285,15 @@ func knmiLabel(r *http.Request) string {
 // auto-apply are checked.
 const forecastCheck = 15 * time.Minute
 
+// historyCheck is how often the day's history checks whether a save is due.
+const historyCheck = time.Minute
+
 // StartJobs runs EVCC polling (restoring temporary EVCC changes and
 // planning when the car is plugged in), Home Assistant SoC polling, calendar
-// sync, the daily forecasts, and the daily history cleanup until ctx ends;
-// wait blocks until they have stopped. Intervals follow the connection
-// settings. Each job marks its work with its source for the activity log.
+// sync, the daily forecasts and day history, and the daily history cleanup
+// until ctx ends; wait blocks until they have stopped. Intervals follow the
+// connection settings. Each job marks its work with its source for the
+// activity log.
 func (a *App) StartJobs(ctx context.Context) (wait func()) {
 	var wg sync.WaitGroup
 	jobCtx := audit.WithSource(ctx, model.SourceJob)
@@ -349,6 +356,12 @@ func (a *App) StartJobs(ctx context.Context) (wait func()) {
 		}
 		if err := a.Service.AutoApply(audit.WithSource(ctx, model.SourceAutomation)); err != nil && ctx.Err() == nil {
 			a.Log.Warn("advice auto-apply failed", "err", err)
+		}
+	})
+	// Saves only as the day starts and late in the evening (RecordHistory).
+	every(ctx, &wg, fixed(historyCheck), func() {
+		if err := a.Service.RecordHistory(jobCtx); err != nil && ctx.Err() == nil {
+			a.Log.Warn("saving the day's history failed", "err", err)
 		}
 	})
 	calCtx := audit.WithSource(ctx, model.SourceCalendarSync)

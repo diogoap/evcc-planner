@@ -422,6 +422,23 @@ func (n NotificationSettings) Validate() error {
 	return nil
 }
 
+// DayStats are one local day's figures, kept indefinitely for history:
+// EVCC's published prices (EUR/kWh incl. VAT; PriceHours is how much of the
+// day they cover), the driving planned that day and the energy it uses, and
+// KNMI's wind and sunshine forecast for it. Nil means unknown.
+type DayStats struct {
+	Date        string    `json:"date"`
+	PriceMin    *float64  `json:"priceMin"`
+	PriceAvg    *float64  `json:"priceAvg"`
+	PriceMax    *float64  `json:"priceMax"`
+	PriceHours  float64   `json:"priceHours"`
+	DistanceKm  *float64  `json:"distanceKm"`
+	EnergyKWh   *float64  `json:"energyKWh"`
+	WindBft     *int      `json:"windBft"`
+	SunshinePct *int      `json:"sunshinePct"`
+	UpdatedAt   time.Time `json:"updatedAt"`
+}
+
 // Notification kinds, states, and button verbs.
 const (
 	NotifyTest      = "test"

@@ -4,6 +4,7 @@ import {
   clock,
   dateTime,
   dayLong,
+  dayMonth,
   dayShort,
   duration,
   km,
@@ -11,6 +12,7 @@ import {
   localDate,
   price,
   relativeDay,
+  shortDate,
   weekdays,
   zonedToISO,
 } from './format'
@@ -26,6 +28,10 @@ describe('format (Europe/Amsterdam)', () => {
   it('formats plain dates', () => {
     expect(dayShort('2026-11-09')).toBe('Mon 09')
     expect(dayLong('2026-11-10')).toBe('Tuesday 10 November')
+    expect(dayMonth('2026-11-09')).toBe('Mon 9 Nov')
+    expect(shortDate('2026-11-09')).toBe('9 Nov')
+    expect(shortDate('2027-01-01', { month: true, year: true })).toBe('Jan 2027')
+    expect(shortDate('2026-11-09', { month: true })).toBe('Nov')
   })
 
   it('converts local wall time to instants across DST changes', () => {

@@ -1,4 +1,5 @@
 import { computed, reactive, ref, watch } from 'vue'
+import { periods, type HistorySeries, type Period } from './lib/history'
 
 // Whether the charts get a page of their own: only with the bottom bar
 // (narrow screens), and only when the Overview with its charts would not fit
@@ -49,3 +50,35 @@ watch(shownDays, (n) => {
     // Not stored (e.g. private browsing); the choice lasts until reload.
   }
 })
+
+// The price history's period and the series it shows, remembered on this
+// device: the prices' range and average, not wind and sun, over a month.
+const historyKey = 'evcc-planner.history'
+function savedHistory() {
+  const choice = {
+    period: 'month' as Period,
+    show: { range: true, average: true, wind: false, sun: false } as Record<HistorySeries, boolean>,
+  }
+  try {
+    const saved = JSON.parse(localStorage.getItem(historyKey) ?? 'null')
+    if (periods.some((p) => p.key === saved?.period)) choice.period = saved.period
+    for (const key of Object.keys(choice.show) as HistorySeries[]) {
+      if (typeof saved?.show?.[key] === 'boolean') choice.show[key] = saved.show[key]
+    }
+  } catch {
+    // Unreadable or not stored: the defaults.
+  }
+  return choice
+}
+export const historyChoice = reactive(savedHistory())
+watch(
+  historyChoice,
+  (v) => {
+    try {
+      localStorage.setItem(historyKey, JSON.stringify(v))
+    } catch {
+      // Not stored (e.g. private browsing); the choice lasts until reload.
+    }
+  },
+  { deep: true },
+)

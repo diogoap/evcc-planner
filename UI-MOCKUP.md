@@ -51,6 +51,15 @@ Now · EUR 0.37/kWh
  charging shaded; | now]
 Average EUR 0.23 · lowest EUR 0.13 (Tue 13:15) · highest EUR 0.40 (Mon 19:30)
 
+PRICE HISTORY                       incl. VAT  [1 month v]
+Today · average EUR 0.25/kWh · EUR 0.18–0.39 · wind Bft 3 · sun 20%
+[one point per day: a band from the lowest to the highest
+ price, the average as a line; wind (Bft) and sun (%) on
+ their own axes when shown; days not saved are gaps;
+ | today                                                 ]
+Average EUR 0.24 · lowest EUR 0.11 (Sat 7 Nov) · highest EUR 0.45 (Mon 2 Nov) · 31 days
+(Lowest to highest) (Average) (Wind) (Sun)   <- show or hide
+
 -------------------------------------------------------
  Overview   Trips   Recurring   Activity   Settings
 ```

@@ -433,6 +433,29 @@ export interface Status {
 }
 
 /** "home", "not_home", or the name of a Home Assistant zone. */
+/** One day's saved figures. Prices in EUR/kWh incl. VAT; null is unknown. */
+export interface DayStats {
+  date: string
+  priceMin: number | null
+  priceAvg: number | null
+  priceMax: number | null
+  /** Hours of the day the prices cover (24 when complete). */
+  priceHours: number
+  distanceKm: number | null
+  energyKWh: number | null
+  windBft: number | null
+  sunshinePct: number | null
+  updatedAt: string
+}
+
+/** Saved days, oldest first. */
+export interface History {
+  today: string
+  /** The earliest saved day (absent before the first is recorded). */
+  first?: string
+  days: DayStats[]
+}
+
 export interface CarLocation {
   state: string
   home: boolean

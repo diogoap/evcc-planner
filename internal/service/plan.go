@@ -32,6 +32,9 @@ type PlanView struct {
 	Warnings    []string         `json:"warnings"`
 	Advice      *AdviceView      `json:"advice"`
 	Control     ControlView      `json:"control"`
+	// Each local date's enabled trips, also those already driven, for the
+	// day history.
+	driving map[string]driving
 }
 
 // SoCView describes the SoC used for planning, where it came from, and how
@@ -365,6 +368,7 @@ func (s *Service) Plan(ctx context.Context) (*PlanView, error) {
 	}
 
 	view.Days = s.days(from, view.Trips, view.Blocks)
+	view.driving = drivingByDate(view.Trips)
 	// Past trips (back home already) are not shown anywhere.
 	upcoming := view.Trips[:0]
 	for _, t := range view.Trips {

@@ -101,6 +101,37 @@ test('the week shows as columns or as a list, remembered on this device', async 
   await expect(page.getByTestId('day-2026-11-10').getByTestId('badge-confidence')).toHaveCount(0)
 })
 
+test('the price history shows each recorded day over the period chosen', async ({ page, isMobile }) => {
+  // With the week's charts: on the Overview, or on their own page on phones.
+  await page.goto(isMobile ? '/charts' : '/')
+  const card = page.getByTestId('history-card')
+  await card.scrollIntoViewIfNeeded()
+  await expect(card.getByTestId('history-period')).toHaveValue('month')
+  // Recording starts today; nothing is filled in for past days.
+  await expect(card.getByTestId('history-readout')).toHaveText(
+    /^Today · average €0\.\d\d\/kWh · €0\.\d\d–€0\.\d\d · wind Bft 3 · sun 20%$/,
+  )
+  await expect(card.getByTestId('history-summary')).toHaveText(/· 1 day$/)
+  await expect(card.getByRole('img')).toHaveAttribute(
+    'aria-label',
+    /lowest, average, and highest of each day/,
+  )
+  await expect(card).toContainText('saved since Mon 9 Nov')
+
+  // Wind and sun on request; the choices are remembered on this device.
+  const wind = card.getByTestId('history-legend-wind')
+  await expect(wind).toHaveAttribute('aria-pressed', 'false')
+  await wind.click()
+  await card.getByTestId('history-legend-sun').click()
+  await card.getByTestId('history-period').selectOption('week')
+  await shot(page, 'price-history')
+  await page.reload()
+  await card.scrollIntoViewIfNeeded()
+  await expect(card.getByTestId('history-period')).toHaveValue('week')
+  await expect(wind).toHaveAttribute('aria-pressed', 'true')
+  await expect(card.getByTestId('history-legend-sun')).toHaveAttribute('aria-pressed', 'true')
+})
+
 test('add a manual trip and keep it after reload', async ({ page }) => {
   await page.goto('/trips')
   await page.getByRole('button', { name: 'Add trip', exact: true }).click()
