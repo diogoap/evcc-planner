@@ -33,6 +33,7 @@ const defaults: NotificationSettings = {
   ready: false,
   solar: true,
   extra: true,
+  arrival: true,
 }
 
 const urgent: PhoneNotification = {
@@ -76,6 +77,16 @@ describe('NotificationSettingsForm', () => {
       linkUrl: 'http://planner.test:7201/',
     })
     expect(store.notify).toHaveBeenCalledWith('Notification settings saved')
+  })
+
+  it('turns back home reminders off', async () => {
+    const w = mount(NotificationSettingsForm)
+    await flushPromises()
+    expect(w.text()).toContain('Back home reminders')
+    await w.get('[role="switch"][aria-label="Back home reminders"]').trigger('click')
+    await w.get('form').trigger('submit')
+    await flushPromises()
+    expect(api.saveNotificationSettings).toHaveBeenCalledWith({ ...defaults, arrival: false })
   })
 
   it('lists recent notifications and presses the demo phone buttons', async () => {

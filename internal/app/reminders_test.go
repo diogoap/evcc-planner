@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -339,4 +340,81 @@ func TestNoSunReminderWhenOff(t *testing.T) {
 	if n, _ := ta.app.Store.NotificationByKey("solar:2026-11-11"); n != nil {
 		t.Errorf("sent with solar reminders off: %+v", n)
 	}
+}
+
+// Back home from the day's last trip (by the car location sensor) and
+// unplugged while the car still needs charging: a reminder right away,
+// once, also in quiet hours. Other plug-in reminders wait half an hour.
+func TestBackHomeReminder(t *testing.T) {
+	mon := func(h, m int) time.Time { return time.Date(2026, 11, 9, h, m, 0, 0, ams) }
+	// Monday evening, unplugged at 38%: Tuesday's school run needs 42%.
+	start := func(away time.Time) *testApp {
+		ta := newTestApp(t, "")
+		ta.json("POST", "/api/demo/reset", map[string]any{}, http.StatusNoContent, nil)
+		ta.notifications(nil)
+		ta.phone().MoveCar("not_home", away)
+		ta.at(away)
+		ta.check()
+		ta.phone().Take()
+		return ta
+	}
+	arrive := func(ta *testApp, at time.Time) {
+		ta.phone().MoveCar("home", at)
+		ta.at(at.Add(time.Minute))
+		ta.check()
+	}
+
+	ta := start(mon(18, 0))
+	ta.pastWeek(0.40) // Tuesday's cheap night: charge extra
+	arrive(ta, mon(19, 5))
+	ta.expectSent("Back home: plug in")
+	n := ta.notification(fmt.Sprintf("arrived:%d", mon(19, 5).Unix()))
+	tue := ta.advice().day("2026-11-10")
+	if want := "School drop-off needs 42% by Tue 07:48. " + tue.Summary + " Create the plan in the planner."; n.Message != want ||
+		!n.Urgent || n.Kind != "arrived" || len(n.Verbs) != 2 {
+		t.Fatalf("back home = %+v, want %q", n, want)
+	}
+	ta.check()
+	ta.expectSent()
+	// Plugging in clears it.
+	ta.plug(true, 38)
+	ta.expectSent("-Back home: plug in")
+
+	// In quiet hours too; the early reminder (due 22:45) waits half an hour
+	// after it, and the quiet hours then keep it back.
+	ta = start(mon(21, 0))
+	arrive(ta, mon(22, 40))
+	ta.expectSent("Back home: plug in")
+	ta.at(mon(22, 50))
+	ta.check()
+	ta.expectSent()
+	ta = start(mon(23, 0))
+	arrive(ta, mon(23, 30))
+	ta.expectSent("Back home: plug in")
+	if n := ta.notification(fmt.Sprintf("arrived:%d", mon(23, 30).Unix())); n.Message != "School drop-off needs 42% by Tue 07:48." {
+		t.Errorf("back home in quiet hours = %q", n.Message)
+	}
+
+	// Another trip later today: not the last one yet (that trip's own
+	// reminders still apply).
+	ta = start(mon(18, 0))
+	ta.json("POST", "/api/trips", map[string]any{"title": "Gym", "destination": "Office", "date": "2026-11-09", "start": "21:00", "end": "22:00"},
+		http.StatusCreated, nil)
+	arrive(ta, mon(19, 5))
+	for _, title := range ta.sent() {
+		if title == "Back home: plug in" {
+			t.Error("back home before the day's last trip")
+		}
+	}
+
+	// Turned off, or with the reminder setting for urgent ones in quiet
+	// hours off at night: nothing.
+	ta = start(mon(18, 0))
+	ta.notifications(func(s map[string]any) { s["arrival"] = false })
+	arrive(ta, mon(19, 5))
+	ta.expectSent()
+	ta = start(mon(23, 0))
+	ta.notifications(func(s map[string]any) { s["urgentInQuiet"] = false })
+	arrive(ta, mon(23, 30))
+	ta.expectSent()
 }

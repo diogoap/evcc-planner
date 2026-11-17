@@ -737,6 +737,8 @@ export interface NotificationSettings {
   solar: boolean
   /** Plug in for charge extra's plan, and a message when one is created automatically. */
   extra: boolean
+  /** Plug in when the car gets back home from the day's last trip and still needs charging. */
+  arrival: boolean
 }
 
 export type NotificationKind =
@@ -753,6 +755,7 @@ export type NotificationKind =
   | 'solar'
   | 'extra'
   | 'extra_plan'
+  | 'arrived'
   | 'info'
 
 export type NotificationVerb = 'snooze' | 'skip' | 'view' | 'count' | 'notrip'

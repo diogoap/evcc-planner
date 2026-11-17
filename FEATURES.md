@@ -56,6 +56,7 @@ notifications is in [AUTOMATION.md](AUTOMATION.md).
 
 - Sent through the Home Assistant Companion app; the buttons act on the planner.
 - Plug-in reminders: early (cheapest time), urgent (latest time), and too late. Buttons: Remind in 30 min, Skip trip, View plan.
+- "Back home: plug in" when the car gets home from the day's last trip (by the car location sensor), unplugged, and still needs charging for the next trip, charge ahead, or charge extra. It comes in quiet hours too, like urgent reminders.
 - Problems: charging stopped, unplugged early, EVCC not in Smart mode, target missed. Questions about unclear calendar events. An optional "ready" message. "Plug in for the sun".
 - Charge extra: "Plug in for charge extra" before its cheap hours when the car is home but unplugged (for a cheap night, just before quiet hours), and a message when an extra plan is created automatically.
 - Quiet hours (23:00–07:00 by default). Each message is sent once and is cleared when you plug in.

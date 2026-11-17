@@ -408,6 +408,7 @@ Reminders only go out when all of these hold:
 | **Early** | 30 min before the first slot of the planned charging (the planner's estimate of EVCC's cheapest slots for the target). If that falls in quiet hours, 15 min before quiet hours start; if that has passed too, when quiet hours end, while the planned charging is still ahead. | "Plug in tonight: charging is cheapest from 01:00 (€0.21/kWh) for Thursday's trips." |
 | **Urgent** | 30 min before the latest plug-in time: the next departure, minus the charging time buffer, minus the time to charge the minimum target. | "Plug in by 10:20 to have 52% for Utrecht at 17:00." |
 | **Too late** | Once, after the latest plug-in time, if the car is still unplugged. | "Plugging in now gives about 46% by 17:00 (Utrecht needs 52%)." |
+| **Back home** | The car location sensor turns `home` (from elsewhere, within the last 30 min) after the day's last trip: no other trip leaves later that day, whether or not the trip was planned. The car is unplugged and still needs charging: for the next departure, for later trips charged ahead, or for a [charge extra](#charge-extra-daily-advice) plan (today's or tomorrow's). Once per arrival; urgent, so it comes in quiet hours too when **Urgent reminders in quiet hours** is on. Needs the car location sensor. Buttons: **Remind in 30 min**, **View plan**. | "Back home: plug in. School drop-off needs 42% by Tue 07:48. Charge extra to 50%: 02:00–05:45 averages €0.23 …" |
 
 The early reminder is about saving money, so it uses the full target. Urgent
 and too-late reminders only use the minimum target.
@@ -431,6 +432,9 @@ gantt
   - *Skip trip* turns that trip off, as in the UI, re-plans, and confirms:
     "Skipped Utrecht; the new target is 27%."
 - **Plugging in** cancels pending reminders and clears them from the phone.
+- **After a back-home reminder** the early, sun, and charge extra reminders
+  wait 30 minutes, so they don't arrive right after it; a later plug-in
+  reminder replaces it on the phone. It also ends when the car leaves again.
 - **No duplicates:** each reminder has one key (kind + trip + time), saved in
   the database, so a restart doesn't resend it. When its details change, the
   same phone notification is updated.
@@ -503,6 +507,7 @@ Settings → **Notifications**:
 | Ready messages | Off |
 | Solar reminders | On |
 | Charge extra reminders | On (plug in for charge extra, and extra plans created automatically) |
+| Back home reminders | On (needs the car location sensor) |
 
 ## Activity log entries
 

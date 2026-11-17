@@ -232,7 +232,8 @@ Notifications go to the Home Assistant Companion app with the same
 3. Optionally set the **Link address** (the planner's address as the phone
    reaches it) for the **View plan** button, and a car location sensor
    (state `home` while the car is home) so plug-in reminders wait while the
-   car is away.
+   car is away, and a reminder comes as soon as the car is back home from
+   the day's last trip and still needs charging.
 
 Button presses (Remind later, Skip trip, Count it, Not a trip) come back over
 Home Assistant's websocket connection, which the planner opens to Home

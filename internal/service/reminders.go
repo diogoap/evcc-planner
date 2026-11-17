@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/diogoap/evcc-planner/internal/advice"
@@ -13,6 +14,7 @@ import (
 	"github.com/diogoap/evcc-planner/internal/homeassistant"
 	"github.com/diogoap/evcc-planner/internal/localtime"
 	"github.com/diogoap/evcc-planner/internal/model"
+	"github.com/diogoap/evcc-planner/internal/planner"
 )
 
 // notifyState is what the notification check remembers between EVCC
@@ -25,6 +27,8 @@ type notifyState struct {
 	modeSince time.Time // plugged in with EVCC in mode (not Smart) since
 	mode      string
 	below     map[string]bool
+	// The car location sensor's last known state: away, or home.
+	away, awayKnown bool
 }
 
 // Timings of the notification rules (AUTOMATION.md).
@@ -33,13 +37,15 @@ var (
 	modeAfter       = 10 * time.Minute // plugged in this long outside Smart mode is a problem
 	unpluggedBefore = 30 * time.Minute // unplugging earlier than this before a departure is early
 	beforeQuiet     = 15 * time.Minute // early reminders due in quiet hours come this long before them
+	arrivalWindow   = 30 * time.Minute // the location sensor turned home this recently: an arrival
+	arrivalHold     = 30 * time.Minute // other non-urgent plug-in reminders wait this long after a back-home one
 )
 
 // reminderKinds ask the driver to plug in; plugging in ends them.
 var reminderKinds = map[string]bool{model.NotifyEarly: true, model.NotifyUrgent: true, model.NotifyLate: true}
 
 // CheckNotifications sends the phone notifications that are due: plug-in
-// reminders (for trips, the sun, and charge extra), charging problems,
+// reminders (for trips, the sun, charge extra, and back home), charging problems,
 // questions about calendar events, and ready messages, and ends those no
 // longer needed (AUTOMATION.md). It runs
 // after each EVCC check and only acts on a fresh EVCC state. A missed
@@ -64,6 +70,7 @@ func (s *Service) CheckNotifications(ctx context.Context) error {
 	cur := &notifyState{connected: lp.Connected, soc: lp.VehicleSoc, below: map[string]bool{}}
 	if prev != nil {
 		cur.idleSince, cur.modeSince, cur.mode, cur.below = prev.idleSince, prev.modeSince, prev.mode, prev.below
+		cur.away, cur.awayKnown = prev.away, prev.awayKnown
 	}
 	s.notifyPrev = cur
 	on := settings.Enabled && len(settings.Phones) > 0 && s.Clients().Notify != nil
@@ -85,6 +92,7 @@ func (s *Service) CheckNotifications(ctx context.Context) error {
 	r.problems(cur)
 	r.ready(cur)
 	r.cleanUp()
+	r.arrived(prev, cur)
 	r.plugIn()
 	r.solar()
 	r.extra()
@@ -103,6 +111,9 @@ type reminders struct {
 	now      time.Time
 	on       bool
 	errs     []error
+	// The car location sensor, read once per check.
+	loc     *homeassistant.EntityState
+	locRead bool
 }
 
 func (r *reminders) err() error { return errors.Join(r.errs...) }
@@ -154,6 +165,10 @@ func (r *reminders) send(n model.Notification, info bool) {
 		r.endOpen(func(o model.Notification) bool { return reminderKinds[o.Kind] && o.Subject == n.Subject },
 			"Replaced by a newer reminder")
 	}
+	// A later plug-in reminder says it again, and more precisely.
+	if reminderKinds[n.Kind] || n.Kind == model.NotifySolar || n.Kind == model.NotifyExtra {
+		r.endOpen(func(o model.Notification) bool { return o.Kind == model.NotifyArrived }, "Replaced by a newer reminder")
+	}
 	if err := r.s.deliver(r.ctx, &n, r.settings); err != nil {
 		r.fail(err)
 		return
@@ -199,25 +214,110 @@ func (r *reminders) onTheRoad() bool {
 	return false
 }
 
-// carAway reports whether the optional car location sensor says the car
-// is not home; without one (or when it cannot be read) the car counts as
-// home.
-func (r *reminders) carAway() bool {
+// location is the optional car location sensor's state, read once per
+// check; nil without one, or when it cannot be read.
+func (r *reminders) location() *homeassistant.EntityState {
+	if r.locRead {
+		return r.loc
+	}
+	r.locRead = true
 	if r.settings.LocationEntity == "" {
-		return false
+		return nil
 	}
 	sr, ok := r.s.Clients().Notify.(interface {
 		State(context.Context, string) (*homeassistant.EntityState, error)
 	})
 	if !ok {
-		return false
+		return nil
 	}
 	e, err := sr.State(r.ctx, r.settings.LocationEntity)
 	if err != nil {
 		r.s.Log.Warn("car location sensor", "entity", r.settings.LocationEntity, "err", err)
+		return nil
+	}
+	r.loc = e
+	return e
+}
+
+// carAway reports whether the optional car location sensor says the car
+// is not home; without one (or when it cannot be read) the car counts as
+// home.
+func (r *reminders) carAway() bool {
+	e := r.location()
+	return e != nil && e.State != "home"
+}
+
+// arrived asks to plug in when the car gets back home (the location sensor
+// turns home from elsewhere) from the day's last trip, unplugged, while it
+// still needs charging: for the next departure, for later trips charged
+// ahead, or for charge extra's plan. Once per arrival. It is urgent, so it
+// may come in quiet hours (when urgent reminders may): you're at the car.
+func (r *reminders) arrived(prev, cur *notifyState) {
+	e := r.location()
+	if e == nil || e.State == "" || e.State == "unknown" || e.State == "unavailable" {
+		return
+	}
+	home := e.State == "home"
+	cur.away, cur.awayKnown = !home, true
+	if !home || prev == nil || !prev.awayKnown || !prev.away || r.now.Sub(e.LastChanged) > arrivalWindow ||
+		!r.settings.Arrival || r.lp.Connected || !r.allowed(true) {
+		return
+	}
+	loc := r.s.loc()
+	next, key := r.next()
+	if next != nil && localtime.Date(next.DepartAt, loc) == localtime.Date(r.now, loc) {
+		return // another trip today: after that one
+	}
+	var parts []string
+	var latest *time.Time
+	later := func(t time.Time) {
+		if latest == nil || t.After(*latest) {
+			latest = &t
+		}
+	}
+	target := r.view.Control.Target
+	switch {
+	case next == nil:
+	case target != nil && !target.Covered && len(target.Ahead) > 0:
+		parts = append(parts, fmt.Sprintf("The plan charges %d%% by %s, also for %s.", target.SoC, r.s.clockText(target.ReadyBy), target.Ahead[0].Title))
+		later(next.DepartAt)
+	case next.Status == string(planner.StatusCharge) || next.Status == string(planner.StatusShortfall) ||
+		next.Status == string(planner.StatusExceeds):
+		parts = append(parts, fmt.Sprintf("%s needs %d%% by %s.", r.title(next), next.TargetSoC, r.s.clockText(next.DepartAt)))
+		later(next.DepartAt)
+	}
+	if a := r.extraAdvice(); a != nil {
+		text := a.Summary
+		if a.Adjustment == nil && !r.autoExtra(a) {
+			text += " Create the plan in the planner."
+		}
+		parts = append(parts, text)
+		later(a.Blocks[len(a.Blocks)-1].Until)
+	}
+	if len(parts) == 0 {
+		return
+	}
+	r.send(model.Notification{
+		Key: fmt.Sprintf("arrived:%d", e.LastChanged.Unix()), Kind: model.NotifyArrived, Subject: key, Urgent: true, Latest: latest,
+		Title: "Back home: plug in", Message: strings.Join(parts, " "),
+		Verbs: []string{model.VerbSnooze, model.VerbView},
+	}, false)
+}
+
+// arrivedRecently reports whether a back-home reminder went out in the last
+// half hour and is still open: other non-urgent plug-in reminders wait.
+func (r *reminders) arrivedRecently() bool {
+	open, err := r.s.Store.OpenNotifications()
+	if err != nil {
+		r.fail(err)
 		return false
 	}
-	return e.State != "home"
+	for _, n := range open {
+		if n.Kind == model.NotifyArrived && n.SentAt != nil && r.now.Sub(*n.SentAt) < arrivalHold {
+			return true
+		}
+	}
+	return false
 }
 
 // cleanUp ends open notifications that no longer apply: reminders once the
@@ -249,6 +349,8 @@ func (r *reminders) cleanUp() {
 		case n.Kind == model.NotifyExtra:
 			a := r.extraAdvice()
 			return r.lp.Connected || a == nil || n.Subject != "extra:"+a.Date || !r.now.Before(a.Blocks[len(a.Blocks)-1].Until)
+		case n.Kind == model.NotifyArrived:
+			return r.lp.Connected || r.carAway() || (n.Latest != nil && !r.now.Before(*n.Latest))
 		}
 		return false
 	}, "No longer needed")
@@ -281,7 +383,7 @@ func (r *reminders) solar() {
 	}
 	a := r.solarAdvice()
 	if a == nil || r.now.Before(a.SolarFrom.Add(-30*time.Minute)) || !r.now.Before(a.SolarUntil.Add(-30*time.Minute)) ||
-		!r.allowed(false) {
+		!r.allowed(false) || r.arrivedRecently() {
 		return
 	}
 	than := "tomorrow's lowest price"
@@ -341,7 +443,7 @@ func (r *reminders) extra() {
 	if r.quiet(due) {
 		due = r.quietStart(due).Add(-beforeQuiet)
 	}
-	if r.now.Before(due) || !r.now.Before(until.Add(-30*time.Minute)) || !r.allowed(false) {
+	if r.now.Before(due) || !r.now.Before(until.Add(-30*time.Minute)) || !r.allowed(false) || r.arrivedRecently() {
 		return
 	}
 	then := " Plug in so the plan can charge."
@@ -450,7 +552,7 @@ func (r *reminders) plugIn() {
 	if r.quiet(due) {
 		due = r.quietStart(due).Add(-beforeQuiet)
 	}
-	if r.now.Before(due) || !r.now.Before(last.End) || !r.allowed(false) {
+	if r.now.Before(due) || !r.now.Before(last.End) || !r.allowed(false) || r.arrivedRecently() {
 		return
 	}
 	when := r.s.clockText(first.Start)

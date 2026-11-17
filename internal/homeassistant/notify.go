@@ -269,6 +269,33 @@ type NotifyStub struct {
 	sent []Sent
 	// Fail, if set, makes every call fail with it.
 	Fail error
+	// The car location sensor: home unless moved (tests), and when it
+	// last changed.
+	location        string
+	locationChanged time.Time
+}
+
+// State is the car location sensor's state: "home", unless MoveCar says
+// otherwise.
+func (s *NotifyStub) State(_ context.Context, entityID string) (*EntityState, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.Fail != nil {
+		return nil, s.Fail
+	}
+	state := s.location
+	if state == "" {
+		state = "home"
+	}
+	at := s.locationChanged
+	return &EntityState{EntityID: entityID, State: state, LastChanged: at, LastUpdated: at, LastReported: at}, nil
+}
+
+// MoveCar sets the car location sensor's state and when it changed.
+func (s *NotifyStub) MoveCar(state string, at time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.location, s.locationChanged = state, at
 }
 
 // Phones lists the demo phone.

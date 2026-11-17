@@ -20,7 +20,7 @@ const testing = ref(false)
 const error = ref('')
 
 const toggles: {
-  key: 'problems' | 'questions' | 'ready' | 'solar' | 'extra'
+  key: 'problems' | 'questions' | 'ready' | 'solar' | 'extra' | 'arrival'
   label: string
   hint: string
 }[] = [
@@ -48,6 +48,11 @@ const toggles: {
     key: 'extra',
     label: 'Charge extra reminders',
     hint: "Asks you to plug in before charge extra's cheap hours when the car is home, and tells you when an extra plan is created automatically.",
+  },
+  {
+    key: 'arrival',
+    label: 'Back home reminders',
+    hint: 'Asks you to plug in when the car gets back home from the day’s last trip and still needs charging: for the next trip, charge ahead, or charge extra. Needs the car location sensor; comes in quiet hours like urgent reminders.',
   },
 ]
 

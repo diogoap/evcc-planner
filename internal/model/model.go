@@ -466,13 +466,16 @@ type NotificationSettings struct {
 	// plan and the car is home but unplugged, and says when an extra plan
 	// is created automatically.
 	Extra bool `json:"extra"`
+	// Arrival asks to plug in when the car gets back home from the day's
+	// last trip (by the location sensor) and still needs charging.
+	Arrival bool `json:"arrival"`
 }
 
 // DefaultNotificationSettings are off, with the reminder rules ready.
 func DefaultNotificationSettings() NotificationSettings {
 	return NotificationSettings{
 		Phones: []string{}, Early: true, EarlyLeadMin: 30, UrgentLeadMin: 30, QuietFrom: "23:00", QuietTo: "07:00",
-		UrgentInQuiet: true, SnoozeMin: 30, Problems: true, Questions: true, Solar: true, Extra: true,
+		UrgentInQuiet: true, SnoozeMin: 30, Problems: true, Questions: true, Solar: true, Extra: true, Arrival: true,
 	}
 }
 
@@ -551,6 +554,7 @@ const (
 	NotifySolar     = "solar"      // plug in to charge extra from the sun
 	NotifyExtra     = "extra"      // plug in for charge extra's plan
 	NotifyExtraPlan = "extra_plan" // an extra plan was created automatically
+	NotifyArrived   = "arrived"    // back home from the day's last trip: plug in
 	NotifyInfo      = "info"       // a follow-up, e.g. after Skip trip
 
 	NotifySent    = "sent"
