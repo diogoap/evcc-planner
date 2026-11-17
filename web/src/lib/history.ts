@@ -1,5 +1,5 @@
 import type { DayStats } from '../api/types'
-import { dayMonth, price, shortDate } from './format'
+import { dayMonth, km, kwh, price, shortDate } from './format'
 
 // The price history: one saved row per day (prices, driving, wind, sun),
 // shown over a chosen period.
@@ -15,7 +15,7 @@ export const periods: { key: Period; label: string }[] = [
 ]
 
 /** The series the chart can show. */
-export type HistorySeries = 'range' | 'average' | 'wind' | 'sun'
+export type HistorySeries = 'range' | 'average' | 'wind' | 'sun' | 'driving' | 'energy'
 
 const dayMs = 86_400_000
 const toMs = (date: string) => Date.parse(`${date}T00:00:00Z`)
@@ -119,7 +119,7 @@ export function summaryText(s: HistorySummary) {
 
 const euro = (v: number) => `€${v.toFixed(2)}`
 
-/** The readout for one day: Today · average €0.25/kWh · €0.18–€0.39 · wind Bft 3 · sun 20% */
+/** The readout for one day: Today · average €0.25/kWh · €0.18–€0.39 · wind Bft 3 · sun 20% · 100 km, 18.0 kWh */
 export function dayLine(day: DayStats | null, date: string, today: string) {
   const when = date === today ? 'Today' : dayMonth(date)
   if (!day) return `${when} · not recorded`
@@ -131,6 +131,8 @@ export function dayLine(day: DayStats | null, date: string, today: string) {
     partial && `prices for ${Math.round(day.priceHours)} h`,
     day.windBft != null && `wind Bft ${day.windBft}`,
     day.sunshinePct != null && `sun ${day.sunshinePct}%`,
+    day.distanceKm != null &&
+      `${km(day.distanceKm)}${day.energyKWh != null ? `, ${kwh(day.energyKWh)}` : ''}`,
   ]
     .filter(Boolean)
     .join(' · ')

@@ -15,9 +15,9 @@ import {
 } from '../lib/history'
 
 // Each day's prices as a band from the lowest to the highest slot, with the
-// average as a line; wind (Beaufort) and sun (% of possible sunshine) on
-// their own axes when shown (shorter labels on phones, where the readout
-// gives each day's values). Days not recorded are gaps. A readout above
+// average as a line; wind (Beaufort), sun (% of possible sunshine), driving
+// (km, as bars), and the trips' energy (kWh) on their own axes when shown
+// (shorter labels on phones, where the readout gives each day's values). Days not recorded are gaps. A readout above
 // follows the pointer or finger (today, otherwise); a dashed line marks
 // today.
 const props = defineProps<{ days: DayStats[]; today: string; show: Record<HistorySeries, boolean> }>()
@@ -84,6 +84,8 @@ function render() {
   const color = cssVar('--chart-price')
   const wind = cssVar('--chart-wind')
   const sun = cssVar('--chart-solar')
+  const driving = cssVar('--chart-away')
+  const energy = cssVar('--chart-required')
   const n = series.value.length
   const dates = series.value.map((s) => s.date)
   // Points while the days are few enough to tell apart.
@@ -151,6 +153,30 @@ function render() {
           pointRadius: dot ? 2 : 0,
           hidden: !show.sun,
         },
+        {
+          label: 'Energy',
+          data: point((d) => d.energyKWh),
+          yAxisID: 'kwh',
+          borderColor: energy,
+          backgroundColor: energy,
+          borderWidth: 1.5,
+          pointRadius: dot ? 2 : 0,
+          hidden: !show.energy,
+        },
+        {
+          // Behind the price lines (a higher order is drawn first).
+          type: 'bar' as const,
+          label: 'Driving',
+          data: point((d) => d.distanceKm),
+          yAxisID: 'km',
+          order: 1,
+          backgroundColor: alpha(driving, 0.3),
+          borderColor: alpha(driving, 0.6),
+          borderWidth: 1,
+          barPercentage: 0.9,
+          categoryPercentage: 0.8,
+          hidden: !show.driving,
+        },
       ],
     },
     options: {
@@ -206,6 +232,26 @@ function render() {
           min: 0,
           max: 100,
           ticks: { stepSize: compact ? 50 : 25, callback: (v) => `${v}%`, color: text },
+          grid: { display: false },
+          border: { display: false },
+        },
+        km: {
+          type: 'linear',
+          position: 'right',
+          display: show.driving,
+          min: 0,
+          suggestedMax: 50,
+          ticks: { maxTicksLimit: 4, callback: (v) => (compact ? `${v}` : `${v} km`), color: text },
+          grid: { display: false },
+          border: { display: false },
+        },
+        kwh: {
+          type: 'linear',
+          position: 'right',
+          display: show.energy,
+          min: 0,
+          suggestedMax: 10,
+          ticks: { maxTicksLimit: 4, callback: (v) => (compact ? `${v}` : `${v} kWh`), color: energy },
           grid: { display: false },
           border: { display: false },
         },

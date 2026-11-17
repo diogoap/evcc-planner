@@ -1,5 +1,7 @@
 // Registers only the Chart.js pieces the app uses, to keep the bundle small.
 import {
+  BarController,
+  BarElement,
   Chart,
   Filler,
   Legend,
@@ -13,6 +15,8 @@ import {
 import { clock, dayShort, localDate } from './format'
 
 Chart.register(
+  BarController,
+  BarElement,
   LineController,
   ScatterController,
   LineElement,

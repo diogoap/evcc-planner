@@ -34,7 +34,14 @@ describe('PriceHistoryCard', () => {
     vi.resetAllMocks()
     localStorage.clear()
     historyChoice.period = 'month'
-    Object.assign(historyChoice.show, { range: true, average: true, wind: false, sun: false })
+    Object.assign(historyChoice.show, {
+      range: true,
+      average: true,
+      wind: false,
+      sun: false,
+      driving: false,
+      energy: false,
+    })
   })
 
   it('shows the last month by default, and the period chosen', async () => {
@@ -71,7 +78,27 @@ describe('PriceHistoryCard', () => {
       average: true,
       wind: true,
       sun: false,
+      driving: false,
+      energy: false,
     })
+  })
+
+  it('shows driving and energy on request (off by default)', async () => {
+    api.history.mockResolvedValue(history([day('2026-11-09')]))
+    const w = mount(PriceHistoryCard, { props: { now } })
+    await flushPromises()
+    const [driving, energy] = [
+      w.get('[data-testid=history-legend-driving]'),
+      w.get('[data-testid=history-legend-energy]'),
+    ]
+    expect(driving.text()).toBe('Driving')
+    expect(energy.text()).toBe('Energy')
+    expect(driving.attributes('aria-pressed')).toBe('false')
+    expect(energy.attributes('aria-pressed')).toBe('false')
+    await driving.trigger('click')
+    await energy.trigger('click')
+    expect(w.get('[data-testid=history-chart]').text()).toBe('1 2026-11-09 range,average,driving,energy')
+    expect(w.text()).toContain('driving (km) and energy (kWh the trips need) from the day')
   })
 
   it('reloads every hour (the planner saves each day twice)', async () => {

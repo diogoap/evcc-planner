@@ -101,13 +101,17 @@ describe('price history', () => {
   it('reads out a day', () => {
     const today = '2026-11-09'
     expect(dayLine(day(today), today, today)).toBe(
-      'Today · average €0.25/kWh · €0.18–€0.39 · wind Bft 3 · sun 20%',
+      'Today · average €0.25/kWh · €0.18–€0.39 · wind Bft 3 · sun 20% · 24 km, 4.3 kWh',
     )
-    expect(dayLine(day('2026-11-08', { windBft: null, sunshinePct: null }), '2026-11-08', today)).toBe(
-      'Sun 8 Nov · average €0.25/kWh · €0.18–€0.39',
-    )
-    expect(dayLine(day('2026-11-07', { priceHours: 9.5 }), '2026-11-07', today)).toBe(
-      'Sat 7 Nov · average €0.25/kWh · €0.18–€0.39 · prices for 10 h · wind Bft 3 · sun 20%',
+    expect(
+      dayLine(
+        day('2026-11-08', { windBft: null, sunshinePct: null, distanceKm: null, energyKWh: null }),
+        '2026-11-08',
+        today,
+      ),
+    ).toBe('Sun 8 Nov · average €0.25/kWh · €0.18–€0.39')
+    expect(dayLine(day('2026-11-07', { priceHours: 9.5, energyKWh: null }), '2026-11-07', today)).toBe(
+      'Sat 7 Nov · average €0.25/kWh · €0.18–€0.39 · prices for 10 h · wind Bft 3 · sun 20% · 24 km',
     )
     expect(
       dayLine(
@@ -115,7 +119,7 @@ describe('price history', () => {
         '2026-11-06',
         today,
       ),
-    ).toBe('Fri 6 Nov · no prices · wind Bft 3 · sun 20%')
+    ).toBe('Fri 6 Nov · no prices · wind Bft 3 · sun 20% · 24 km, 4.3 kWh')
     expect(dayLine(null, '2026-11-05', today)).toBe('Thu 5 Nov · not recorded')
   })
 })

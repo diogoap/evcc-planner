@@ -8,8 +8,8 @@ import { periodFrom, periods, type HistorySeries } from '../lib/history'
 import ErrorBanner from './ErrorBanner.vue'
 import HistoryChart from './HistoryChart.vue'
 
-// Each day's prices over a chosen period (a month by default), with wind
-// and sun on request. The planner saves each day as it starts and again at
+// Each day's prices over a chosen period (a month by default), with wind,
+// sun, driving, and the trips' energy on request. The planner saves each day as it starts and again at
 // 23:45, so an hourly reload (and one when the period changes) is plenty.
 const props = defineProps<{ now: string }>()
 
@@ -38,6 +38,8 @@ const legend: { key: HistorySeries; label: string }[] = [
   { key: 'average', label: 'Average' },
   { key: 'wind', label: 'Wind' },
   { key: 'sun', label: 'Sun' },
+  { key: 'driving', label: 'Driving' },
+  { key: 'energy', label: 'Energy' },
 ]
 </script>
 
@@ -83,7 +85,8 @@ const legend: { key: HistorySeries; label: string }[] = [
       </div>
       <p class="small muted m-0 mt-3">
         One value per day, saved since {{ dayMonth(history.first ?? history.days[0]!.date) }}. Prices from
-        EVCC; wind (Beaufort) and sun (share of the possible sunshine) from KNMI's forecast for the day.
+        EVCC; wind (Beaufort) and sun (share of the possible sunshine) from KNMI's forecast for the day;
+        driving (km) and energy (kWh the trips need) from the day's trips.
       </p>
     </template>
   </section>
@@ -127,5 +130,15 @@ const legend: { key: HistorySeries; label: string }[] = [
 .swatch-sun {
   border-top: 2px dashed var(--chart-solar);
   height: 0;
+}
+
+.swatch-driving {
+  background: var(--chart-away);
+  opacity: 0.45;
+}
+
+.swatch-energy {
+  background: var(--chart-required);
+  height: 2px;
 }
 </style>

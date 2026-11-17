@@ -52,12 +52,16 @@ watch(shownDays, (n) => {
 })
 
 // The price history's period and the series it shows, remembered on this
-// device: the prices' range and average, not wind and sun, over a month.
+// device: the prices' range and average, not wind, sun, driving, or energy,
+// over a month.
 const historyKey = 'evcc-planner.history'
 function savedHistory() {
   const choice = {
     period: 'month' as Period,
-    show: { range: true, average: true, wind: false, sun: false } as Record<HistorySeries, boolean>,
+    show: { range: true, average: true, wind: false, sun: false, driving: false, energy: false } as Record<
+      HistorySeries,
+      boolean
+    >,
   }
   try {
     const saved = JSON.parse(localStorage.getItem(historyKey) ?? 'null')
