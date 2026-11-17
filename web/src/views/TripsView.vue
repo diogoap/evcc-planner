@@ -20,6 +20,7 @@ import {
   resetTrip,
   setTripEnabled,
   state,
+  syncCalendar,
 } from '../store'
 
 const route = useRoute()
@@ -57,6 +58,14 @@ function history(t: Trip) {
   router.push(historyLink(`trip:${t.key}`, `${t.title}, ${dayShort(t.date)}`))
 }
 
+// Reads the calendars now instead of waiting for the hourly sync.
+const syncing = ref(false)
+async function sync() {
+  syncing.value = true
+  await syncCalendar()
+  syncing.value = false
+}
+
 function onSaved(message: string) {
   editor.value = null
   notify(message)
@@ -75,6 +84,9 @@ function onSaved(message: string) {
           <option value="recurring">Recurring</option>
           <option value="manual">Manual</option>
         </select>
+        <button class="btn" type="button" :disabled="syncing" data-testid="sync-calendar" @click="sync">
+          <AppIcon name="refresh" :class="{ spinning: syncing }" />Sync calendar
+        </button>
         <button class="btn primary" type="button" @click="editor = { date: plan?.days[1]?.date }">
           <AppIcon name="plus" />Add trip
         </button>

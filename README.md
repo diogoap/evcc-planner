@@ -132,7 +132,8 @@ a warning in the log.
    addresses with commas. Names are read from the feeds; resetting a Google
    secret address keeps local trip edits.
 
-The planner syncs hourly (and on **Sync calendar now**). Timed events become
+The planner syncs hourly, and at once with **Sync calendar** on the Trips page
+(or **Sync calendar now** in Settings → Connections). Timed events become
 trips unless they are online meetings or at home (listed as "not counted");
 all-day events are skipped. Events without a location are shown disabled until
 they get one. Unclear locations (no address and not a saved place) count toward

@@ -132,6 +132,18 @@ test('the price history shows each recorded day over the period chosen', async (
   await expect(card.getByTestId('history-legend-sun')).toHaveAttribute('aria-pressed', 'true')
 })
 
+test('sync the calendar from the Trips page', async ({ page }) => {
+  await page.goto('/trips')
+  const button = page.getByTestId('sync-calendar')
+  await button.click()
+  await expect(page.getByText('Calendar synced')).toBeVisible()
+  await expect(button).toBeEnabled()
+  // The demo calendar's trips are listed.
+  await expect(page.getByText('Swimming lessons').first()).toBeVisible()
+  await page.evaluate(() => window.scrollTo(0, 0))
+  await page.screenshot({ path: test.info().outputPath('trips-sync.png') })
+})
+
 test('add a manual trip and keep it after reload', async ({ page }) => {
   await page.goto('/trips')
   await page.getByRole('button', { name: 'Add trip', exact: true }).click()

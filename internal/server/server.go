@@ -618,6 +618,8 @@ func (s *Server) syncCalendar(w http.ResponseWriter, r *http.Request) {
 	if err := s.Svc.Calendar.SyncAll(r.Context()); err != nil {
 		s.Log.Warn("calendar sync failed", "err", err)
 	}
+	// As after the hourly sync: the automatic plan check follows the trips.
+	s.Svc.Kick()
 	s.connections(w, r)
 }
 

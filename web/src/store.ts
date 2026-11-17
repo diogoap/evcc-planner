@@ -86,6 +86,28 @@ export async function mutate(action: () => Promise<unknown>, success?: string) {
   }
 }
 
+/**
+ * Reads the calendars now, says whether that worked, and reloads the plan.
+ * Returns the connections (with each calendar's outcome), or undefined when
+ * the planner wasn't reached.
+ */
+export async function syncCalendar() {
+  try {
+    const list = await api.syncCalendar()
+    const cal = list.find((c) => c.name === 'Google Calendar')
+    if (cal?.status === 'error' || cal?.status === 'not_configured') {
+      notify(`Calendar not synced: ${cal.detail}`, 'error')
+    } else {
+      notify('Calendar synced')
+    }
+    await refresh()
+    return list
+  } catch (e) {
+    notify((e as Error).message, 'error')
+    return undefined
+  }
+}
+
 // ---- trip actions (Trips page and day panel) ----
 
 export function setTripEnabled(t: Trip, enabled: boolean) {

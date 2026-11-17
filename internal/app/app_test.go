@@ -395,9 +395,19 @@ func TestHealthConnectionsAndStatic(t *testing.T) {
 	ta.json("GET", "/api/nope", nil, http.StatusNotFound, nil)
 
 	var conns []struct{ Name, Status string }
+	select {
+	case <-ta.app.Service.Kicked():
+	default:
+	}
 	ta.json("POST", "/api/calendar/sync", map[string]any{}, http.StatusOK, &conns)
 	if len(conns) < 3 || conns[0].Name != "EVCC" || conns[0].Status != "stub" || conns[1].Status != "stub" {
 		t.Errorf("connections = %+v", conns)
+	}
+	// Synced trips go to the automatic plan check at once.
+	select {
+	case <-ta.app.Service.Kicked():
+	default:
+		t.Error("a calendar sync should start the automatic plan check")
 	}
 
 	code, body := ta.do("GET", "/trips", nil)

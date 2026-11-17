@@ -9,7 +9,7 @@ notifications is in [AUTOMATION.md](AUTOMATION.md).
 
 ## Trips
 
-- Trips come from three places: Google Calendar (read-only, through each calendar's secret iCal link, synced every hour), recurring trips such as school runs, and one-off trips you add.
+- Trips come from three places: Google Calendar (read-only, through each calendar's secret iCal link, synced every hour or at once with **Sync calendar** on the Trips page), recurring trips such as school runs, and one-off trips you add.
 - A trip's time is when you must arrive. The planner works out when to leave from the route and a buffer. The trip home starts at the trip's end time.
 - Calendar events count as trips when they have a real place other than home. All-day events and video calls are skipped. Unclear events are marked "Needs review".
 - You can turn off, edit, or reset a single trip, or one date of a recurring trip. Your edits survive calendar syncs.

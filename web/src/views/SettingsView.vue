@@ -15,7 +15,7 @@ import ToggleSwitch from '../components/ToggleSwitch.vue'
 import { ago } from '../lib/format'
 import { controlLabel } from '../lib/status'
 import { useUnsaved } from '../lib/unsaved'
-import { mutate, notify, refresh, resumeAutomaticPlans, state } from '../store'
+import { mutate, notify, refresh, resumeAutomaticPlans, state, syncCalendar } from '../store'
 
 type Tab = 'home' | 'planning' | 'places' | 'advice' | 'notifications' | 'connections'
 const tabs: [Tab, string][] = [
@@ -243,14 +243,8 @@ async function removePlace(p: Place) {
   if (await mutate(() => api.deletePlace(p.id), 'Place deleted')) places.value = await api.places()
 }
 
-async function syncCalendar() {
-  try {
-    connections.value = await api.syncCalendar()
-    notify('Calendar synced')
-    refresh()
-  } catch (e) {
-    notify((e as Error).message, 'error')
-  }
+async function syncCalendarNow() {
+  connections.value = (await syncCalendar()) ?? connections.value
 }
 
 async function refreshForecasts() {
@@ -479,7 +473,7 @@ async function applyDemo() {
           Connections
           <span class="row">
             <button class="btn sm" type="button" @click="checkEVCC">Check EVCC</button>
-            <button class="btn sm" type="button" @click="syncCalendar">Sync calendar now</button>
+            <button class="btn sm" type="button" @click="syncCalendarNow">Sync calendar now</button>
             <button class="btn sm" type="button" :disabled="refreshing" @click="refreshForecasts">
               Refresh forecasts
             </button>

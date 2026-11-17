@@ -102,7 +102,7 @@ Trip rows keep the same on/off and edit controls as on the Trips page. Days with
 **Trips — edit individual dated journeys.**
 
 ```text
-Trips                [Next 7 days] [All sources] [+ Add trip]
+Trips   [Next 7 days] [All sources] [Sync calendar] [+ Add trip]
 
 TUESDAY 10 NOVEMBER
 [On ] 08:15  School drop-off       12 km    2.2 kWh
