@@ -212,10 +212,15 @@ describe('AdviceCard', () => {
     expect(w.emitted('cancel')).toEqual([[7]])
   })
 
-  it('steps between days', async () => {
+  it('steps between days, and its date opens the day', async () => {
     const w = card(advice({}))
     await w.get('[aria-label="Next day"]').trigger('click')
     expect(w.emitted('select')).toEqual([['2026-11-11']])
+    const open = w.get('[data-testid=advice-open-day]')
+    expect(open.text()).toBe('Tue 10')
+    expect(open.attributes('aria-label')).toBe('Open Tue 10')
+    await open.trigger('click')
+    expect(w.emitted('open')).toEqual([['2026-11-10']])
   })
 })
 
@@ -346,6 +351,66 @@ describe('WeekStrip advice', () => {
     expect(tile.attributes('aria-pressed')).toBe('true')
     await tile.trigger('click')
     expect(w.emitted('select')).toEqual([['2026-11-10']])
+    expect(w.emitted('open')).toBeUndefined()
+  })
+
+  it('opens the day on a long press or the context menu', async () => {
+    vi.useFakeTimers()
+    try {
+      const days: Day[] = [
+        {
+          date: '2026-11-10',
+          distanceKm: 0,
+          energyKWh: 0,
+          tripCount: 0,
+          disabledCount: 0,
+          doneCount: 0,
+          reviewCount: 0,
+          status: 'none',
+          chargePct: 0,
+        },
+      ]
+      const w = mount(WeekStrip, { props: { days, advice: [] } })
+      const tile = w.get('[data-testid="day-2026-11-10"]')
+      // jsdom has no PointerEvent: mouse events carry the same fields.
+      const fire = (type: string, init: MouseEventInit = {}) =>
+        tile.element.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, ...init }))
+      const down = { button: 0, clientX: 10, clientY: 10 }
+      // Held for half a second: open, and the click that follows does not
+      // also select.
+      fire('pointerdown', down)
+      vi.advanceTimersByTime(499)
+      expect(w.emitted('open')).toBeUndefined()
+      vi.advanceTimersByTime(1)
+      expect(w.emitted('open')).toEqual([['2026-11-10']])
+      fire('pointerup')
+      fire('click')
+      expect(w.emitted('select')).toBeUndefined()
+      // A short press selects.
+      fire('pointerdown', down)
+      vi.advanceTimersByTime(200)
+      fire('pointerup')
+      fire('click')
+      expect(w.emitted('select')).toEqual([['2026-11-10']])
+      // Moving (a scroll) cancels the hold.
+      fire('pointerdown', down)
+      fire('pointermove', { clientX: 10, clientY: 40 })
+      vi.advanceTimersByTime(600)
+      expect(w.emitted('open')).toHaveLength(1)
+      // The context menu (right click, the menu key) opens it; after a
+      // hold, Android's context menu doesn't open it twice.
+      fire('pointerdown', { ...down, button: 2 })
+      fire('contextmenu')
+      expect(w.emitted('open')).toHaveLength(2)
+      fire('pointerdown', down)
+      vi.advanceTimersByTime(500)
+      fire('contextmenu')
+      expect(w.emitted('open')).toHaveLength(3)
+      expect(tile.attributes('aria-describedby')).toBe('week-hint')
+      expect(w.get('#week-hint').text()).toContain('Press and hold')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('highlights a lowest price the plan charges at', () => {

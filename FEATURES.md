@@ -65,7 +65,7 @@ notifications is in [AUTOMATION.md](AUTOMATION.md).
 
 - **Overview:** a "will the car be ready?" card, the week (tiles or a list, 3–7 days), the day's advice, and the charts (SoC over prices, published prices, price history).
 - In the week, a day's lowest price turns green (with a ⚡) when the plan charges at it: charge extra, or the trip plan charging later trips ahead. Its tooltip says which.
-- **Day panel:** one day's trips, charging, prices, weather, and advice, with quick actions.
+- **Day panel:** one day's trips, charging, prices, weather, and advice, with quick actions. In the week's tiles, a tap shows the day's advice in the advice card; press and hold (or right-click) opens the day, as does the date on the advice card or a tap on the chart.
 - **Trips**, **Recurring trips**, **Activity**, and **Settings** pages.
 - Works on phones (bottom bar, installable as an app, pull to refresh) and in light and dark mode. Checked for contrast, keyboard focus, screen reader labels, and 44 px touch targets.
 

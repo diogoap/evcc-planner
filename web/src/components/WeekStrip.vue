@@ -11,13 +11,60 @@ import AppIcon from './AppIcon.vue'
 // energy, the first departure, and the price. Screen readers get all of it,
 // in words, on every screen. Lowest prices the planner charges at (charge
 // extra, or charge ahead) are highlighted, with why in `good`.
+//
+// A tap selects the day for the advice card; pressing and holding opens the
+// day, as does the context menu (right click, the menu key, or Shift+F10).
 const props = defineProps<{
   days: Day[]
   advice: DayAdvice[]
   selected?: string
   good?: Map<string, string>
 }>()
-const emit = defineEmits<{ select: [date: string] }>()
+const emit = defineEmits<{ select: [date: string]; open: [date: string] }>()
+
+// How long a press opens the day, and how far it may move (a scroll
+// cancels it).
+const holdMs = 500
+const slopPx = 10
+let timer: ReturnType<typeof setTimeout> | undefined
+let held = false
+let from = { x: 0, y: 0 }
+
+function press(e: PointerEvent, date: string) {
+  held = false
+  if (e.button !== 0) return
+  from = { x: e.clientX, y: e.clientY }
+  clearTimeout(timer)
+  timer = setTimeout(() => {
+    timer = undefined
+    held = true
+    emit('open', date)
+  }, holdMs)
+}
+function move(e: PointerEvent) {
+  if (timer && Math.hypot(e.clientX - from.x, e.clientY - from.y) > slopPx) release()
+}
+function release() {
+  clearTimeout(timer)
+  timer = undefined
+}
+// The click after a hold (where the browser sends one) has opened the day
+// already.
+function tap(date: string) {
+  release()
+  if (held) {
+    held = false
+    return
+  }
+  emit('select', date)
+}
+// Android also sends the context menu on a long press: open only once.
+function menu(date: string) {
+  release()
+  if (held) return
+  held = true
+  emit('open', date)
+}
 
 const byDate = computed(() => new Map(props.advice.map((a) => [a.date, a])))
 
@@ -51,8 +98,16 @@ const tiles = computed(() =>
       type="button"
       class="week-day"
       :aria-pressed="selected === t.day.date"
+      aria-describedby="week-hint"
+      title="Tap for its advice; press and hold to open the day"
       :data-testid="`day-${t.day.date}`"
-      @click="emit('select', t.day.date)"
+      @pointerdown="press($event, t.day.date)"
+      @pointermove="move"
+      @pointerup="release"
+      @pointercancel="release"
+      @pointerleave="release"
+      @click="tap(t.day.date)"
+      @contextmenu.prevent="menu(t.day.date)"
     >
       <span class="week-date"
         ><span class="week-weekday">{{ t.weekday }}</span> <span class="num">{{ t.date }}</span></span
@@ -91,6 +146,9 @@ const tiles = computed(() =>
         ><span class="week-wide">{{ reviewText(t.day.reviewCount) }}</span></span
       >
     </button>
+    <span id="week-hint" class="sr-only"
+      >Shows the day's advice. Press and hold, or use the context menu key, to open the day.</span
+    >
   </div>
 </template>
 
@@ -117,6 +175,10 @@ const tiles = computed(() =>
   font: inherit;
   cursor: pointer;
   box-shadow: var(--shadow);
+  /* Pressing and holding opens the day: no text selection or callout. */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .week-day:hover {

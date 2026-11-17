@@ -27,6 +27,8 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{
   select: [date: string]
+  // The date between the arrows opens the day.
+  open: [date: string]
   propose: [kind: 'extra_plan' | 'postpone']
   dismiss: [undo: boolean]
   cancel: [id: number]
@@ -77,7 +79,16 @@ const reference = computed(() => referenceText(props.advice))
         >
           <AppIcon name="chevron-left" />
         </button>
-        <span class="small num normal-case">{{ dayShort(advice.date) }}</span>
+        <button
+          class="btn sm ghost num normal-case"
+          type="button"
+          :aria-label="`Open ${dayShort(advice.date)}`"
+          title="Open the day"
+          data-testid="advice-open-day"
+          @click="emit('open', advice.date)"
+        >
+          {{ dayShort(advice.date) }}
+        </button>
         <button
           class="btn nav-btn"
           type="button"

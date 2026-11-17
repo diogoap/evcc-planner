@@ -18,7 +18,8 @@ async function settled(page: Page) {
 
 test('a day opens in a panel with its trips, charging, advice, and actions', async ({ page, isMobile }) => {
   await page.goto('/')
-  await page.getByTestId('day-2026-11-10').click()
+  // Pressing and holding a day opens it (a tap only picks the advice card's day).
+  await page.getByTestId('day-2026-11-10').click({ delay: 700 })
   const panel = page.getByTestId('day-panel')
   await expect(page).toHaveURL(/\?day=2026-11-10$/)
   await expect(panel.getByRole('heading', { name: 'Tuesday 10 November' })).toBeFocused()
@@ -61,7 +62,7 @@ test('a day opens in a panel with its trips, charging, advice, and actions', asy
 
 test('move between days, then close with Escape or the back gesture', async ({ page }) => {
   await page.goto('/')
-  await page.getByTestId('day-2026-11-10').click()
+  await page.getByTestId('day-2026-11-10').click({ delay: 700 })
   const panel = page.getByTestId('day-panel')
   await panel.getByRole('button', { name: 'Next day' }).click()
   await expect(page).toHaveURL(/day=2026-11-11/)
@@ -70,8 +71,11 @@ test('move between days, then close with Escape or the back gesture', async ({ p
   await expect(panel).toBeHidden()
   await expect(page).not.toHaveURL(/day=/)
 
+  // The advice card's date opens its day too.
   await page.getByTestId('day-2026-11-12').click()
-  await expect(panel).toBeVisible()
+  await expect(panel).toBeHidden()
+  await page.getByTestId('advice-open-day').click()
+  await expect(panel.getByRole('heading', { name: 'Thursday 12 November' })).toBeVisible()
   await page.goBack()
   await expect(panel).toBeHidden()
   await expect(page).toHaveURL(/\/$/)
