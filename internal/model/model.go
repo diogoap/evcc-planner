@@ -17,11 +17,19 @@ type Settings struct {
 	UsableCapacityKWh      float64 `json:"usableCapacityKWh"`
 	ChargePowerKW          float64 `json:"chargePowerKW"`
 	ConsumptionKWhPer100Km float64 `json:"consumptionKWhPer100Km"`
-	ArrivalReservePct      float64 `json:"arrivalReservePct"`
-	ChargingEfficiencyPct  float64 `json:"chargingEfficiencyPct"`
-	DepartureBufferMin     int     `json:"departureBufferMin"`
-	ChargeBufferMin        int     `json:"chargeBufferMin"`
-	DefaultStayMin         int     `json:"defaultStayMin"`
+	// ConsumptionUnit is how the consumption is entered and shown; it is
+	// always stored in kWh/100 km.
+	ConsumptionUnit string `json:"consumptionUnit"`
+	// ConsumptionEntity, if set, is a Home Assistant sensor with the car's
+	// consumption in ConsumptionEntityUnit. Its last valid value replaces
+	// ConsumptionKWhPer100Km in the plan.
+	ConsumptionEntity     string  `json:"consumptionEntity"`
+	ConsumptionEntityUnit string  `json:"consumptionEntityUnit"`
+	ArrivalReservePct     float64 `json:"arrivalReservePct"`
+	ChargingEfficiencyPct float64 `json:"chargingEfficiencyPct"`
+	DepartureBufferMin    int     `json:"departureBufferMin"`
+	ChargeBufferMin       int     `json:"chargeBufferMin"`
+	DefaultStayMin        int     `json:"defaultStayMin"`
 	// TripPlans is how trip plans reach EVCC: manual, plug_in (once when
 	// the car is plugged in), or automatic (kept in line with the trips).
 	// See AUTOMATION.md.
@@ -40,6 +48,46 @@ type Settings struct {
 	SolarTaxSaving float64 `json:"solarTaxSaving"`
 }
 
+// Consumption units: how a consumption value is given.
+const (
+	UnitKWhPer100Km = "kwh_per_100km"
+	UnitKmPerKWh    = "km_per_kwh"
+)
+
+// The plausible consumption, in kWh/100 km.
+const minConsumption, maxConsumption = 5.0, 60.0
+
+// KWhPer100Km converts a consumption given in unit to kWh/100 km.
+func KWhPer100Km(v float64, unit string) float64 {
+	if unit == UnitKmPerKWh {
+		if v <= 0 {
+			return 0
+		}
+		return 100 / v
+	}
+	return v
+}
+
+// ConsumptionInRange reports whether a consumption in kWh/100 km is
+// plausible.
+func ConsumptionInRange(kwh float64) bool { return kwh >= minConsumption && kwh <= maxConsumption }
+
+// ConsumptionUnitText is a unit as shown, e.g. km/kWh.
+func ConsumptionUnitText(unit string) string {
+	if unit == UnitKmPerKWh {
+		return "km/kWh"
+	}
+	return "kWh/100 km"
+}
+
+// ConsumptionRangeText is the plausible range in a unit, e.g. 1.7 to 20 km/kWh.
+func ConsumptionRangeText(unit string) string {
+	if unit == UnitKmPerKWh {
+		return fmt.Sprintf("%.1f to %g km/kWh", 100/maxConsumption, 100/minConsumption)
+	}
+	return fmt.Sprintf("%g to %g kWh/100 km", minConsumption, maxConsumption)
+}
+
 // Trip plan modes (Settings.TripPlans).
 const (
 	TripPlansManual    = "manual"
@@ -55,7 +103,6 @@ func (s Settings) Validate() error {
 	}{
 		{"usable capacity", s.UsableCapacityKWh, 10, 200},
 		{"charging power", s.ChargePowerKW, 1, 50},
-		{"consumption", s.ConsumptionKWhPer100Km, 5, 60},
 		{"arrival reserve", s.ArrivalReservePct, 0, 60},
 		{"charging efficiency", s.ChargingEfficiencyPct, 50, 100},
 		{"departure buffer", float64(s.DepartureBufferMin), 0, 240},
@@ -70,6 +117,17 @@ func (s Settings) Validate() error {
 		if c.v < c.lo || c.v > c.h {
 			return fmt.Errorf("%s must be between %g and %g", c.name, c.lo, c.h)
 		}
+	}
+	for _, u := range []string{s.ConsumptionUnit, s.ConsumptionEntityUnit} {
+		if u != UnitKWhPer100Km && u != UnitKmPerKWh {
+			return fmt.Errorf("consumption units must be %q or %q", UnitKWhPer100Km, UnitKmPerKWh)
+		}
+	}
+	if !ConsumptionInRange(s.ConsumptionKWhPer100Km) {
+		return fmt.Errorf("consumption must be from %s", ConsumptionRangeText(s.ConsumptionUnit))
+	}
+	if s.ConsumptionEntity != "" && !entityRe.MatchString(s.ConsumptionEntity) {
+		return fmt.Errorf("the consumption sensor must be an entity ID, e.g. sensor.car_efficiency")
 	}
 	switch s.TripPlans {
 	case TripPlansManual, TripPlansPlugIn, TripPlansAutomatic:
@@ -217,6 +275,14 @@ func (r SoCReading) Changed() time.Time {
 		return r.ObservedAt
 	}
 	return r.ChangedAt
+}
+
+// SensorReading is the last valid value of a Home Assistant sensor, such as
+// the car's consumption, and when Home Assistant received it.
+type SensorReading struct {
+	Entity     string
+	Value      float64
+	ObservedAt time.Time
 }
 
 // PlanWrite records a charging plan the app sent to EVCC.

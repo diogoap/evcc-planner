@@ -198,8 +198,19 @@ unplugged. It only reads, through Home Assistant's REST API.
    which is better than the SoC sensor's: an unchanged SoC is often not
    written again when the car reports. Without it, the reading is dated to
    when Home Assistant last received the value. `make
-   test-live` lists the battery, range, and timestamp sensors with the
-   reading each would give.
+   test-live` lists the battery, range, timestamp, and consumption sensors
+   with the reading each would give.
+
+**Consumption sensor (optional).** If Home Assistant has the car's
+consumption, choose it under **Settings → Home & vehicle → Consumption** and
+say whether it reports km/kWh or kWh/100 km (taken from the sensor's unit
+when it has one; the field suggests sensors in either unit). Its latest valid
+value then replaces the consumption set there in every calculation; a reading
+of zero, unknown, unavailable, or outside 5 to 60 kWh/100 km (1.7 to 20
+km/kWh) keeps the previous one. The setting shows the value the plan uses in
+both units, its age, and why a reading was not used. The consumption set by
+hand can be entered in either unit too and is used until the sensor has a
+valid value.
 
 The planner reads Home Assistant every 10 minutes (adjustable in Settings →
 Connections) and keeps each source's last reading. Settings → Connections shows the

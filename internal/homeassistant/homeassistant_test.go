@@ -213,21 +213,52 @@ func TestCandidates(t *testing.T) {
 		{EntityID: "binary_sensor.leaf_plugged", State: "on", Attributes: map[string]any{"device_class": "plug"}},
 		{EntityID: "sensor.trip", State: "12", Attributes: map[string]any{"unit_of_measurement": "mi"}},
 		{EntityID: "sensor.leaf_last_update", State: "2026-11-11T07:30:00+00:00", Attributes: map[string]any{"device_class": "timestamp"}},
+		{EntityID: "sensor.car_efficiency", State: "6.2", Attributes: map[string]any{"unit_of_measurement": "km/kWh"}},
+		{EntityID: "sensor.car_consumption", State: "16.1", Attributes: map[string]any{"unit_of_measurement": "kWh/100 km"}},
 	}
 	got := Candidates(states)
 	var ids []string
 	for _, c := range got {
 		ids = append(ids, c.EntityID+":"+c.Kind)
 	}
-	if strings.Join(ids, ",") != "sensor.leaf_battery:battery,sensor.leaf_last_update:timestamp,sensor.leaf_range:range,sensor.phone_battery:battery,sensor.trip:range" {
+	if strings.Join(ids, ",") != "sensor.car_consumption:efficiency,sensor.car_efficiency:efficiency,sensor.leaf_battery:battery,"+
+		"sensor.leaf_last_update:timestamp,sensor.leaf_range:range,sensor.phone_battery:battery,sensor.trip:range" {
 		t.Errorf("candidates = %v", ids)
 	}
-	if got[0].Name != "Leaf battery" || got[0].State != "72" || got[0].Unit != "%" {
-		t.Errorf("first = %+v", got[0])
+	if got[2].Name != "Leaf battery" || got[2].State != "72" || got[2].Unit != "%" {
+		t.Errorf("battery = %+v", got[2])
 	}
 	stub, _ := Stub{Now: time.Now, Car: func() (float64, float64) { return 38, 122 }}.Sensors(context.Background())
-	if len(stub) != 3 || stub[0].EntityID != StubEntity || stub[0].State != "38" || stub[1].Kind != KindTimestamp || stub[2].Kind != KindRange {
+	if len(stub) != 4 || stub[0].EntityID != StubEntity || stub[0].State != "38" || stub[1].Kind != KindEfficiency ||
+		stub[2].Kind != KindTimestamp || stub[3].Kind != KindRange {
 		t.Errorf("stub sensors = %+v", stub)
+	}
+}
+
+func TestParseConsumption(t *testing.T) {
+	e := func(state string) EntityState { return EntityState{EntityID: "sensor.car_efficiency", State: state} }
+	if v, err := ParseConsumption(e("6.25")); err != nil || v != 6.25 {
+		t.Fatalf("6.25 = %v, %v", v, err)
+	}
+	for state, want := range map[string]string{
+		"0":           "sensor.car_efficiency reads 0",
+		"-1":          "sensor.car_efficiency reads -1",
+		"unavailable": "sensor.car_efficiency is unavailable",
+		"unknown":     "sensor.car_efficiency is unknown",
+		"":            "sensor.car_efficiency is empty",
+		"fast":        `sensor.car_efficiency is "fast", not a number`,
+	} {
+		if _, err := ParseConsumption(e(state)); err == nil || err.Error() != want {
+			t.Errorf("%q: err = %v, want %q", state, err, want)
+		}
+	}
+	// The demo car's efficiency sensor.
+	st, err := Stub{Now: time.Now}.State(context.Background(), StubConsumptionEntity)
+	if err != nil || st.Unit() != "km/kWh" {
+		t.Fatalf("stub efficiency = %+v, %v", st, err)
+	}
+	if v, err := ParseConsumption(*st); err != nil || v != 6.4 {
+		t.Fatalf("stub efficiency = %v, %v", v, err)
 	}
 }
 

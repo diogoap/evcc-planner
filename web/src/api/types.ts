@@ -14,7 +14,14 @@ export interface Settings {
   homeAddress: string
   usableCapacityKWh: number
   chargePowerKW: number
+  /** Always stored in kWh/100 km. */
   consumptionKWhPer100Km: number
+  /** How the consumption is entered and shown. */
+  consumptionUnit: ConsumptionUnit
+  /** Optional Home Assistant sensor whose last valid value replaces the consumption. */
+  consumptionEntity: string
+  /** The unit that sensor reports in. */
+  consumptionEntityUnit: ConsumptionUnit
   arrivalReservePct: number
   chargingEfficiencyPct: number
   departureBufferMin: number
@@ -35,6 +42,22 @@ export interface Settings {
 }
 
 export type TripPlans = 'manual' | 'plug_in' | 'automatic'
+
+export type ConsumptionUnit = 'kwh_per_100km' | 'km_per_kwh'
+
+/** The consumption the plan uses, and where it comes from. */
+export interface ConsumptionView {
+  kwhPer100Km: number
+  source: 'manual' | 'homeassistant'
+  /** The Home Assistant sensor, when one is chosen, and its unit. */
+  entity?: string
+  unit?: ConsumptionUnit
+  /** The sensor's last valid value (in its unit) and when Home Assistant received it. */
+  sensorValue?: number
+  observedAt?: string
+  /** Why the latest reading was not used, or why the sensor isn't used at all. */
+  note?: string
+}
 
 /** The plan for the next departure: its own target plus later trips charged ahead. */
 export interface Target {
@@ -239,6 +262,7 @@ export interface Plan {
   warnings: string[]
   advice: AdviceView
   control: ControlView
+  consumption: ConsumptionView
 }
 
 export type Recommendation = 'none' | 'charge_ahead' | 'defer'
@@ -572,7 +596,7 @@ export interface HASensor {
   name: string
   state: string
   unit: string
-  kind: 'battery' | 'range' | 'timestamp'
+  kind: 'battery' | 'range' | 'timestamp' | 'efficiency'
 }
 
 export interface TripInput {

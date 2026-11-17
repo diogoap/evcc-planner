@@ -2,9 +2,10 @@
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
 import { api } from '../api/client'
-import type { Connection, Place, Settings, TripPlans } from '../api/types'
+import type { Connection, HASensor, Place, Settings, TripPlans } from '../api/types'
 import AdviceSettingsForm from '../components/AdviceSettingsForm.vue'
 import ConnectionSettingsForm from '../components/ConnectionSettingsForm.vue'
+import ConsumptionSetting from '../components/ConsumptionSetting.vue'
 import ErrorBanner from '../components/ErrorBanner.vue'
 import ForecastDetails from '../components/ForecastDetails.vue'
 import NotificationSettingsForm from '../components/NotificationSettingsForm.vue'
@@ -53,6 +54,8 @@ window.addEventListener('beforeunload', beforeUnload)
 onUnmounted(() => window.removeEventListener('beforeunload', beforeUnload))
 const places = ref<Place[]>([])
 const connections = ref<Connection[]>([])
+// Home Assistant's sensors, to suggest a consumption sensor (none without Home Assistant).
+const sensors = ref<HASensor[]>([])
 const newPlace = reactive({ name: '', address: '' })
 const editingPlace = ref<Place | null>(null)
 const saving = ref(false)
@@ -75,13 +78,6 @@ const fields: { key: keyof Settings; label: string; unit: string; step: string; 
     unit: 'kW',
     step: '0.01',
     hint: 'What the charger delivers to the car, e.g. 3.68 kW at 16 A on one phase. Sets how long charging takes.',
-  },
-  {
-    key: 'consumptionKWhPer100Km',
-    label: 'Consumption',
-    unit: 'kWh/100 km',
-    step: '0.1',
-    hint: 'Average use including heating or cooling. Turns trip distance into energy; raise it in winter.',
   },
   {
     key: 'arrivalReservePct',
@@ -202,7 +198,13 @@ async function load() {
     error.value = (e as Error).message
   }
 }
-onMounted(load)
+onMounted(() => {
+  load()
+  api
+    .homeAssistantSensors()
+    .then((list) => (sensors.value = list))
+    .catch(() => {})
+})
 
 async function saveSettings() {
   if (!settings.value) return
@@ -329,6 +331,12 @@ async function applyDemo() {
             <span :id="`hint-${f.key}`" class="field-hint">{{ f.hint }}</span>
           </label>
         </div>
+        <ConsumptionSetting
+          v-model="settings"
+          :sensors="sensors"
+          :used="state.plan?.consumption ?? null"
+          :now="state.plan?.now"
+        />
         <p class="small muted m-0">
           Saved privately in the planner's database. Config files only seed the vehicle and buffer values on
           first use.

@@ -212,6 +212,16 @@ Scope:
 </details>
 
 <details>
+<summary><b>Consumption from Home Assistant</b> ✅</summary>
+
+✅ **Done** (2026-11-17).
+
+- The consumption is entered in kWh/100 km or km/kWh (Settings → Home & vehicle; stored in kWh/100 km, both shown read-only).
+- Optional Home Assistant sensor with the car's consumption, in km/kWh or kWh/100 km (asked; taken from the sensor's unit when it has one). Read with the Home Assistant poll and right after saving. Its last valid value (a positive number within 5 to 60 kWh/100 km) is saved with its time and replaces the set value everywhere in the plan; zero, unknown, unavailable, implausible, or failed readings keep the previous value. Without a valid value yet, the set value is used. The setting shows what the plan uses in both units, its age, and why a reading was not used.
+
+</details>
+
+<details>
 <summary><b>Price history</b> ✅</summary>
 
 ✅ **Done** (2026-11-17). What the app does is now also listed in short in [FEATURES.md](FEATURES.md), which will replace this plan.

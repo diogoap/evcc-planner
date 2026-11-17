@@ -210,6 +210,13 @@ var migrations = []string{
 		sunshine_pct INTEGER,
 		updated_at TEXT NOT NULL
 	);`,
+	// The last valid value of each Home Assistant sensor read for planning
+	// (the car's consumption), so it survives a restart.
+	`CREATE TABLE sensor_readings (
+		entity TEXT PRIMARY KEY,
+		value REAL NOT NULL,
+		observed_at TEXT NOT NULL
+	);`,
 }
 
 // Open opens (creating if needed) the database at path and migrates it.
@@ -920,6 +927,33 @@ func (s *Store) SaveSoC(r model.SoCReading) error {
 	return err
 }
 
+// ---- sensor readings ----
+
+// SaveSensorReading records a sensor's latest valid value.
+func (s *Store) SaveSensorReading(r model.SensorReading) error {
+	_, err := s.q.Exec(`INSERT INTO sensor_readings (entity, value, observed_at) VALUES (?, ?, ?)
+		ON CONFLICT(entity) DO UPDATE SET value = excluded.value, observed_at = excluded.observed_at`,
+		r.Entity, r.Value, fmtTime(r.ObservedAt))
+	return err
+}
+
+// SensorReading returns a sensor's last valid value, or nil if it has none.
+func (s *Store) SensorReading(entity string) (*model.SensorReading, error) {
+	r := model.SensorReading{Entity: entity}
+	var observed string
+	err := s.q.QueryRow(`SELECT value, observed_at FROM sensor_readings WHERE entity = ?`, entity).Scan(&r.Value, &observed)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if r.ObservedAt, err = parseTime(observed); err != nil {
+		return nil, err
+	}
+	return &r, nil
+}
+
 // ---- plan writes ----
 
 // AddPlanWrite records a plan sent to EVCC.
@@ -1185,7 +1219,7 @@ func (s *Store) Cleanup(cutoff time.Time, loc *time.Location) (map[string]int64,
 func (s *Store) Reset() error {
 	for _, table := range []string{"settings", "places", "recurring_templates", "manual_trips", "trip_overrides",
 		"calendar_events", "calendar_sync", "soc_readings", "plan_writes", "forecast_sources", "advice_dismissals",
-		"evcc_adjustments", "audit_events", "notifications", "day_stats"} {
+		"evcc_adjustments", "audit_events", "notifications", "day_stats", "sensor_readings"} {
 		if _, err := s.q.Exec("DELETE FROM " + table); err != nil {
 			return err
 		}

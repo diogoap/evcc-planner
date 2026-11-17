@@ -18,6 +18,7 @@ notifications is in [AUTOMATION.md](AUTOMATION.md).
 ## Planning
 
 - Distance and travel time come from Google Routes (with traffic, cached). Energy comes from the car's consumption.
+- Consumption is set in kWh/100 km or km/kWh (both are shown), or read from a Home Assistant sensor in either unit. The sensor's latest valid value is used; zero, unavailable, or implausible readings keep the previous value.
 - For each departure: the battery level needed (state of charge, SoC), with a reserve for arrival, charging losses, and time to charge.
 - The car is assumed to charge whenever it is home. Trips the car can't make in time, or that need more than a full battery, are flagged.
 - The SoC comes from EVCC while the car is plugged in, otherwise from Home Assistant. The app shows where each value comes from and how old it is.

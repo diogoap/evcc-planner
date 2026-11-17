@@ -212,6 +212,36 @@ test('calendar events without a location are shown disabled', async ({ page }) =
   await expect(page.getByText('Some trips have no distance')).toHaveCount(0)
 })
 
+test('consumption in either unit, or from a Home Assistant sensor', async ({ page }) => {
+  await page.goto('/settings')
+  const value = page.getByTestId('setting-consumptionKWhPer100Km')
+  const both = page.getByTestId('consumption-both')
+  await expect(both).toHaveText('18.0 kWh/100 km · 5.6 km/kWh')
+  await page.getByTestId('setting-consumptionUnit').selectOption('km_per_kwh')
+  await expect(value).toHaveValue('5.56')
+  await value.fill('5')
+  await expect(both).toHaveText('20.0 kWh/100 km · 5.0 km/kWh')
+  await page.getByRole('button', { name: 'Save settings' }).click()
+  await expect(page.getByText('Settings saved')).toBeVisible()
+  await page.reload()
+  await expect(value).toHaveValue('5')
+  await expect(page.getByTestId('setting-consumptionUnit')).toHaveValue('km_per_kwh')
+
+  // The demo car's efficiency sensor (6.4 km/kWh): its unit comes from
+  // Home Assistant, and once saved the plan uses it.
+  await page.getByTestId('setting-consumptionEntity').fill('sensor.demo_leaf_efficiency')
+  await expect(page.getByTestId('setting-consumptionEntityUnit')).toHaveValue('km_per_kwh')
+  const sensor = page.getByTestId('consumption-sensor')
+  await expect(sensor).toHaveText('Reads 6.4 km/kWh now: 15.6 kWh/100 km · 6.4 km/kWh. Save to use it.')
+  await page.getByRole('button', { name: 'Save settings' }).click()
+  await expect(sensor).toHaveText(
+    'The plan uses 15.6 kWh/100 km · 6.4 km/kWh from this sensor, read 20 min ago.',
+  )
+  await shot(page, 'settings-consumption')
+  await page.goto('/')
+  await expect(page.getByTestId('day-2026-11-10')).toContainText('15.6 kWh')
+})
+
 test('settings persist and change the plan', async ({ page }) => {
   await page.goto('/settings')
   await expect(page.getByTestId('home-address')).toHaveValue('Demo Home 1, Demo Town')

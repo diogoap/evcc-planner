@@ -77,7 +77,8 @@ type Service struct {
 	haErr     error
 	haOKAt    time.Time
 	carLoc    *LocationView // from the optional car location sensor
-	listenErr error         // the notification button listener
+	consNote  consumptionNote
+	listenErr error // the notification button listener
 	listenOK  bool
 }
 
@@ -144,9 +145,10 @@ func (s *Service) PollEVCC(ctx context.Context) error {
 
 // PollHomeAssistant reads the car's SoC from Home Assistant, which has it
 // even while the car is unplugged, and records it with the time the car
-// reported it.
+// reported it; also the consumption sensor, if one is chosen.
 func (s *Service) PollHomeAssistant(ctx context.Context) error {
 	cs := s.state()
+	s.pollConsumption(ctx, cs)
 	if cs.HA == nil {
 		return nil
 	}
@@ -259,6 +261,7 @@ func (s *Service) Settings() (model.Settings, error) {
 // SaveSettings validates and stores planning settings.
 func (s *Service) SaveSettings(ctx context.Context, v model.Settings) (model.Settings, error) {
 	v.HomeAddress = strings.TrimSpace(v.HomeAddress)
+	v.ConsumptionEntity = strings.TrimSpace(v.ConsumptionEntity)
 	if err := v.Validate(); err != nil {
 		return v, ValidationError{Msg: err.Error()}
 	}
@@ -292,6 +295,8 @@ func (s *Service) SaveSettings(ctx context.Context, v model.Settings) (model.Set
 		s.cacheMu.Lock()
 		s.planning = &v
 		s.cacheMu.Unlock()
+		// Read a chosen consumption sensor now, so the plan uses it at once.
+		s.pollConsumption(ctx, s.state())
 	}
 	return v, err
 }

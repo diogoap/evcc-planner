@@ -32,6 +32,9 @@ type PlanView struct {
 	Warnings    []string         `json:"warnings"`
 	Advice      *AdviceView      `json:"advice"`
 	Control     ControlView      `json:"control"`
+	// Consumption is what the plan uses and where it comes from;
+	// Settings.ConsumptionKWhPer100Km holds the same value.
+	Consumption ConsumptionView `json:"consumption"`
 	// Each local date's enabled trips, also those already driven, for the
 	// day history.
 	driving map[string]driving
@@ -265,6 +268,13 @@ func (s *Service) Plan(ctx context.Context) (*PlanView, error) {
 	if err != nil {
 		return nil, err
 	}
+	// The consumption sensor's value, when one is chosen, replaces the one
+	// set by hand everywhere in the plan.
+	kwh, consumption, err := s.consumption(settings)
+	if err != nil {
+		return nil, err
+	}
+	settings.ConsumptionKWhPer100Km = kwh
 	from, to := s.window()
 	now := s.now()
 	list, ignored, err := s.loadTrips(from, to, settings, "")
@@ -295,7 +305,7 @@ func (s *Service) Plan(ctx context.Context) (*PlanView, error) {
 	view := &PlanView{
 		Now: now, Timezone: s.Cfg.Timezone, From: from, To: to, Settings: settings,
 		HomeMissing: settings.HomeAddress == "", SoC: socView, Timeline: result.Timeline,
-		Trips: []TripView{}, Ignored: []IgnoredView{}, Warnings: []string{},
+		Trips: []TripView{}, Ignored: []IgnoredView{}, Warnings: []string{}, Consumption: consumption,
 	}
 	if view.Timeline == nil {
 		view.Timeline = []planner.Point{}

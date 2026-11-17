@@ -154,6 +154,8 @@ func (d Defaults) Settings() model.Settings {
 		UsableCapacityKWh:      d.UsableCapacityKWh,
 		ChargePowerKW:          d.ChargePowerKW,
 		ConsumptionKWhPer100Km: d.ConsumptionKWhPer100Km,
+		ConsumptionUnit:        model.UnitKWhPer100Km,
+		ConsumptionEntityUnit:  model.UnitKmPerKWh,
 		ArrivalReservePct:      d.ArrivalReservePct,
 		ChargingEfficiencyPct:  d.ChargingEfficiencyPct,
 		DepartureBufferMin:     d.DepartureBufferMin,

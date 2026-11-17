@@ -31,30 +31,33 @@ type Locator interface {
 	State(ctx context.Context, entityID string) (*EntityState, error)
 }
 
-// SensorLister lists sensors that could hold the car's SoC, range, or
-// reading time.
+// SensorLister lists sensors that could hold the car's SoC, range, reading
+// time, or consumption.
 type SensorLister interface {
 	Sensors(ctx context.Context) ([]Sensor, error)
 }
 
-// Sensor is a candidate for the SoC, range, or reading-time sensor.
+// Sensor is a candidate for the SoC, range, reading-time, or consumption
+// sensor.
 type Sensor struct {
 	EntityID string `json:"entityId"`
 	Name     string `json:"name"`
 	State    string `json:"state"`
 	Unit     string `json:"unit"`
-	Kind     string `json:"kind"` // battery, range, or timestamp
+	Kind     string `json:"kind"` // battery, range, timestamp, or efficiency
 }
 
 // Sensor kinds.
 const (
-	KindBattery   = "battery"
-	KindRange     = "range"
-	KindTimestamp = "timestamp"
+	KindBattery    = "battery"
+	KindRange      = "range"
+	KindTimestamp  = "timestamp"
+	KindEfficiency = "efficiency"
 )
 
-// Candidates picks battery level sensors (%), distance sensors (km, mi), and
-// timestamp sensors, sorted by entity ID.
+// Candidates picks battery level sensors (%), distance sensors (km, mi),
+// timestamp sensors, and consumption sensors (km/kWh, kWh/100 km), sorted by
+// entity ID.
 func Candidates(states []EntityState) []Sensor {
 	var out []Sensor
 	for _, e := range states {
@@ -67,6 +70,8 @@ func Candidates(states []EntityState) []Sensor {
 		switch {
 		case class == "battery" && sn.Unit == "%":
 			sn.Kind = KindBattery
+		case efficiencyUnits[strings.ReplaceAll(strings.ToLower(sn.Unit), " ", "")]:
+			sn.Kind = KindEfficiency
 		case class == "distance" || sn.Unit == "km" || sn.Unit == "mi":
 			sn.Kind = KindRange
 		case class == "timestamp":
@@ -79,6 +84,9 @@ func Candidates(states []EntityState) []Sensor {
 	sort.Slice(out, func(i, j int) bool { return out[i].EntityID < out[j].EntityID })
 	return out
 }
+
+// efficiencyUnits are consumption units, lower case without spaces.
+var efficiencyUnits = map[string]bool{"km/kwh": true, "kwh/100km": true}
 
 // Reading is the car's SoC as Home Assistant reports it.
 type Reading struct {
@@ -153,6 +161,22 @@ func ParseSoC(e EntityState) (Reading, error) {
 		r.ChangedAt = r.ObservedAt
 	}
 	return r, nil
+}
+
+// ParseConsumption reads a consumption sensor's value: a positive number.
+// Zero, unknown, and unavailable count as no value.
+func ParseConsumption(e EntityState) (float64, error) {
+	if e.unknown() {
+		return 0, fmt.Errorf("%s is %s", e.EntityID, orDefault(e.State, "empty"))
+	}
+	v, err := strconv.ParseFloat(e.State, 64)
+	if err != nil {
+		return 0, fmt.Errorf("%s is %q, not a number", e.EntityID, e.State)
+	}
+	if v <= 0 {
+		return 0, fmt.Errorf("%s reads %g", e.EntityID, v)
+	}
+	return v, nil
 }
 
 // ParseTimestamp reads a timestamp sensor, such as when the car last
@@ -372,6 +396,9 @@ const (
 	StubUpdatedEntity = "sensor.demo_leaf_last_update"
 	// StubLocationEntity is the demo car's device tracker; the car is home.
 	StubLocationEntity = "device_tracker.demo_leaf"
+	// StubConsumptionEntity is the demo car's efficiency, in km/kWh.
+	StubConsumptionEntity = "sensor.demo_leaf_efficiency"
+	stubConsumption       = "6.4"
 )
 
 // stubLag is how far the stub's readings trail the car, like a cloud
@@ -393,13 +420,20 @@ func (s Stub) SoC(ctx context.Context) (*Reading, error) {
 	return &Reading{Entity: StubEntity, Percent: soc, RangeKm: &rangeKm, ObservedAt: at, ChangedAt: at}, nil
 }
 
-// State reports the demo car's location (home); other entities are unknown.
+// State reports the demo car's location (home) and efficiency; other
+// entities are unknown.
 func (s Stub) State(ctx context.Context, entityID string) (*EntityState, error) {
-	if entityID != StubLocationEntity {
+	at := s.Now().Add(-stubLag).Truncate(time.Minute)
+	e := &EntityState{EntityID: entityID, LastChanged: at, LastUpdated: at, LastReported: at}
+	switch entityID {
+	case StubLocationEntity:
+		e.State = "home"
+	case StubConsumptionEntity:
+		e.State, e.Attributes = stubConsumption, map[string]any{"unit_of_measurement": "km/kWh"}
+	default:
 		return nil, fmt.Errorf("%s: %w", entityID, ErrNotFound)
 	}
-	at := s.Now().Add(-stubLag).Truncate(time.Minute)
-	return &EntityState{EntityID: entityID, State: "home", LastChanged: at, LastUpdated: at, LastReported: at}, nil
+	return e, nil
 }
 
 // Sensors lists the demo car's sensors.
@@ -408,6 +442,7 @@ func (s Stub) Sensors(ctx context.Context) ([]Sensor, error) {
 	at := s.Now().Add(-stubLag).Truncate(time.Minute)
 	return []Sensor{
 		{EntityID: StubEntity, Name: "Demo Leaf battery", State: strconv.FormatFloat(soc, 'f', -1, 64), Unit: "%", Kind: KindBattery},
+		{EntityID: StubConsumptionEntity, Name: "Demo Leaf efficiency", State: stubConsumption, Unit: "km/kWh", Kind: KindEfficiency},
 		{EntityID: StubUpdatedEntity, Name: "Demo Leaf last update", State: at.UTC().Format(time.RFC3339), Kind: KindTimestamp},
 		{EntityID: StubRangeEntity, Name: "Demo Leaf range", State: strconv.FormatFloat(rangeKm, 'f', -1, 64), Unit: "km", Kind: KindRange},
 	}, nil

@@ -242,7 +242,9 @@ type placeRecord struct {
 
 var settingLabels = map[string]string{
 	"homeAddress": "home address", "usableCapacityKWh": "usable capacity", "chargePowerKW": "charging power",
-	"consumptionKWhPer100Km": "consumption", "arrivalReservePct": "arrival reserve",
+	"consumptionKWhPer100Km": "consumption", "consumptionUnit": "consumption unit",
+	"consumptionEntity": "consumption sensor", "consumptionEntityUnit": "consumption sensor unit",
+	"arrivalReservePct":     "arrival reserve",
 	"chargingEfficiencyPct": "charging efficiency", "departureBufferMin": "departure buffer",
 	"chargeBufferMin": "charging time buffer", "defaultStayMin": "default stay",
 	"tripPlans": "trip plans", "chargeAhead": "charge ahead", "chargeAheadMinSaving": "minimum saving",

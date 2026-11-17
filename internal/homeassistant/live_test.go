@@ -65,11 +65,16 @@ func TestLiveHomeAssistant(t *testing.T) {
 			if ts, err := ParseTimestamp(e, cfg.Location); err == nil {
 				line += " · " + ts.In(cfg.Location).Format(time.DateTime)
 			}
+		case KindEfficiency:
+			// A candidate for the consumption sensor.
+			if _, err := ParseConsumption(e); err != nil {
+				line += " · not usable now: " + err.Error()
+			}
 		}
 		t.Log(line)
 	}
 	if len(sensors) == 0 {
-		t.Error("no battery (%), distance, or timestamp sensors found")
+		t.Error("no battery (%), distance, timestamp, or consumption sensors found")
 	}
 
 	// Phones for notifications (listing only; nothing is sent).
