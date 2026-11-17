@@ -84,10 +84,10 @@ async function save() {
       <fieldset class="stack panel gap-3" data-testid="extra-levels">
         <legend class="small muted">Charge extra</legend>
         <p class="field-hint m-0">
-          Charges more when blocks at home are this much cheaper than tomorrow's lowest published price (or,
-          before it is published, the past 7 days' average lowest price), as far as those blocks can. Blocks
-          at or below €0 count for every step. Which steps apply depends on how strongly the coming days look
-          cheaper (weekly outlook, wind, sun).
+          Charges more when blocks at home are this much cheaper than tomorrow's lowest price (published;
+          before that, what the weekly outlook expects, or the past 7 days' average lowest price), as far as
+          those blocks can. Blocks at or below €0 count for every step. Which steps apply depends on how
+          strongly the coming days look cheaper (weekly outlook, wind, sun).
         </p>
         <div v-for="l in levels" :key="l.key" class="stack gap-2" :data-testid="`extra-${l.name}`">
           <label class="row small">
@@ -151,7 +151,10 @@ async function save() {
               <option :value="3">3 — High</option>
               <option :value="2">2 — Medium</option>
             </select>
-            <span class="field-hint">Low-confidence advice never acts.</span>
+            <span class="field-hint"
+              >3 acts only against tomorrow's published prices; 2 also against the weekly outlook or a week of
+              price history. Low-confidence advice never acts.</span
+            >
           </label>
         </div>
         <label class="row small">

@@ -106,5 +106,12 @@ describe('weather texts', () => {
     expect(referenceText(advice({ reference: { value: 0.3, basis: 'history', days: 5, detail: '' } }))).toBe(
       "Past 5 days' lowest €0.30",
     )
+    expect(
+      referenceText(
+        advice({
+          reference: { value: 0.2933, basis: 'outlook', day: 'Thursday', source: 'weekly', detail: '' },
+        }),
+      ),
+    ).toBe("Thu's expected lowest €0.29")
   })
 })

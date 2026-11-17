@@ -318,15 +318,15 @@ func (s *Service) buildAdvice(view *PlanView, result planner.Result, socKnown bo
 // publishedDay adds what charge extra and defer need for a day with
 // published prices: the charging capacity at home from now until the
 // plan's deadline (the end of the day, or the next departure minus the
-// charging buffer), the trips with what they miss, the day's lowest price
-// once all of it is published, the SoC when charging can start, the trips'
-// target when the window ends at the next departure, and the times prices
-// are negative while the sun shines.
+// charging buffer), the trips with what they miss, the day's lowest and
+// average price once all of it is published, the SoC when charging can
+// start, the trips' target when the window ends at the next departure, and
+// the times prices are negative while the sun shines.
 func (s *Service) publishedDay(day *advice.Day, view *PlanView, result planner.Result, slots []evcc.Rate,
 	charging []planner.Slot, solar *evcc.SolarForecast, start, end time.Time, socKnown bool) {
 	day.Published = true
-	if low, _, _, hours := dayPrices(slots, start, end); low != nil && hours >= end.Sub(start).Hours()-0.01 {
-		day.Lowest = low
+	if low, avg, _, hours := dayPrices(slots, start, end); low != nil && hours >= end.Sub(start).Hours()-0.01 {
+		day.Lowest, day.Average = low, avg
 	}
 	settings := view.Settings
 	params := planParams(settings)

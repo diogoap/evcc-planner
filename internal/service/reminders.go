@@ -285,8 +285,13 @@ func (r *reminders) solar() {
 		return
 	}
 	than := "tomorrow's lowest price"
-	if a.Reference != nil && a.Reference.Basis == advice.RefHistory {
-		than = "this week's lowest prices"
+	if ref := a.Reference; ref != nil {
+		switch ref.Basis {
+		case advice.RefOutlook:
+			than = ref.Day + "'s expected lowest price"
+		case advice.RefHistory:
+			than = "this week's lowest prices"
+		}
 	}
 	r.send(model.Notification{
 		Key: "solar:" + a.Date, Kind: model.NotifySolar, Subject: "solar:" + a.Date, Latest: a.SolarUntil,
@@ -297,18 +302,21 @@ func (r *reminders) solar() {
 	}, false)
 }
 
-// extraAdvice is today's advice when it is to charge extra from the grid
-// with a plan, offered or made, and has not been dismissed.
+// extraAdvice is today's or tomorrow's advice, the first whose cheap
+// blocks are still ahead, when it is to charge extra from the grid with a
+// plan, offered or made, and has not been dismissed. Tomorrow's matters
+// for a cheap night, which starts in quiet hours.
 func (r *reminders) extraAdvice() *DayAdviceView {
 	if r.view.Advice == nil {
 		return nil
 	}
 	today := localtime.Date(r.now, r.s.loc())
+	tomorrow := localtime.Date(localtime.AddDays(localtime.StartOfDay(r.now, r.s.loc()), 1), r.s.loc())
 	for i := range r.view.Advice.Days {
 		a := &r.view.Advice.Days[i]
 		planned := a.Adjustment != nil && a.Adjustment.Kind == model.AdjustExtraPlan
-		if a.Date == today && a.Recommendation == advice.ChargeExtra && !a.Solar && !a.Dismissed && len(a.Blocks) > 0 &&
-			(a.Action == model.AdjustExtraPlan || planned) {
+		if (a.Date == today || a.Date == tomorrow) && a.Recommendation == advice.ChargeExtra && !a.Solar && !a.Dismissed &&
+			len(a.Blocks) > 0 && a.Blocks[len(a.Blocks)-1].Until.After(r.now) && (a.Action == model.AdjustExtraPlan || planned) {
 			return a
 		}
 	}
@@ -317,8 +325,9 @@ func (r *reminders) extraAdvice() *DayAdviceView {
 
 // extra asks to plug in while the car is home and unplugged on a day whose
 // advice is to charge extra with a plan: from half an hour before its cheap
-// blocks start until half an hour before they end. Without the plan yet, it
-// also asks to create it.
+// blocks start (just before quiet hours when that falls in them) until half
+// an hour before they end. Without the plan yet, it also asks to create it,
+// unless advice auto-apply will when tomorrow starts.
 func (r *reminders) extra() {
 	if !r.settings.Extra || r.lp.Connected || r.onTheRoad() || r.carAway() {
 		return
@@ -328,11 +337,19 @@ func (r *reminders) extra() {
 		return
 	}
 	from, until := a.Blocks[0].From, a.Blocks[len(a.Blocks)-1].Until
-	if r.now.Before(from.Add(-30*time.Minute)) || !r.now.Before(until.Add(-30*time.Minute)) || !r.allowed(false) {
+	due := from.Add(-30 * time.Minute)
+	if r.quiet(due) {
+		due = r.quietStart(due).Add(-beforeQuiet)
+	}
+	if r.now.Before(due) || !r.now.Before(until.Add(-30*time.Minute)) || !r.allowed(false) {
 		return
 	}
 	then := " Plug in so the plan can charge."
-	if a.Adjustment == nil {
+	switch {
+	case a.Adjustment != nil:
+	case a.Date != localtime.Date(r.now, r.s.loc()) && r.autoExtra(a):
+		then = " The plan is created automatically when the day starts; plug in so it can charge."
+	default:
 		then = " Create the plan in the planner and plug in."
 	}
 	r.send(model.Notification{
@@ -340,6 +357,14 @@ func (r *reminders) extra() {
 		Title: "Plug in for charge extra", Message: a.Summary + then,
 		Verbs: []string{model.VerbSnooze, model.VerbView},
 	}, false)
+}
+
+// autoExtra reports whether advice auto-apply will create the day's extra
+// plan once the day is today.
+func (r *reminders) autoExtra(a *DayAdviceView) bool {
+	settings, err := r.s.AdviceSettings()
+	r.fail(err)
+	return err == nil && settings.Enabled && settings.AutoApply && a.Confidence >= settings.AutoMinConfidence
 }
 
 // solarGridPrice is the grid price in the sun's slots (the solar price when

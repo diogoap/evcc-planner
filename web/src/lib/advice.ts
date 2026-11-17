@@ -194,10 +194,16 @@ export const sourceTone: Record<AdviceSource['status'], Tone> = {
   stub: 'warn',
 }
 
-/** "Tomorrow's lowest €0.20" or "Past 7 days' lowest €0.30": what charge extra compared with. */
+/** "Tomorrow's lowest €0.20", "Thu's expected lowest €0.29", or "Past 7 days' lowest €0.30": what charge extra compared with. */
 export function referenceText(a: DayAdvice) {
   const r = a.reference
   if (!r) return ''
   const v = `€${r.value.toFixed(2)}`
-  return r.basis === 'published' ? `Tomorrow's lowest ${v}` : `Past ${r.days ?? 7} days' lowest ${v}`
+  switch (r.basis) {
+    case 'published':
+      return `Tomorrow's lowest ${v}`
+    case 'outlook':
+      return `${r.day ? r.day.slice(0, 3) + "'s" : "Tomorrow's"} expected lowest ${v}`
+  }
+  return `Past ${r.days ?? 7} days' lowest ${v}`
 }

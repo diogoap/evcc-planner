@@ -14,17 +14,19 @@
 //     covers the departures until then. Charge extra waits, and the plan
 //     charges only the trips (and the sun, when that is cheaper still);
 //   - charge extra: the day's blocks at home are cheaper than the reference
-//     price (the next day's lowest published price, else the past week's
-//     average lowest price) by the discount steps of the level matching the
-//     indication of cheaper days ahead (the weekly outlook, wind, and sun);
-//     each step charges to its target, as far as its blocks can;
+//     price (the next day's lowest price: published, else expected from the
+//     weekly outlook, else the past week's average lowest price; see
+//     reference) by the discount steps of the level matching the indication
+//     of cheaper days ahead (the weekly outlook, wind, and sun); each step
+//     charges to its target, as far as its blocks can;
 //   - charge extra from solar: the sun at home costs no more than the
 //     reference (its slot price minus the tax not paid on own solar): keep
 //     the car plugged in, as EVCC charges from it by itself;
 //   - none: otherwise.
 //
 // Confidence (1–3) follows the reference: 3 against published prices, 2
-// against a week of history, 1 against less.
+// against the outlook or a week of history, 1 against a stale outlook or a
+// shorter history.
 package advice
 
 import (
@@ -49,10 +51,11 @@ const (
 	BasisWeekly    = "weekly"
 )
 
-// Reference bases: the next day's lowest published price, or the past
-// days' average lowest price.
+// Reference bases: the next day's lowest published price, the lowest the
+// outlook expects for it, or the past days' average lowest price.
 const (
 	RefPublished = "published"
+	RefOutlook   = "outlook"
 	RefHistory   = "history"
 )
 
@@ -82,6 +85,13 @@ const minHistoryDays = 3
 
 // minReference keeps discounts finite for references near zero (EUR/kWh).
 const minReference = 0.01
+
+// minLowRatio and maxLowRatio bound the lowest-to-average price ratio that
+// turns the outlook's daily average into an expected lowest price.
+const (
+	minLowRatio = 0.3
+	maxLowRatio = 1.0
+)
 
 // DayPrice is a date's expected price level.
 type DayPrice struct {
@@ -151,9 +161,11 @@ type Day struct {
 	Published bool
 	Blocks    []Block
 	Away      []Away
-	// Lowest is the day's lowest published price, when all of the day is
-	// published (the reference for the day before).
-	Lowest *float64
+	// Lowest and Average are the day's lowest and average published price,
+	// when all of the day is published (Lowest is the reference for the day
+	// before).
+	Lowest  *float64
+	Average *float64
 	// StartSoC is the projected SoC when the day's charging can start (nil:
 	// unknown); TripTarget the next departure's target when the window ends
 	// at it (with later trips charged ahead), else 0.
@@ -222,9 +234,17 @@ type Input struct {
 // Reference is the price a day's blocks are compared with.
 type Reference struct {
 	Value  float64 `json:"value"` // EUR/kWh incl. VAT
-	Basis  string  `json:"basis"` // published or history
+	Basis  string  `json:"basis"` // published, outlook, or history
 	Days   int     `json:"days,omitempty"`
 	Detail string  `json:"detail"`
+	// Published and outlook: the day it is the lowest price of, and the
+	// weekday's name.
+	Date string `json:"date,omitempty"`
+	Day  string `json:"day,omitempty"`
+	// Outlook: from the day's estimate or the week's average, and whether
+	// the outlook is older than it should be.
+	Source string `json:"source,omitempty"`
+	Stale  bool   `json:"stale,omitempty"`
 }
 
 // Advice is one date's recommendation.
@@ -236,7 +256,7 @@ type Advice struct {
 	Confidence     int      `json:"confidence"` // 1 low, 2 medium, 3 high; 0 without a suggestion
 	Summary        string   `json:"summary"`
 	Rationale      []string `json:"rationale"`
-	CompareDate    string   `json:"compareDate,omitempty"` // the next day, when it is the reference
+	CompareDate    string   `json:"compareDate,omitempty"` // the next day, when its prices are the reference
 	DeferUntil     string   `json:"deferUntil,omitempty"`  // defer: the cheaper day
 	LaterChargePct float64  `json:"laterChargePct"`        // charge the plan adds after this day
 	// Indication is how strongly the coming days look cheaper (little,
@@ -308,22 +328,22 @@ func adviseDay(in Input, i int) Advice {
 		}
 	}
 
-	ref := reference(in, next)
+	ref := reference(in, i, next)
 	if ref == nil {
 		days := 0
 		if in.History != nil {
 			days = in.History.Days
 		}
-		return noSuggestion(a, fmt.Sprintf("Nothing to compare with yet: tomorrow's prices aren't published, and the price history has %d of %d days.",
+		return noSuggestion(a, fmt.Sprintf("Nothing to compare with yet: tomorrow's prices aren't published or estimated, and the price history has %d of %d days.",
 			days, minHistoryDays))
 	}
 	a.Reference = ref
-	if ref.Basis == RefPublished {
-		a.CompareDate = next.Date
+	if ref.Basis != RefHistory {
+		a.CompareDate = ref.Date
 	}
 	a.Confidence = refConfidence(ref)
 	a.Rationale = append(a.Rationale, "Compared with "+ref.Detail+".")
-	ind, lines := indication(in, i, next != nil)
+	ind, lines := indication(in, i, ref.Basis != RefHistory)
 	a.Indication = ind
 	a.Rationale = append(a.Rationale, lines...)
 	level := in.Levels[ind]
@@ -389,13 +409,14 @@ func outlookDay(in Input, i int, a Advice) Advice {
 // charge before then (keep the plan): charge extra waits either way.
 func deferDay(in Input, i int, a Advice, next *Day) (Advice, bool) {
 	d := in.Days[i]
-	low := lowestSlot(d.Blocks)
+	low := homeLowest(d)
 	if *next.Lowest > low-Threshold*math.Abs(low) {
 		return a, false
 	}
 	a.CompareDate = next.Date
 	a.Confidence = 3
-	a.Reference = &Reference{Value: *next.Lowest, Basis: RefPublished, Detail: name(*next) + "'s lowest published price"}
+	a.Reference = &Reference{Value: *next.Lowest, Basis: RefPublished, Date: next.Date, Day: name(*next),
+		Detail: name(*next) + "'s lowest published price"}
 	a.Rationale = append(a.Rationale, fmt.Sprintf("%s's lowest published price (€%.3f) is %.0f%% below %s's lowest while the car is home (€%.3f).",
 		name(*next), *next.Lowest, (low-*next.Lowest)/math.Max(math.Abs(low), minReference)*100, dayWord(i, d), low))
 	switch need := needBetween(in, d.Date, next.Date); {
@@ -425,24 +446,72 @@ func deferDay(in Input, i int, a Advice, next *Day) (Advice, bool) {
 	return a, true
 }
 
-// reference is the price a day's blocks are compared with: the next day's
-// lowest published price, else the past week's average lowest price.
-func reference(in Input, next *Day) *Reference {
+// reference is the price a day's blocks are compared with, the strongest
+// available: the next day's lowest published price; the lowest the weekly
+// outlook expects for it from its estimate; the past week's average lowest
+// price; the outlook's expectation from the week's average; a shorter
+// history.
+func reference(in Input, i int, next *Day) *Reference {
 	if next != nil {
-		return &Reference{Value: *next.Lowest, Basis: RefPublished, Detail: fmt.Sprintf("%s's lowest published price (€%.3f)", name(*next), *next.Lowest)}
+		return &Reference{Value: *next.Lowest, Basis: RefPublished, Date: next.Date, Day: name(*next),
+			Detail: fmt.Sprintf("%s's lowest published price (€%.3f)", name(*next), *next.Lowest)}
 	}
-	if h := in.History; h != nil && h.Days >= minHistoryDays {
-		return &Reference{Value: h.LowAverage, Basis: RefHistory, Days: h.Days,
-			Detail: fmt.Sprintf("the average lowest price of the past %d days (€%.3f)", h.Days, h.LowAverage)}
+	o := outlookReference(in, i)
+	var h *Reference
+	if in.History != nil && in.History.Days >= minHistoryDays {
+		h = &Reference{Value: in.History.LowAverage, Basis: RefHistory, Days: in.History.Days,
+			Detail: fmt.Sprintf("the average lowest price of the past %d days (€%.3f)", in.History.Days, in.History.LowAverage)}
 	}
-	return nil
+	switch {
+	case o != nil && o.Source == BasisEstimate:
+		return o
+	case h != nil && h.Days >= 7:
+		return h
+	case o != nil:
+		return o
+	}
+	return h
+}
+
+// outlookReference is the lowest price the weekly outlook expects for the
+// next day: its estimate (else the week's average) is a daily average, so
+// it is scaled by this day's own lowest-to-average ratio.
+func outlookReference(in Input, i int) *Reference {
+	if i+1 >= len(in.Days) {
+		return nil
+	}
+	d, next := in.Days[i], in.Days[i+1]
+	p := next.Price
+	if p == nil || (p.Basis != BasisEstimate && p.Basis != BasisWeekly) {
+		return nil
+	}
+	// The whole day's prices, else (today, before all of it is published)
+	// the remaining ones.
+	low, avg := d.Lowest, d.Average
+	if (low == nil || avg == nil) && d.Price != nil {
+		low, avg = d.Price.Min, &d.Price.Value
+	}
+	ratio := maxLowRatio
+	if low != nil && avg != nil && *avg >= minReference {
+		ratio = math.Min(maxLowRatio, math.Max(minLowRatio, *low / *avg))
+	}
+	value := math.Round(p.Value*ratio*10000) / 10000
+	source := "estimate"
+	if p.Basis == BasisWeekly {
+		source = "weekly average"
+	}
+	return &Reference{Value: value, Basis: RefOutlook, Date: next.Date, Day: name(next), Source: p.Basis, Stale: p.Stale,
+		Detail: fmt.Sprintf("%s's expected lowest price (€%.3f: the outlook's %s of €%.3f × %s's lowest-to-average ratio %.2f)",
+			name(next), value, source, p.Value, name(d), ratio)}
 }
 
 func refConfidence(r *Reference) int {
 	switch {
 	case r.Basis == RefPublished:
 		return 3
-	case r.Days >= 7:
+	case r.Basis == RefOutlook && !r.Stale:
+		return 2
+	case r.Basis == RefHistory && r.Days >= 7:
 		return 2
 	}
 	return 1
@@ -721,10 +790,14 @@ func exportHint(d Day) string {
 	return when + " The car is away then: use the solar another way, or switch the panels off."
 }
 
-// lowestSlot is the lowest grid price among blocks.
-func lowestSlot(blocks []Block) float64 {
+// homeLowest is the day's lowest grid price while the car is home: all of
+// the day when known, else the blocks until the deadline.
+func homeLowest(d Day) float64 {
+	if d.HomeLowest != nil {
+		return *d.HomeLowest
+	}
 	low := math.Inf(1)
-	for _, b := range blocks {
+	for _, b := range d.Blocks {
 		low = math.Min(low, b.SlotPrice)
 	}
 	return low
@@ -785,8 +858,11 @@ func sumPct(spans []Span) float64 {
 
 // refShort is the reference in a few words.
 func refShort(r *Reference) string {
-	if r.Basis == RefPublished {
+	switch r.Basis {
+	case RefPublished:
 		return fmt.Sprintf("tomorrow's lowest (%s)", money(r.Value))
+	case RefOutlook:
+		return fmt.Sprintf("%s's expected lowest (%s)", r.Day, money(r.Value))
 	}
 	return fmt.Sprintf("this week's lowest prices (%s)", money(r.Value))
 }

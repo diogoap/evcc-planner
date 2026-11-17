@@ -364,8 +364,11 @@ to `main` deploy automatically, run `make verify` before pushing.
     departure until then: charge only for the trips (and from the sun when
     that is cheaper still). Estimates never defer.
   - **Charge extra** compares the day's blocks at home with a reference:
-    tomorrow's lowest published price, or before it is published the past 7
-    days' average lowest price (from the price history). The more the coming
+    tomorrow's lowest price. Before it is published, that is the lowest the
+    weekly outlook expects for tomorrow (its estimate or weekly average, scaled
+    by the day's own lowest-to-average ratio), or the past 7 days' average
+    lowest price (from the price history; a full week beats the outlook's
+    weekly average, but not its estimate for tomorrow). The more the coming
     days look cheaper (outlook estimates, wind, sun: little, medium, or high
     indication), the bigger the discount needed and the less it charges;
     Settings → Advice has the steps per indication (by default for little:
@@ -378,13 +381,14 @@ to `main` deploy automatically, run `make verify` before pushing.
   - Hints: a trip that misses very cheap or negative prices ("consider moving
     the trip"), and negative prices while the sun shines (exporting costs
     money: use the solar, or switch the panels off).
-  - No reference yet (no published tomorrow and fewer than 3 days of price
-    history): **No data / no suggestion**.
+  - No reference yet (tomorrow neither published nor in the outlook, and
+    fewer than 3 days of price history): **No data / no suggestion**.
 - **Sun:** EVCC's local solar forecast for today and tomorrow, in kWh for the
   day and while the car is home (before household use); later days show KNMI's
   national sunshine (% of possible).
 - **Confidence** 1 low / 2 medium / 3 high: 3 against tomorrow's published
-  prices, 2 against a week of price history, 1 against less. Low-confidence
+  prices, 2 against the weekly outlook or a week of price history, 1 against a
+  stale outlook or a shorter history. Low-confidence
   and no-data advice offer no plan action. Every rule, with a diagram:
   [AUTOMATION.md](AUTOMATION.md#charge-extra-daily-advice).
 - **Create extra plan** opens an editable proposal (charge extra's target in %
@@ -404,7 +408,8 @@ to `main` deploy automatically, run `make verify` before pushing.
   ended then. It keeps trip targets and skips plans you set in EVCC. With
   **Charge extra reminders** on (Settings → Notifications), the phones are
   told when it creates a plan, and asked to plug in before charge extra's
-  cheap hours when the car is home but unplugged.
+  cheap hours when the car is home but unplugged. For cheap hours in quiet
+  hours, such as a cheap night, that reminder comes just before quiet hours.
 
 ## Activity log and history
 

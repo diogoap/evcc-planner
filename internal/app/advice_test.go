@@ -136,11 +136,14 @@ func (ta *testApp) poll() {
 
 func TestDemoAdviceUsesPublishedPricesFirst(t *testing.T) {
 	ta := newTestApp(t, "")
-	// Without a price history Tuesday has nothing to compare with: its
-	// prices are published, the next day's are not.
-	if tue := ta.advice().day("2026-11-10"); !tue.NoSuggestion || !strings.Contains(tue.Summary, "price history has 0 of 3 days") {
+	// Without a price history Tuesday compares with what the outlook's
+	// weekly average expects for Wednesday (its prices aren't published):
+	// Tuesday's night is not cheap enough for that.
+	if tue := ta.advice().day("2026-11-10"); tue.NoSuggestion || tue.Recommendation != "none" || tue.Confidence != 2 ||
+		!strings.Contains(tue.Summary, "below Wednesday's expected lowest (€0.15)") {
 		t.Fatalf("Tuesday without history = %+v", tue)
 	}
+	// A week of history is the stronger reference.
 	ta.pastWeek(0.40)
 	a := ta.advice().Advice
 	if !a.Enabled || a.AutoApply || len(a.Days) != 7 {

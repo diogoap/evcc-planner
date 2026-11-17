@@ -38,8 +38,8 @@ notifications is in [AUTOMATION.md](AUTOMATION.md).
 - Published prices come from EVCC: today, and tomorrow from about 14:00. Later days are estimated from Tibber's weekly outlook (read by AI, with every number checked against the article). Wind and sun come from KNMI's weather outlook.
 - Charging has three layers: the next departure (always), charge ahead for later trips (Planning), and charge extra on top (daily advice). EVCC gets the higher target.
 - Each day with published prices gets one piece of advice:
-  - **Defer** when tomorrow's lowest price is clearly lower (8%): charge only for the trips, and from the sun if it's cheaper still.
-  - **Charge extra** when blocks at home are much cheaper than tomorrow's lowest price, or, before that's published, the past week's average lowest price. How much depends on the discount and on how strongly the coming days look cheaper (outlook, wind, sun). Settings → Advice has the steps, such as "30% cheaper → 80%", for each level. The target is only what those cheap blocks can charge.
+  - **Defer** when tomorrow's lowest price is clearly lower (8%) than today's lowest while the car is home: charge only for the trips, and from the sun if it's cheaper still.
+  - **Charge extra** when blocks at home are much cheaper than tomorrow's lowest price. Before tomorrow's prices are published, that's the lowest the weekly outlook expects for tomorrow, or the past week's average lowest price. How much depends on the discount and on how strongly the coming days look cheaper (outlook, wind, sun). Settings → Advice has the steps, such as "30% cheaper → 80%", for each level. The target is only what those cheap blocks can charge.
   - **Charge extra from solar**: keep the car plugged in when the sun is no dearer than the reference.
 - Later days show what the outlook expects ("Looks cheaper").
 - Hints for a trip that misses very cheap or negative prices, and for negative prices while the sun shines (use the solar or switch the panels off).
@@ -57,7 +57,7 @@ notifications is in [AUTOMATION.md](AUTOMATION.md).
 - Sent through the Home Assistant Companion app; the buttons act on the planner.
 - Plug-in reminders: early (cheapest time), urgent (latest time), and too late. Buttons: Remind in 30 min, Skip trip, View plan.
 - Problems: charging stopped, unplugged early, EVCC not in Smart mode, target missed. Questions about unclear calendar events. An optional "ready" message. "Plug in for the sun".
-- Charge extra: "Plug in for charge extra" before its cheap hours when the car is home but unplugged, and a message when an extra plan is created automatically.
+- Charge extra: "Plug in for charge extra" before its cheap hours when the car is home but unplugged (for a cheap night, just before quiet hours), and a message when an extra plan is created automatically.
 - Quiet hours (23:00–07:00 by default). Each message is sent once and is cleared when you plug in.
 
 ## Screens

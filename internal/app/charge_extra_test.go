@@ -198,3 +198,66 @@ func TestNoChargeExtraNotificationsWhenOff(t *testing.T) {
 		}
 	}
 }
+
+// A cheap night: Tuesday's charge extra starts after midnight, in quiet
+// hours (23:00–07:00), so the reminder comes on Monday evening just before
+// them, and not in them.
+func TestChargeExtraReminderBeforeQuietHours(t *testing.T) {
+	mon := func(h, m int) time.Time { return time.Date(2026, 11, 9, h, m, 0, 0, ams) }
+	night := func(auto bool) *testApp {
+		ta := newTestApp(t, "")
+		ta.pastWeek(0.40)
+		ta.notifications(nil)
+		if auto {
+			var s map[string]any
+			ta.json("GET", "/api/settings/advice", nil, http.StatusOK, &s)
+			s["autoApply"], s["autoMinConfidence"] = true, 2
+			ta.json("PUT", "/api/settings/advice", s, http.StatusOK, nil)
+		}
+		return ta
+	}
+	reminded := func(ta *testApp) bool {
+		for _, title := range ta.sent() {
+			if title == "Plug in for charge extra" {
+				return true
+			}
+		}
+		return false
+	}
+
+	ta := night(false)
+	tue := ta.advice().day("2026-11-10")
+	if tue.Action != "extra_plan" || len(tue.Blocks) == 0 || !strings.HasPrefix(tue.Blocks[0].From, "2026-11-10T0") {
+		t.Fatalf("Tuesday's charge extra = %+v", tue)
+	}
+	ta.at(mon(22, 30))
+	ta.check()
+	if reminded(ta) {
+		t.Fatal("reminded before the quarter-hour before quiet hours")
+	}
+	ta.at(mon(22, 50))
+	ta.check()
+	if !reminded(ta) {
+		t.Fatal("no reminder before quiet hours")
+	}
+	n := ta.notification("extra:2026-11-10")
+	if tue = ta.advice().day("2026-11-10"); n.Message != tue.Summary+" Create the plan in the planner and plug in." ||
+		n.Latest == nil || n.Latest.Format(time.RFC3339) != tue.Blocks[len(tue.Blocks)-1].Until {
+		t.Fatalf("reminder = %+v (advice %q)", n, tue.Summary)
+	}
+
+	// With automatic plans the plan comes when Tuesday starts; once quiet
+	// hours have begun, there is no reminder.
+	ta = night(true)
+	ta.at(mon(22, 50))
+	ta.check()
+	if n := ta.notification("extra:2026-11-10"); !strings.HasSuffix(n.Message, " The plan is created automatically when the day starts; plug in so it can charge.") {
+		t.Fatalf("reminder with automatic plans = %q", n.Message)
+	}
+	ta = night(false)
+	ta.at(mon(23, 10))
+	ta.check()
+	if reminded(ta) {
+		t.Fatal("reminded in quiet hours")
+	}
+}

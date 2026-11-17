@@ -208,8 +208,11 @@ func referenceText(r *advice.Reference) string {
 	if r == nil {
 		return "the reference price"
 	}
-	if r.Basis == advice.RefPublished {
+	switch r.Basis {
+	case advice.RefPublished:
 		return fmt.Sprintf("tomorrow's lowest price (€%.2f)", r.Value)
+	case advice.RefOutlook:
+		return fmt.Sprintf("%s's expected lowest price (€%.2f, from the weekly outlook)", r.Day, r.Value)
 	}
 	return fmt.Sprintf("the past %d days' average lowest price (€%.2f)", r.Days, r.Value)
 }

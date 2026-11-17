@@ -180,9 +180,10 @@ func TestStepsFollowTheIndicationOfCheaperDaysAhead(t *testing.T) {
 	}
 }
 
-func TestHistoryIsTheReferenceBeforeTomorrowIsPublished(t *testing.T) {
+func TestHistoryIsTheReferenceWithoutAnOutlook(t *testing.T) {
 	in := input(blocks(repeat(12, 0.18)...), nil)
-	if a := Advise(in)[0]; !a.NoSuggestion || a.Summary != "Nothing to compare with yet: tomorrow's prices aren't published, and the price history has 0 of 3 days." {
+	in.Days[1].Price = nil
+	if a := Advise(in)[0]; !a.NoSuggestion || a.Summary != "Nothing to compare with yet: tomorrow's prices aren't published or estimated, and the price history has 0 of 3 days." {
 		t.Fatalf("no history = %+v", a)
 	}
 	in.History = &History{LowAverage: 0.30, Days: 7}
@@ -202,6 +203,94 @@ func TestHistoryIsTheReferenceBeforeTomorrowIsPublished(t *testing.T) {
 	in.Days[1].Solar = &Solar{Pct: 8}
 	if a := Advise(in)[0]; a.Indication != IndicationMedium {
 		t.Fatalf("a sunny tomorrow = %+v", a)
+	}
+}
+
+func TestTheOutlookIsTheReferenceBeforeTomorrowIsPublished(t *testing.T) {
+	// Today averages €0.30 with a lowest of €0.18, so tomorrow's estimate
+	// of €0.40 means a lowest of about €0.24: the €0.18 blocks are 25%
+	// below it (little step 1: 50%).
+	in := input(blocks(append(repeat(12, 0.18), repeat(20, 0.33)...)...), nil)
+	in.Days[0].Lowest, in.Days[0].Average = f(0.18), f(0.30)
+	in.Days[1].Price = estimate(0.40)
+	a := Advise(in)[0]
+	r := a.Reference
+	if a.Recommendation != ChargeExtra || a.Confidence != 2 || r.Basis != RefOutlook || r.Source != BasisEstimate || r.Value != 0.24 ||
+		r.Date != "2026-11-10" || a.CompareDate != "2026-11-10" || a.TargetSoC != 50 || a.StepDiscountPct != 20 {
+		t.Fatalf("tomorrow's estimate = %+v (%+v)", a, r)
+	}
+	if !strings.HasSuffix(a.Summary, "20% or more below Tuesday's expected lowest (€0.24).") ||
+		!strings.Contains(strings.Join(a.Rationale, " "),
+			"Compared with Tuesday's expected lowest price (€0.240: the outlook's estimate of €0.400 × Monday's lowest-to-average ratio 0.60).") {
+		t.Errorf("summary = %q, rationale = %v", a.Summary, a.Rationale)
+	}
+	// Tomorrow's estimate beats a week of history; a stale outlook is
+	// weaker.
+	in.History = &History{LowAverage: 0.30, Days: 7}
+	if a := Advise(in)[0]; a.Reference.Basis != RefOutlook || a.Confidence != 2 {
+		t.Fatalf("estimate and history = %+v", a)
+	}
+	in.Days[1].Price.Stale = true
+	if a := Advise(in)[0]; a.Reference.Basis != RefOutlook || a.Confidence != 1 {
+		t.Fatalf("stale estimate = %+v", a)
+	}
+	// Only the week's average: a week of history is stronger, a shorter
+	// one is not.
+	in.Days[1].Price = &DayPrice{Value: 0.40, Basis: BasisWeekly}
+	if a := Advise(in)[0]; a.Reference.Basis != RefHistory || a.Confidence != 2 {
+		t.Fatalf("weekly average and a week of history = %+v", a)
+	}
+	in.History.Days = 4
+	if a := Advise(in)[0]; a.Reference.Basis != RefOutlook || a.Reference.Source != BasisWeekly || a.Confidence != 2 ||
+		!strings.Contains(strings.Join(a.Rationale, " "), "the outlook's weekly average of €0.400") {
+		t.Fatalf("weekly average and four days of history = %+v", a)
+	}
+	// Tomorrow is the reference, so the cheaper days ahead start after it.
+	in.Days[1].Solar = &Solar{Pct: 8}
+	if a := Advise(in)[0]; a.Indication != IndicationLittle {
+		t.Fatalf("a sunny reference day = %+v", a)
+	}
+	// Negative lows keep the expected lowest positive: the ratio stays
+	// between 0.3 and 1.
+	in.Days[0].Lowest = f(-0.05)
+	if a := Advise(in)[0]; a.Reference.Value != 0.12 {
+		t.Fatalf("negative lowest = %+v", a.Reference)
+	}
+	in.Days[0].Lowest, in.Days[0].Average = nil, nil
+	in.Days[0].Price.Min = f(0.33)
+	if a := Advise(in)[0]; a.Reference.Value != 0.40 {
+		t.Fatalf("today's remaining prices, flat = %+v", a.Reference)
+	}
+}
+
+// A cheap night before dearer days: today's charge waits for it, and
+// tomorrow's advice charges extra against the outlook while Thursday's
+// prices aren't published and there is no price history yet.
+func TestCheapNightBeforeDearerDays(t *testing.T) {
+	weekly := &DayPrice{Value: 0.40, Basis: BasisWeekly, Detail: "weekly average"}
+	days := week(2, published(0.36), published(0.30), weekly, estimate(0.43), weekly, weekly)
+	// Today until the next departure costs €0.36; back home tonight, the
+	// lowest is €0.27.
+	days[0].Blocks, days[0].StartSoC, days[0].HomeLowest = blocks(repeat(4, 0.36)...), f(37), f(0.27)
+	night := append(append(repeat(4, 0.25), repeat(4, 0.23)...), append(repeat(8, 0.22), repeat(8, 0.26)...)...)
+	days[1].Blocks, days[1].StartSoC, days[1].TripTarget = blocks(night...), f(24), 23
+	days[1].Lowest, days[1].Average = f(0.22), f(0.30)
+	in := Input{Days: days, SoCKnown: true, Levels: levels()}
+	out := Advise(in)
+
+	if a := out[0]; a.Recommendation != Defer ||
+		a.Summary != "Tuesday is cheaper (lowest €0.22 vs €0.27) and your charge covers the trips until then." {
+		t.Fatalf("today = %+v", a)
+	}
+	// Thursday's €0.40 weekly average × 0.22/0.30: an expected lowest of
+	// about €0.29. The €0.22–0.23 hours are at least 20% below it.
+	a := out[1]
+	if a.Recommendation != ChargeExtra || a.Confidence != 2 || a.Reference.Basis != RefOutlook || a.Reference.Value != 0.2933 ||
+		a.Indication != IndicationLittle || a.TargetSoC != 42 || a.StepDiscountPct != 20 {
+		t.Fatalf("tomorrow = %+v (%+v)", a, a.Reference)
+	}
+	if a.Summary != "Charge extra to 42%: 01:00–04:00 averages €0.22, 20% or more below Wednesday's expected lowest (€0.29)." {
+		t.Errorf("summary = %q", a.Summary)
 	}
 }
 

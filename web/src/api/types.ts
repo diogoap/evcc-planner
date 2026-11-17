@@ -272,10 +272,16 @@ export type Indication = 'little' | 'medium' | 'high'
 /** The price charge extra compares a day's blocks with. */
 export interface AdviceReference {
   value: number
-  /** Tomorrow's lowest published price, or the past days' average lowest price. */
-  basis: 'published' | 'history'
+  /** Tomorrow's lowest published price, the lowest the outlook expects for it, or the past days' average lowest price. */
+  basis: 'published' | 'outlook' | 'history'
   days?: number
   detail: string
+  /** Published and outlook: the day it is the lowest price of (YYYY-MM-DD) and its weekday's name. */
+  date?: string
+  day?: string
+  /** Outlook: from the day's estimate or the week's average, and whether the outlook is old. */
+  source?: 'estimate' | 'weekly'
+  stale?: boolean
 }
 
 /** A time range of a day, with its (average) price and the SoC it charges. */
