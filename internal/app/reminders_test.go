@@ -277,11 +277,13 @@ func TestChargingProblemsAndReadyMessages(t *testing.T) {
 const sunnyWednesday = "2026-11-11T10:15:00+01:00"
 
 // A sunny Wednesday in the demo: today's solar surplus while the car is home
-// (late morning to mid-afternoon) beats the later days, so the advice is to
+// (late morning to mid-afternoon) costs much less than the past week's
+// lowest prices, while the grid in those hours doesn't: the advice is to
 // charge extra from the sun, with no plan; an unplugged car at home gets a
 // reminder to plug in, cleared once it is plugged in.
 func TestPlugInForTheSun(t *testing.T) {
 	ta := newTestAppAt(t, "", sunnyWednesday)
+	ta.pastWeek(0.20)
 	ta.notifications(nil)
 	ta.check()
 	ta.sent() // other reminders are not under test
@@ -331,6 +333,7 @@ func TestPlugInForTheSun(t *testing.T) {
 // The solar reminder can be turned off.
 func TestNoSunReminderWhenOff(t *testing.T) {
 	ta := newTestAppAt(t, "", sunnyWednesday)
+	ta.pastWeek(0.20)
 	ta.notifications(func(s map[string]any) { s["solar"] = false })
 	ta.check()
 	if n, _ := ta.app.Store.NotificationByKey("solar:2026-11-11"); n != nil {

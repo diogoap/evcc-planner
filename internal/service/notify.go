@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -27,7 +28,7 @@ var notificationLabels = map[string]string{
 	"early": "early reminders", "earlyLeadMin": "early reminder time", "urgentLeadMin": "urgent reminder time",
 	"quietFrom": "quiet hours", "quietTo": "quiet hours", "urgentInQuiet": "urgent reminders in quiet hours",
 	"snoozeMin": "snooze", "problems": "charging problems", "questions": "questions", "ready": "ready messages",
-	"solar": "solar reminders",
+	"solar": "solar reminders", "extra": "charge extra reminders",
 }
 
 // SaveNotificationSettings validates and stores the notification settings.
@@ -97,6 +98,31 @@ func parseAction(action string) (string, int64, bool) {
 }
 
 func notifyTag(n model.Notification) string { return "evcc-planner-" + strconv.FormatInt(n.ID, 10) }
+
+// notifyAutoExtra tells the phones about an extra plan created
+// automatically from charge extra (Settings → Notifications: Charge
+// extra), outside quiet hours. It is information only.
+func (s *Service) notifyAutoExtra(ctx context.Context, a *model.Adjustment, day *DayAdviceView) error {
+	settings, err := s.NotificationSettings()
+	if err != nil || !settings.Enabled || !settings.Extra || len(settings.Phones) == 0 || s.Clients().Notify == nil || a.Plan == nil {
+		return err
+	}
+	if (&reminders{s: s, settings: settings}).quiet(s.now()) {
+		return nil
+	}
+	n := &model.Notification{
+		Key: fmt.Sprintf("extra_plan:%d", a.ID), Kind: model.NotifyExtraPlan, Title: "Extra plan created",
+		Message: fmt.Sprintf("%s The plan asks EVCC for %d%% by %s and ends then.", day.Summary,
+			int(math.Round(a.Plan.SoC)), s.clockText(a.Plan.Time)),
+		Verbs: []string{model.VerbView},
+	}
+	if err := s.deliver(ctx, n, settings); err != nil {
+		return err
+	}
+	n.State, n.Note = model.NotifyDone, "Information"
+	_, err = s.Store.SaveNotification(*n)
+	return err
+}
 
 func verbTitle(verb string, settings model.NotificationSettings) string {
 	switch verb {

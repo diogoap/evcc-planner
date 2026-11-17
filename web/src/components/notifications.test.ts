@@ -32,6 +32,7 @@ const defaults: NotificationSettings = {
   questions: true,
   ready: false,
   solar: true,
+  extra: true,
 }
 
 const urgent: PhoneNotification = {

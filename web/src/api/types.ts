@@ -266,7 +266,25 @@ export interface Plan {
 }
 
 export type Recommendation = 'none' | 'charge_extra' | 'defer'
-export type Indicator = 'little' | 'medium' | 'high'
+/** How strongly the coming days look cheaper (weekly outlook, wind, sun); it picks the charge-extra steps. */
+export type Indication = 'little' | 'medium' | 'high'
+
+/** The price charge extra compares a day's blocks with. */
+export interface AdviceReference {
+  value: number
+  /** Tomorrow's lowest published price, or the past days' average lowest price. */
+  basis: 'published' | 'history'
+  days?: number
+  detail: string
+}
+
+/** A time range of a day, with its (average) price and the SoC it charges. */
+export interface AdviceSpan {
+  from: string
+  until: string
+  price: number
+  pct?: number
+}
 export type PriceBasis = 'published' | 'estimate' | 'weekly'
 export type AdjustmentKind = 'extra_plan' | 'postpone'
 
@@ -326,7 +344,19 @@ export interface DayAdvice {
   reason?: string
   /** 1 low, 2 medium, 3 high; 0 without a suggestion. */
   confidence: number
-  indicator?: Indicator
+  indication?: Indication
+  reference?: AdviceReference
+  /** Charge extra: the SoC to charge to, the step's discount, SoC above the trips' need, and the blocks. */
+  targetSoc?: number
+  stepDiscountPct?: number
+  extraPct?: number
+  blocks?: AdviceSpan[]
+  /** A trip that misses very cheap or negative prices. */
+  awayHint?: string
+  /** What to do with solar while prices are negative. */
+  exportHint?: string
+  /** Days without published prices: how the outlook compares with today. */
+  outlook?: 'cheaper' | 'dearer' | 'similar'
   summary: string
   rationale: string[]
   compareDate?: string
@@ -379,16 +409,26 @@ export interface AdviceView {
   adjustments: Adjustment[]
 }
 
+/** Charge extra up to targetSoc with blocks at least minDiscountPct below the reference price. */
+export interface ExtraStep {
+  minDiscountPct: number
+  targetSoc: number
+}
+
+/** Charge extra at one indication of cheaper days ahead: off, or three steps. */
+export interface ExtraLevel {
+  enabled: boolean
+  steps: ExtraStep[]
+}
+
 export interface AdviceSettings {
   enabled: boolean
   autoApply: boolean
   autoMinConfidence: 2 | 3
-  targetLittle: number | null
-  targetMedium: number | null
-  targetHigh: number | null
-  readyBy: string
-  expiryHours: number | null
   autoPostpone: boolean
+  extraLittle: ExtraLevel
+  extraMedium: ExtraLevel
+  extraHigh: ExtraLevel
 }
 
 export interface Proposal {
@@ -689,6 +729,8 @@ export interface NotificationSettings {
   ready: boolean
   /** Plug in for the sun: today's advice is to charge extra from solar. */
   solar: boolean
+  /** Plug in for charge extra's plan, and a message when one is created automatically. */
+  extra: boolean
 }
 
 export type NotificationKind =
@@ -703,6 +745,8 @@ export type NotificationKind =
   | 'question'
   | 'ready'
   | 'solar'
+  | 'extra'
+  | 'extra_plan'
   | 'info'
 
 export type NotificationVerb = 'snooze' | 'skip' | 'view' | 'count' | 'notrip'

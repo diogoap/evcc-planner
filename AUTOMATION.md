@@ -37,6 +37,20 @@ charging estimate on the price chart and the early plug-in reminder. If the sun
 disappoints, the automatic check writes the later trip's own target before
 it, and the grid fills the gap.
 
+## Three layers of charging
+
+| Layer | What it charges | Where |
+| --- | --- | --- |
+| 1. **Next departure** | Always its minimum target, by the time it leaves. | The trip plans |
+| 2. **Charge ahead** | Later trips today and tomorrow, when charging for them before the next departure is cheaper. | Settings → Planning |
+| 3. **Charge extra** | A reserve on top, when today's prices are clearly low. | Daily advice, Settings → Advice |
+
+EVCC holds one plan, so the planner writes the higher target with the earlier
+time. When tomorrow's published prices are clearly lower, the advice is to
+**defer**: charge only for the trips (and from the sun, when that is cheaper
+still), with no charge extra. Charge ahead already leaves out later trips that
+are cheaper to charge for later.
+
 ## Words used here
 
 | Word | Meaning |
@@ -225,34 +239,103 @@ would count as €0.14/kWh, and Utrecht would be charged from the sun instead.)
 EVCC still picks the actual slots. The planner shows its own estimate of them
 on the price chart, labelled as an estimate.
 
-## Charge extra from solar (daily advice)
+## Charge extra (daily advice)
 
-For today and tomorrow, where EVCC's solar forecast reaches, daily advice also
-prices the day's **solar surplus while the car is home**, valued as in
-[charging ahead](#charge-ahead-for-later-trips): per 15-minute slot, the
-forecast minus household use (below the charger's minimum it counts as none),
-at the slot's price minus the tax not paid on own solar (€0.11/kWh). Slots
-without a published price use the day's estimate.
+Daily advice gives one recommendation for each day with **published prices**
+(today, and tomorrow from about 14:00): **Defer**, **Charge extra**, **Charge
+extra from solar**, or nothing. Later days only show what the weekly outlook
+expects ("Looks cheaper", "Looks dearer", "Similar"); their signals feed the
+indication below.
 
-- **Charge extra from solar:** when that solar price is at least 8% below the
-  cheapest later day and later trips need charging. Example: Friday's grid
-  averages €0.42 and Sunday's estimate is €0.33, but the sun during €0.35–0.40
-  slots counts as €0.24–0.29, so "Today's sun charges at about €0.38/kWh, or
-  €0.27 without the tax you don't pay on own solar: cheaper than Sunday (about
-  €0.33). Keep the car plugged in." Texts lead with the grid price of the
-  sun's slots, as on the price chart; the decision uses the price without the
-  tax.
-- **Sun too weak to charge:** when the day has at least 3 kWh of sun while the
-  car is home but none of it reaches the charger's minimum above household
-  use (6 of 16 A, about 1.4 kW at 3.68 kW), the advice's Why? says so, and a
-  deferral does not count that sun as covering part of the charging.
-- **No plan:** EVCC charges from the sun by itself in Smart mode, so the advice
+```mermaid
+flowchart TD
+    P{Day's prices<br/>published?} -- no --> O[Show the outlook:<br/>looks cheaper / dearer / similar]
+    P -- yes --> D{Tomorrow published, and its<br/>lowest price ≥ 8% below<br/>today's lowest at home?}
+    D -- yes --> DC{Charge covers the<br/>trips until then?}
+    DC -- yes --> DEF[Defer: charge only the trips;<br/>keep plugged in for the sun<br/>if it is cheaper still]
+    DC -- no --> KEEP[Keep the plan]
+    D -- no --> R{Reference: tomorrow's<br/>lowest price, else the past<br/>7 days' average lowest}
+    R -- none --> NS[No suggestion yet]
+    R -- found --> I[Indication of cheaper days<br/>ahead: little / medium / high]
+    I --> S[That level's steps:<br/>blocks ≥ X% below the reference<br/>charge up to Y%]
+    S --> T{Target above the trips'<br/>target by ≥ 1 point?}
+    T -- yes, grid --> CE[Charge extra to Y%<br/>Create extra plan]
+    T -- yes, all solar --> CS[Charge extra from solar:<br/>keep the car plugged in]
+    T -- no --> SUN{Sun at home no dearer<br/>than the reference?}
+    SUN -- yes --> CS
+    SUN -- no --> NONE[Nothing]
+```
+
+- **Blocks:** the day's quarter-hours while the car is home, from now (today)
+  until the plan's deadline: the end of the day, or the next departure minus
+  the charging buffer. Each splits into its solar surplus (forecast minus
+  household use, above the charger's minimum), counted at the **slot price
+  minus the tax not paid on own solar** (€0.11/kWh), and the rest from the
+  grid at the slot price, as in [charging ahead](#charge-ahead-for-later-trips).
+- **Reference:** tomorrow's **lowest published price** when all of tomorrow
+  is published; otherwise the **average of each day's lowest price over the
+  past 7 days** (the [price history](FEATURES.md#price-history), complete days
+  only, at least 3). Without either there is no suggestion yet.
+- **Discount** of a block: (reference − its price) / the reference (at least
+  €0.01). Blocks at or below **€0** count for every step: −€0.20 is cheaper
+  than −€0.10.
+- **Indication of cheaper days ahead**, from the days after the reference that
+  have at least an hour at home: a day signals cheaper prices with an outlook
+  estimate at least 8% below today's average (or ranked the week's cheapest),
+  or with wind (KNMI Bft 5, or high market wind) or sun (60% of possible
+  sunshine, or 5% of SoC from EVCC's forecast) unless its estimate is 8%
+  dearer. **High:** a cheaper estimate together with wind or sun. **Medium:**
+  one of them. **Little:** none, or no data.
+- **Steps** (Settings → Advice), per indication; each can be switched off.
+  Defaults:
+
+  | Indication | On | Step 1 | Step 2 | Step 3 |
+  | --- | --- | --- | --- | --- |
+  | Little | yes | 20% cheaper → 50% | 30% → 80% | 50% → 100% |
+  | Medium | yes | 30% → 40% | 45% → 60% | 60% → 80% |
+  | High | no | 40% → 30% | 60% → 50% | 75% → 70% |
+
+- **Realistic target:** each step charges up to its target with only the
+  blocks at least its discount below the reference, as far as those blocks
+  can (start SoC + what they add). The step that reaches highest wins; on a
+  tie the deeper discount. It applies when that target is at least a point
+  above both the start SoC and the trips' target (with charge ahead). Example:
+  only four quarter-hours (1 h) are half the reference: the 100% step adds
+  about 6%, so the advice is "Charge extra to 46%". With an unknown SoC the
+  advice shows the step's target and says so.
+- **Charge extra** offers **Create extra plan** with that target (confidence
+  2 or 3), ready when its cheap blocks end (or by the next departure) and
+  ending then, so the previous plan comes back. Auto-apply uses the same. The advice lists the blocks: "Charge extra to 60%: about 4 h between
+  00:15 and 05:45 average €0.17, 45% or more below this week's lowest prices
+  (€0.40)."
+- **Charge extra from solar:** when the step's charge is all solar, or the sun
+  at home is no dearer than the reference even without a step: "Today's sun
+  charges at about €0.16/kWh, or €0.05 without the tax you don't pay on own
+  solar: no more than tomorrow's lowest (€0.20). Keep the car plugged in."
+  No plan: EVCC charges from the sun by itself in Smart mode, so the advice
   only asks to keep the car plugged in from the first to the last useful slot.
   It offers no Create extra plan, and advice auto-apply ignores it.
-- **Defer** only when a later day is clearly cheaper than today's solar price;
-  the defer advice then adds that solar still charges, as postponing only
-  pauses cheap-grid charging.
-- Less than 1% of SoC from the sun is not worth advising on.
+- **Negative prices with sun:** exporting solar then costs money. The advice
+  says so with the times: keep the car plugged in to use the sun (and switch
+  the panels off if nothing can use it), or, while the car is away, use the
+  solar another way or switch the panels off.
+- **Trips that miss cheap blocks:** blocks during a trip at or below €0, or as
+  cheap as the level's top step and clearly (8%) cheaper than any time at home
+  that day, add a hint: "−€0.04/kWh 13:00–13:30 while you're away (Dentist):
+  consider moving the trip to charge then."
+- **Defer** (published prices only, before charge extra): tomorrow's lowest is
+  at least 8% below today's lowest at home and the charge covers the trips
+  until then. **Review postponement** pauses EVCC's cheap-grid charging until
+  then (today only). With sun no dearer than tomorrow's lowest, the advice adds
+  to keep the car plugged in for it; otherwise there is no need to. Estimates
+  never defer.
+- **Sun too weak to charge:** when the day has at least 3 kWh of sun while the
+  car is home but none of it reaches the charger's minimum above household
+  use (6 of 16 A, about 1.4 kW at 3.68 kW), the advice's Why? says so.
+- **Confidence:** 3 against tomorrow's published prices, 2 against a week of
+  price history, 1 against less. Plan actions need 2; auto-apply needs its
+  minimum confidence (3 by default).
+- Less than 1% of SoC is not worth advising on.
 
 ## Notifications
 
@@ -353,7 +436,9 @@ gantt
 | **Missed target** | Unplugged within 30 minutes of the departure with less than its minimum target. Also an activity entry, even with notifications off. | "Left for Utrecht with 48% (target 52%)." |
 | **Question** | A calendar event marked Needs review, within the seven days. Buttons: **Count it** (confirm) and **Not a trip** (turn off). | "Is 'Dinner' (Thu 19:00) a car trip?" |
 | **Ready** (off by default) | Plugged in and the target reached before the departure. | "Ready for Utrecht: 64%." |
-| **Plug in for the sun** | Today's advice is to [charge extra from solar](#charge-extra-from-solar-daily-advice), the car is home (no trip in progress; at home by the car location sensor, if set) and unplugged, from 30 minutes before the solar surplus starts until 30 minutes before it ends, outside quiet hours. Any confidence: plugging in changes nothing in EVCC by itself. Buttons: **Remind in 30 min** (never after the sun's end), **View plan**. | "Plug in for the sun: Sunshine until about 14:30 charges the car at about €0.38/kWh (€0.27 without the tax on own solar), cheaper than Sunday. Plug in to use it." |
+| **Plug in for the sun** | Today's advice is to [charge extra from solar](#charge-extra-daily-advice), the car is home (no trip in progress; at home by the car location sensor, if set) and unplugged, from 30 minutes before the solar surplus starts until 30 minutes before it ends, outside quiet hours. Any confidence: plugging in changes nothing in EVCC by itself. Buttons: **Remind in 30 min** (never after the sun's end), **View plan**. | "Plug in for the sun: Sunshine until about 14:30 charges the car at about €0.16/kWh (€0.05 without the tax on own solar), no more than tomorrow's lowest price. Plug in to use it." |
+| **Plug in for charge extra** | Today's advice is to [charge extra](#charge-extra-daily-advice) with a plan (offered, or created by hand or automatically), the car is home and unplugged, from 30 minutes before its cheap hours start until 30 minutes before they end, outside quiet hours. Once a day; cleared when the car is plugged in or the cheap hours are over. Without the plan yet it also asks to create it. Buttons: **Remind in 30 min**, **View plan**. | "Plug in for charge extra: Charge extra to 71%: 18:30–00:00 averages €0.28, 30% or more below this week's lowest prices (€0.40). Plug in so the plan can charge." |
+| **Extra plan created** | Advice auto-apply created an extra plan, outside quiet hours (in them, only the activity log has it). Information only. Button: **View plan**. | "Extra plan created: Charge extra to 71%: 18:30–00:00 … The plan asks EVCC for 71% by Mon 00:00 and ends then." |
 
 Each is sent once per trip (unplugged early: once per unplug; not in Smart
 mode: once per mode; plug in for the sun: once per day). Charging stopped, not
@@ -377,6 +462,16 @@ Settings → **Planning**:
 The Planning tab also shows whether automatic plans are active or paused,
 with **Resume**.
 
+Settings → **Advice**:
+
+| Setting | Default | Notes |
+| --- | --- | --- |
+| Daily advice | On | Shows a recommendation for each published day. |
+| Charge extra steps | See [Charge extra](#charge-extra-daily-advice) | Per indication of cheaper days ahead: on/off and three steps (% cheaper → target SoC). |
+| Automatically create plans from daily advice | Off | Once a day on today's advice: charge extra's target, ready when its cheap hours end (or by the next departure), and ended then. |
+| Minimum confidence | 3 | 2 also acts against a week of price history. |
+| Also postpone | Off | Pauses cheap-grid charging when today's advice is to defer. |
+
 Settings → **Notifications**:
 
 | Setting | Default |
@@ -394,6 +489,7 @@ Settings → **Notifications**:
 | Questions about calendar events | On |
 | Ready messages | Off |
 | Solar reminders | On |
+| Charge extra reminders | On (plug in for charge extra, and extra plans created automatically) |
 
 ## Activity log entries
 

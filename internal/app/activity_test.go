@@ -111,6 +111,7 @@ func changed(t *testing.T, e activityEvent, field string, before, after any) {
 
 func TestEveryChangeRecordsOneEvent(t *testing.T) {
 	ta := newTestApp(t, "")
+	ta.pastWeek(0.40) // so Tuesday's advice is to charge extra
 	log := &eventLog{ta: ta}
 	log.none("starting the demo")
 	ui := model.SourceUI
@@ -263,6 +264,7 @@ func TestEveryChangeRecordsOneEvent(t *testing.T) {
 
 func TestAdviceChangesAreRecordedWithTheirSource(t *testing.T) {
 	ta := newTestApp(t, "")
+	ta.pastWeek(0.40)
 	ta.tripPlans(model.TripPlansManual) // extra plans restore the earlier plan
 	log := &eventLog{ta: ta}
 	log.fresh()
@@ -277,19 +279,20 @@ func TestAdviceChangesAreRecordedWithTheirSource(t *testing.T) {
 		"kind": "extra_plan", "date": "2026-11-10", "soc": 70, "readyBy": p.ReadyBy, "expiresAt": p.ExpiresAt, "confirm": true,
 	}, http.StatusCreated, &a)
 	e := log.one("adjustment.create", model.SourceUI)
-	changed(t, e, "evccPlan", "50% by 2026-11-11 07:00", "70% by 2026-11-10 07:48")
+	// Ready when charge extra's cheap night ends.
+	changed(t, e, "evccPlan", "50% by 2026-11-11 07:00", "70% by 2026-11-10 05:45")
 	if e.SubjectID != itoa(a.ID) || e.Related != "plan" || e.Detail["recommendation"] != "charge_extra" {
 		t.Errorf("extra plan = %+v", e)
 	}
 
 	// The scheduled job restores the previous plan at expiry.
-	ta.at(time.Date(2026, 11, 10, 7, 0, 0, 0, ams))
+	ta.at(time.Date(2026, 11, 10, 5, 0, 0, 0, ams))
 	ta.poll()
 	log.none("checking before expiry")
-	ta.at(time.Date(2026, 11, 10, 7, 48, 0, 0, ams))
+	ta.at(time.Date(2026, 11, 10, 5, 45, 0, 0, ams))
 	ta.poll()
 	e = log.one("adjustment.end", model.SourceJob)
-	changed(t, e, "evccPlan", "70% by 2026-11-10 07:48", "50% by 2026-11-11 07:00")
+	changed(t, e, "evccPlan", "70% by 2026-11-10 05:45", "50% by 2026-11-11 07:00")
 	if !strings.HasPrefix(e.Summary, "Extra plan ended: Restored the previous plan") || e.Detail["status"] != "restored" {
 		t.Errorf("restore = %+v", e)
 	}
@@ -307,14 +310,19 @@ func TestAdviceChangesAreRecordedWithTheirSource(t *testing.T) {
 	var as map[string]any
 	ta.json("GET", "/api/settings/advice", nil, http.StatusOK, &as)
 	as["autoApply"], as["autoPostpone"], as["autoMinConfidence"] = true, true, 2
-	as["targetLittle"], as["targetMedium"], as["targetHigh"], as["readyBy"], as["expiryHours"] = 60, 70, 80, "06:00", 1
 	ta.json("PUT", "/api/settings/advice", as, http.StatusOK, nil)
 	log.one("settings.update", model.SourceUI)
-	ta.at(time.Date(2026, 11, 10, 9, 0, 0, 0, ams))
+	// Monday evening: Tuesday is cheaper, so the advice is to defer and
+	// postponing is automatic (Tuesday's extra plan was made by hand).
+	ta.at(time.Date(2026, 11, 9, 19, 0, 0, 0, ams))
 	if err := ta.app.Service.AutoApply(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	for _, e := range log.fresh() {
+	created := log.fresh()
+	if len(created) == 0 {
+		t.Error("auto-apply created nothing")
+	}
+	for _, e := range created {
 		if e.Action != "adjustment.create" || e.Source != model.SourceAutomation {
 			t.Errorf("auto-apply = %+v", e)
 		}

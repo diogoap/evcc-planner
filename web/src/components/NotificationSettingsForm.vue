@@ -19,7 +19,11 @@ const saving = ref(false)
 const testing = ref(false)
 const error = ref('')
 
-const toggles: { key: 'problems' | 'questions' | 'ready' | 'solar'; label: string; hint: string }[] = [
+const toggles: {
+  key: 'problems' | 'questions' | 'ready' | 'solar' | 'extra'
+  label: string
+  hint: string
+}[] = [
   {
     key: 'problems',
     label: 'Charging problems',
@@ -39,6 +43,11 @@ const toggles: { key: 'problems' | 'questions' | 'ready' | 'solar'; label: strin
     key: 'solar',
     label: 'Solar reminders',
     hint: 'Asks you to plug in when the car is home on a day whose advice is to charge extra from the sun.',
+  },
+  {
+    key: 'extra',
+    label: 'Charge extra reminders',
+    hint: "Asks you to plug in before charge extra's cheap hours when the car is home, and tells you when an extra plan is created automatically.",
   },
 ]
 

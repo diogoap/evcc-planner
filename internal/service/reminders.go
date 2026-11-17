@@ -7,6 +7,7 @@ import (
 	"math"
 	"time"
 
+	"github.com/diogoap/evcc-planner/internal/advice"
 	"github.com/diogoap/evcc-planner/internal/audit"
 	"github.com/diogoap/evcc-planner/internal/evcc"
 	"github.com/diogoap/evcc-planner/internal/homeassistant"
@@ -38,8 +39,9 @@ var (
 var reminderKinds = map[string]bool{model.NotifyEarly: true, model.NotifyUrgent: true, model.NotifyLate: true}
 
 // CheckNotifications sends the phone notifications that are due: plug-in
-// reminders, charging problems, questions about calendar events, and
-// ready messages, and ends those no longer needed (AUTOMATION.md). It runs
+// reminders (for trips, the sun, and charge extra), charging problems,
+// questions about calendar events, and ready messages, and ends those no
+// longer needed (AUTOMATION.md). It runs
 // after each EVCC check and only acts on a fresh EVCC state. A missed
 // target is recorded in the activity log even with notifications off.
 func (s *Service) CheckNotifications(ctx context.Context) error {
@@ -85,6 +87,7 @@ func (s *Service) CheckNotifications(ctx context.Context) error {
 	r.cleanUp()
 	r.plugIn()
 	r.solar()
+	r.extra()
 	r.snoozed()
 	r.questions()
 	return r.err()
@@ -243,6 +246,9 @@ func (r *reminders) cleanUp() {
 		case n.Kind == model.NotifySolar:
 			a := r.solarAdvice()
 			return r.lp.Connected || a == nil || n.Subject != "solar:"+a.Date || !r.now.Before(*a.SolarUntil)
+		case n.Kind == model.NotifyExtra:
+			a := r.extraAdvice()
+			return r.lp.Connected || a == nil || n.Subject != "extra:"+a.Date || !r.now.Before(a.Blocks[len(a.Blocks)-1].Until)
 		}
 		return false
 	}, "No longer needed")
@@ -278,12 +284,60 @@ func (r *reminders) solar() {
 		!r.allowed(false) {
 		return
 	}
-	than := weekdayName(a.CompareDate, r.s.loc())
+	than := "tomorrow's lowest price"
+	if a.Reference != nil && a.Reference.Basis == advice.RefHistory {
+		than = "this week's lowest prices"
+	}
 	r.send(model.Notification{
 		Key: "solar:" + a.Date, Kind: model.NotifySolar, Subject: "solar:" + a.Date, Latest: a.SolarUntil,
 		Title: "Plug in for the sun",
-		Message: fmt.Sprintf("Sunshine until about %s charges the car at about €%.2f/kWh (€%.2f without the tax on own solar), cheaper than %s. Plug in to use it.",
+		Message: fmt.Sprintf("Sunshine until about %s charges the car at about €%.2f/kWh (€%.2f without the tax on own solar), no more than %s. Plug in to use it.",
 			r.s.clockText(*a.SolarUntil), solarGridPrice(a), *a.SolarPrice, than),
+		Verbs: []string{model.VerbSnooze, model.VerbView},
+	}, false)
+}
+
+// extraAdvice is today's advice when it is to charge extra from the grid
+// with a plan, offered or made, and has not been dismissed.
+func (r *reminders) extraAdvice() *DayAdviceView {
+	if r.view.Advice == nil {
+		return nil
+	}
+	today := localtime.Date(r.now, r.s.loc())
+	for i := range r.view.Advice.Days {
+		a := &r.view.Advice.Days[i]
+		planned := a.Adjustment != nil && a.Adjustment.Kind == model.AdjustExtraPlan
+		if a.Date == today && a.Recommendation == advice.ChargeExtra && !a.Solar && !a.Dismissed && len(a.Blocks) > 0 &&
+			(a.Action == model.AdjustExtraPlan || planned) {
+			return a
+		}
+	}
+	return nil
+}
+
+// extra asks to plug in while the car is home and unplugged on a day whose
+// advice is to charge extra with a plan: from half an hour before its cheap
+// blocks start until half an hour before they end. Without the plan yet, it
+// also asks to create it.
+func (r *reminders) extra() {
+	if !r.settings.Extra || r.lp.Connected || r.onTheRoad() || r.carAway() {
+		return
+	}
+	a := r.extraAdvice()
+	if a == nil {
+		return
+	}
+	from, until := a.Blocks[0].From, a.Blocks[len(a.Blocks)-1].Until
+	if r.now.Before(from.Add(-30*time.Minute)) || !r.now.Before(until.Add(-30*time.Minute)) || !r.allowed(false) {
+		return
+	}
+	then := " Plug in so the plan can charge."
+	if a.Adjustment == nil {
+		then = " Create the plan in the planner and plug in."
+	}
+	r.send(model.Notification{
+		Key: "extra:" + a.Date, Kind: model.NotifyExtra, Subject: "extra:" + a.Date, Latest: &until,
+		Title: "Plug in for charge extra", Message: a.Summary + then,
 		Verbs: []string{model.VerbSnooze, model.VerbView},
 	}, false)
 }

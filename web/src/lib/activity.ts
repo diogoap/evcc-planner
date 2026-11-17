@@ -92,6 +92,7 @@ const fieldLabels: Record<string, string> = {
   questions: 'Questions about calendar events',
   ready: 'Ready messages',
   solar: 'Solar reminders',
+  extra: 'Charge extra reminders',
   message: 'Message',
   autoApply: 'Automatic plans',
   autoMinConfidence: 'Minimum confidence',

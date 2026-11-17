@@ -97,7 +97,7 @@ Example: 100 km total at 18 kWh/100 km, 59 kWh usable capacity, and a configurab
 - User supplies **OpenRouter and KNMI API keys**, stored server-side as configuration/secrets.
 - **Price precedence:** published EVCC/Tibber prices for today/tomorrow take priority over weekly/weather estimates for those dates. Recalculate advice when published prices, SoC, or trips change; Tibber/OpenRouter and KNMI ingestion stay daily.
 - Produce one advisory recommendation for each date in the seven-day view, considering prices, solar, current/projected SoC, trip demand, and charging opportunities:
-- Keep advice qualitative, with two independent signals: **confidence 1 = low, 2 = medium, 3 = high**, and **charge indicator = little / medium / high (more)**. Indicators do not prescribe fixed kWh/SoC amounts; the user decides how much to charge.
+- Keep advice qualitative, with two independent signals: **confidence 1 = low, 2 = medium, 3 = high**, and **charge indicator = little / medium / high (more)**. Indicators do not prescribe fixed kWh/SoC amounts; the user decides how much to charge. (Replaced on 2026-11-17 by charge extra's steps and target; see Charge extra below.)
 
 | Recommendation | Meaning |
 | --- | --- |
@@ -208,6 +208,19 @@ Scope:
 - ✅ **Step 4, the day panel** (2026-11-13): tapping a day (tile, list row, or the chart) opens it over the Overview: a sheet from the bottom on phones, a panel at the right on wide screens. It shows the day's figures, its chart (that day only, three-hour ticks), its trips with on/off, edit, and history, what each departure needs and the planner's expected charging windows, and the advice with its price, sun, wind, and temperature. Quick actions: add a trip that day, send the plan covering through that day, open the day in Trips. The day is in the address (`?day=`), so the back gesture closes the panel; arrows or a sideways swipe move between days and Escape closes it. Dialogs opened from it (add or edit a trip, send a plan, a proposal) stack on top: Escape closes only the top one.
 - ✅ **Step 5, other pages and states** (2026-11-13): Trips rows keep one layout on every screen (time and title, distance and energy on the right, details, tags, actions), day headers stay in view while scrolling, and empty days offer **Add trip**. Settings sections fit on phones as a grid; every form shows a Save bar with **Discard** while changes are unsaved, and switching section, leaving the page, or closing the tab asks first. Activity filters fold behind a **Filters** button on phones. While a page loads it shows placeholders shaped like its content; empty pages say what to do next (no recurring trips, no matching activity); errors come with **Retry**. A failed refresh keeps the last data on screen: the top bar shows "Not updated" with its time and Retry.
 - Decisions (2026-11-12): the Overview leads with the ready check; day detail is a panel over the Overview, not its own page; layout and accessibility checks without pixel comparison; system font. Defaults: follow the system's light/dark setting (no switch); keep the hand-drawn icons (no icon library); no new chart dependency.
+
+</details>
+
+<details>
+<summary><b>Charge extra</b> ✅</summary>
+
+✅ **Done** (2026-11-17). Every rule, with a diagram: [AUTOMATION.md](AUTOMATION.md#charge-extra-daily-advice).
+
+- Three layers: the next departure (always), charge ahead for later trips (unchanged, €0.05/kWh minimum saving kept), and **charge extra**: the daily advice's extra charge, renamed from "charge ahead" so that name means only the trip feature.
+- Only days with published prices get a recommendation; later days show the outlook ("Looks cheaper"). **Defer** only on published prices: tomorrow's lowest at least 8% below today's lowest at home (with or without the sun, which still charges when cheaper than tomorrow's lowest).
+- **Charge extra** compares the day's blocks at home (until the plan's deadline; solar at the slot price minus the tax not paid on it) with a reference: tomorrow's lowest published price, else the past 7 days' average lowest price from the price history (at least 3 complete days). An **indication of cheaper days ahead** (little/medium/high, from outlook estimates, wind, and sun) picks a level of three steps (% cheaper → target SoC, each level on/off; defaults little 20→50, 30→80, 50→100; medium 30→40, 45→60, 60→80; high off). The target is capped at what the qualifying blocks can charge. Blocks at or below €0 count for every step.
+- Charge extra from solar when the sun is no dearer than the reference (no plan). Hints for trips that miss very cheap or negative blocks, and for negative prices with sun (exporting costs money: use it or switch the panels off).
+- Decisions (2026-11-17): levels by the indication of cheaper days ahead; the reference uses lowest prices; defer only on published prices; the charge-ahead margin stays €0.05. Settings → Advice replaces the per-indicator targets with the levels; auto-apply needs no policy: its plan has the advice's target, is ready when the cheap hours end (or by the next departure), and ends then (the Ready by and Expiry settings were removed). **Plug in for charge extra** and **Extra plan created** notifications (Charge extra reminders, on by default). Demo mode can seed a past week of prices for tests (`POST /api/demo/history`); real installs start their history empty.
 
 </details>
 

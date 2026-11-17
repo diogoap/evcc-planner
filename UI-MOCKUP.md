@@ -25,7 +25,7 @@ THIS WEEK                          [columns|list] [+ Add trip]
   9    10    11    12    13    14    15
  done  +8%  +21%  +10%  +8%  +12%   -
  defer ahead  -    keep   -   -  !   -
-(defer, charge extra, keep plan, no data; ! = to review)
+(defer, charge extra, keep plan, outlook or no data; ! = to review)
 
 MONDAY'S ADVICE
 Defer optional charging · confidence 3/3
@@ -64,7 +64,7 @@ Average EUR 0.24 · lowest EUR 0.11 (Sat 7 Nov) · highest EUR 0.45 (Mon 2 Nov) 
  Overview   Trips   Recurring   Activity   Settings
 ```
 
-The headline names the next departure and its state, with an icon: a green check for **Ready for tomorrow 07:48**, a bolt for **Charging for …**, a plug for **Plugged in for …** (waiting for its slots), and a red cross while the charge is not enough yet (**Plug in by 06:36 for …**, **Not enough time to charge for …**). The badge beside it says what the departure needs. The badges at the top show where Home Assistant's car location sensor puts the car (Home, Away, or a zone) and whether it is unplugged, plugged in, or charging. A paused automatic plan shows why, with **Resume**; a charge-ahead target says which later trips it includes and the prices compared; active extra plans show their expiry and **End now**. The card shows only the SoC and range; each source's reading and age is in the SoC's tooltip and under Settings → Connections, and an old reading says **last known**, never current. On desktop the main card and the advice sit side by side, and the week strip also shows km, kWh, and price per day. Tap a day (strip or chart) to open its panel. The week is titled **Next 7 days**; **Days shown** (3–7, remembered on the device, also on the phones' Charts page) shortens the week and the SoC and prices chart when the last days have little to show, while the advice, the ready check, notifications, and automatic plans still use all seven days. Confidence **1 low / 2 medium / 3 high** is separate from the **little / medium / high** charge indicator. Weak/no-data advice shows its reason and no plan action. Deferred charging has **Review postponement**; keeping a plan needs no action. Long-range days use qualitative signals unless numerical estimates are actually available.
+The headline names the next departure and its state, with an icon: a green check for **Ready for tomorrow 07:48**, a bolt for **Charging for …**, a plug for **Plugged in for …** (waiting for its slots), and a red cross while the charge is not enough yet (**Plug in by 06:36 for …**, **Not enough time to charge for …**). The badge beside it says what the departure needs. The badges at the top show where Home Assistant's car location sensor puts the car (Home, Away, or a zone) and whether it is unplugged, plugged in, or charging. A paused automatic plan shows why, with **Resume**; a charge-ahead target says which later trips it includes and the prices compared; active extra plans show their expiry and **End now**. The card shows only the SoC and range; each source's reading and age is in the SoC's tooltip and under Settings → Connections, and an old reading says **last known**, never current. On desktop the main card and the advice sit side by side, and the week strip also shows km, kWh, and price per day. Tap a day (strip or chart) to open its panel. The week is titled **Next 7 days**; **Days shown** (3–7, remembered on the device, also on the phones' Charts page) shortens the week and the SoC and prices chart when the last days have little to show, while the advice, the ready check, notifications, and automatic plans still use all seven days. Confidence **1 low / 2 medium / 3 high** is separate from charge extra's target SoC and its **little / medium / high** indication of cheaper days ahead. Weak/no-data advice shows its reason and no plan action. Deferred charging has **Review postponement**; keeping a plan needs no action. Long-range days use qualitative signals unless numerical estimates are actually available.
 
 **Day panel — one day in detail (V6).** A bottom sheet on phones and a side panel on desktop, over the Overview. The back gesture or Escape closes it; arrows (or a swipe on phones) move between days.
 
@@ -91,13 +91,15 @@ Lowest EUR 0.14 at 14:00 · published
 Sun 7.6 kWh while home · wind 5 Bft
 
 ADVICE
-Charge extra · confidence 2/3 · little
+Charge extra to 60% · confidence 2/3 · cheaper days ahead: medium
+About 4 h between 00:15 and 05:45 average EUR 0.17, 45% or more below
+this week's lowest prices (EUR 0.40).
 [Create extra plan] [Dismiss]  Why?
 
 [+ Add trip] [Send plan through Tue] [Open in Trips]
 ```
 
-Trip rows keep the same on/off and edit controls as on the Trips page. Days without published prices show their estimate, labelled, or **No data**.
+Trip rows keep the same on/off and edit controls as on the Trips page. Days without published prices show their estimate, labelled, and what the outlook expects (**Looks cheaper**, **Looks dearer**, **Similar**), or **No data**.
 
 **Trips — edit individual dated journeys.**
 

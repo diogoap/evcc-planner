@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { api } from '../api/client'
-import type { AdviceSettings } from '../api/types'
+import type { AdviceSettings, ExtraLevel } from '../api/types'
 import { useUnsaved } from '../lib/unsaved'
 import { notify, refresh } from '../store'
 import SaveBar from './SaveBar.vue'
@@ -14,24 +14,29 @@ watch(unsaved.dirty, (d) => emit('dirty', d))
 const saving = ref(false)
 const error = ref('')
 
-const targets: { key: 'targetLittle' | 'targetMedium' | 'targetHigh'; label: string }[] = [
-  { key: 'targetLittle', label: 'Little' },
-  { key: 'targetMedium', label: 'Medium' },
-  { key: 'targetHigh', label: 'High (more)' },
+// Charge extra per indication of cheaper days ahead: the more the coming
+// days look cheaper, the bigger the discount needed and the less it charges.
+const levels: {
+  key: 'extraLittle' | 'extraMedium' | 'extraHigh'
+  name: string
+  label: string
+  hint: string
+}[] = [
+  {
+    key: 'extraLittle',
+    name: 'little',
+    label: 'Little',
+    hint: 'No or weak signs that the coming days are cheaper.',
+  },
+  {
+    key: 'extraMedium',
+    name: 'medium',
+    label: 'Medium',
+    hint: 'The outlook expects a cheaper day, or wind or sun ahead.',
+  },
+  { key: 'extraHigh', name: 'high', label: 'High', hint: 'A cheaper day ahead, with wind or sun as well.' },
 ]
-
-// Automatic plans need every policy field; the server checks the same.
-const policyComplete = computed(() => {
-  const s = settings.value
-  return (
-    !!s &&
-    s.targetLittle != null &&
-    s.targetMedium != null &&
-    s.targetHigh != null &&
-    !!s.readyBy &&
-    s.expiryHours != null
-  )
-})
+const level = (key: (typeof levels)[number]['key']): ExtraLevel => settings.value![key]
 
 onMounted(async () => {
   try {
@@ -42,24 +47,13 @@ onMounted(async () => {
   }
 })
 
-// Empty number inputs become null rather than 0.
-function num(v: unknown) {
-  return v === '' || v == null ? null : Number(v)
-}
-
 async function save() {
   const s = settings.value
   if (!s) return
   saving.value = true
   error.value = ''
   try {
-    settings.value = await api.saveAdviceSettings({
-      ...s,
-      targetLittle: num(s.targetLittle),
-      targetMedium: num(s.targetMedium),
-      targetHigh: num(s.targetHigh),
-      expiryHours: num(s.expiryHours),
-    })
+    settings.value = await api.saveAdviceSettings(s)
     unsaved.mark()
     notify('Advice settings saved')
     refresh()
@@ -81,69 +75,76 @@ async function save() {
         <strong>Daily advice</strong>
       </div>
       <p class="field-hint m-0 mt-n2">
-        One recommendation per day (charge extra, defer, or nothing) from published prices, the weekly price
-        outlook, KNMI weather, and your trips. It never changes EVCC by itself.
+        One recommendation per day with published prices (charge extra, defer, or nothing); later days show
+        the weekly outlook. Charging has three layers: the next departure always, later trips when cheaper
+        (Charge ahead, under Planning), and charge extra on top, set here. EVCC gets the higher target. Advice
+        never changes EVCC by itself.
       </p>
+
+      <fieldset class="stack panel gap-3" data-testid="extra-levels">
+        <legend class="small muted">Charge extra</legend>
+        <p class="field-hint m-0">
+          Charges more when blocks at home are this much cheaper than tomorrow's lowest published price (or,
+          before it is published, the past 7 days' average lowest price), as far as those blocks can. Blocks
+          at or below €0 count for every step. Which steps apply depends on how strongly the coming days look
+          cheaper (weekly outlook, wind, sun).
+        </p>
+        <div v-for="l in levels" :key="l.key" class="stack gap-2" :data-testid="`extra-${l.name}`">
+          <label class="row small">
+            <input v-model="level(l.key).enabled" type="checkbox" :data-testid="`extra-${l.name}-enabled`" />
+            <span
+              ><strong>{{ l.label }}</strong> indication of cheaper days ahead
+              <span class="field-hint block">{{ l.hint }}</span></span
+            >
+          </label>
+          <div class="extra-steps" :class="{ muted: !level(l.key).enabled }">
+            <div v-for="(st, i) in level(l.key).steps" :key="i" class="extra-step">
+              <span class="unit">
+                <input
+                  v-model.number="st.minDiscountPct"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="any"
+                  :aria-label="`${l.label}, step ${i + 1}: at least this much cheaper`"
+                  :data-testid="`extra-${l.name}-${i}-discount`"
+                />
+                <span>% cheaper →</span>
+              </span>
+              <span class="unit">
+                <input
+                  v-model.number="st.targetSoc"
+                  type="number"
+                  min="10"
+                  max="100"
+                  :aria-label="`${l.label}, step ${i + 1}: charge to this SoC`"
+                  :data-testid="`extra-${l.name}-${i}-target`"
+                />
+                <span>%</span>
+              </span>
+            </div>
+          </div>
+        </div>
+      </fieldset>
 
       <div class="row">
         <ToggleSwitch
           v-model="settings.autoApply"
           label="Automatically create plans from daily advice"
-          :disabled="!policyComplete && !settings.autoApply"
           data-testid="advice-auto"
         />
         <strong>Automatically create plans from daily advice</strong>
       </div>
       <p class="field-hint m-0 mt-n2" data-testid="advice-auto-hint">
-        Off by default: you review a proposal and confirm each change. Automatic mode acts only on today's
-        advice with enough confidence, keeps every trip target, skips plans you set in EVCC, and restores the
-        previous setting at expiry.
-        <template v-if="!policyComplete"
-          >Set a target for each indicator, a ready-by time, and an expiry first.</template
-        >
+        Off by default: you review a proposal and confirm each change. Automatic mode acts once a day on
+        today's advice with enough confidence: an extra plan with charge extra's target (or a trip's, when
+        higher), ready when its cheap hours end, after which the previous plan comes back. It skips plans you
+        set in EVCC.
       </p>
 
       <fieldset class="stack panel gap-3">
-        <legend class="small muted">Automatic plan policy</legend>
+        <legend class="small muted">Automatic plans</legend>
         <div class="form-grid">
-          <label v-for="t in targets" :key="t.key" class="field">
-            Target for “{{ t.label }}”
-            <span class="unit">
-              <input
-                v-model="settings[t.key]"
-                type="number"
-                min="10"
-                max="100"
-                :data-testid="`advice-${t.key}`"
-              />
-              <span>%</span>
-            </span>
-          </label>
-        </div>
-        <span class="field-hint mt-n2">
-          The indicator is qualitative; these SoC targets are yours to choose. A trip's target is used when it
-          is higher.
-        </span>
-        <div class="form-grid">
-          <label class="field">
-            Ready by (on the advice day)
-            <input v-model="settings.readyBy" type="time" data-testid="advice-readyBy" />
-            <span class="field-hint">Moved earlier when the next departure is sooner.</span>
-          </label>
-          <label class="field">
-            Expiry after ready-by
-            <span class="unit">
-              <input
-                v-model="settings.expiryHours"
-                type="number"
-                min="0"
-                max="48"
-                data-testid="advice-expiryHours"
-              />
-              <span>h</span>
-            </span>
-            <span class="field-hint">Then the previous EVCC plan is restored.</span>
-          </label>
           <label class="field">
             Minimum confidence
             <select v-model.number="settings.autoMinConfidence">
@@ -167,3 +168,22 @@ async function save() {
     </form>
   </section>
 </template>
+
+<style scoped>
+.extra-steps {
+  display: grid;
+  gap: var(--space-2);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+}
+
+.extra-step {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.extra-step input {
+  width: 5.5em;
+}
+</style>

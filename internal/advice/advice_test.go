@@ -1,7 +1,6 @@
 package advice
 
 import (
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -13,259 +12,318 @@ func published(v float64) *DayPrice {
 func estimate(v float64) *DayPrice {
 	return &DayPrice{Value: v, Basis: BasisEstimate, Detail: "outlook"}
 }
-func weekly(v float64) *DayPrice { return &DayPrice{Value: v, Basis: BasisWeekly, Detail: "weekly"} }
 func bft(v int) *int             { return &v }
+func f(v float64) *float64       { return &v }
+func sunshine(v int) *int        { return &v }
+func sameDay(h, m int) time.Time { return time.Date(2026, 11, 9, h, m, 0, 0, time.UTC) }
 
 var dates = []string{"2026-11-09", "2026-11-10", "2026-11-11", "2026-11-12", "2026-11-13", "2026-11-14", "2026-11-15"}
-var labels = []string{"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}
+var names = []string{"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"}
 
-func week(prices ...*DayPrice) []Day {
-	days := make([]Day, len(prices))
-	for i, p := range prices {
-		days[i] = Day{Date: dates[i], Label: labels[i], Price: p, HomeHours: 16}
+// week is seven days with published prices on the first `published` days
+// and outlook estimates after, all at home.
+func week(published int, prices ...*DayPrice) []Day {
+	days := make([]Day, 7)
+	for i := range days {
+		days[i] = Day{Date: dates[i], Label: names[i][:3], Name: names[i], HomeHours: 16, Published: i < published}
+		if i < len(prices) {
+			days[i].Price = prices[i]
+		}
 	}
 	return days
 }
 
-func dep(day int, charge, energy float64) Departure {
-	t, _ := time.Parse("2006-01-02", dates[day])
-	return Departure{Date: dates[day], DepartAt: t.Add(8 * time.Hour), ChargePct: charge, EnergyPct: energy}
+// blocks are quarter-hours from 00:00 at the given grid prices, each
+// adding 1.5% (about 3.68 kW at 90% into 59 kWh).
+func blocks(prices ...float64) []Block {
+	out := make([]Block, len(prices))
+	for i, p := range prices {
+		start := sameDay(0, 0).Add(time.Duration(i) * 15 * time.Minute)
+		out[i] = Block{Start: start, End: start.Add(15 * time.Minute), Cost: p, SlotPrice: p, Pct: 1.5}
+	}
+	return sortedBlocks(out)
 }
 
-func TestChargeExtraOnACheapPublishedDay(t *testing.T) {
-	in := Input{
-		Days:       week(published(0.27), published(0.218), weekly(0.25), estimate(0.298), weekly(0.25), nil, nil),
-		Departures: []Departure{dep(1, 4, 10), dep(2, 3, 4), dep(3, 8, 8), dep(4, 6, 6)},
-		SoCKnown:   true,
-	}
-	got := Advise(in)
-	tue := got[1]
-	// Weekly averages are not day-specific but still count as later price
-	// levels: Tuesday is compared with Wednesday's, so confidence is low.
-	if tue.Recommendation != ChargeExtra || tue.Confidence != 1 || tue.CompareDate != "2026-11-11" {
-		t.Fatalf("Tuesday = %+v", tue)
-	}
-	// The outlook naming Tuesday the week's cheapest day makes it medium.
-	in.Days[1].Level = "cheapest"
-	got = Advise(in)
-	tue = got[1]
-	if tue.Confidence != 2 {
-		t.Fatalf("ranked Tuesday = %+v", tue)
-	}
-	// 0.25 vs 0.218 is 14.7% → little; later trips need 17% → medium cap.
-	if tue.Indicator != "little" || tue.LaterChargePct != 17 {
-		t.Errorf("indicator %s, later %.1f", tue.Indicator, tue.LaterChargePct)
-	}
-	if !strings.Contains(strings.Join(tue.Rationale, " "), "need about +17% SoC") {
-		t.Errorf("rationale = %v", tue.Rationale)
-	}
-	// Monday: Tuesday's prices (including its night, before the 08:00
-	// departure) are cheaper and no departure falls before Tuesday.
-	if mon := got[0]; mon.Recommendation != Defer || mon.DeferUntil != "2026-11-10" || mon.Confidence != 3 {
-		t.Errorf("Monday = %+v", mon)
-	}
-	if wed := got[2]; !wed.NoSuggestion || !strings.Contains(wed.Reason, "weekly average") || wed.Confidence != 0 {
-		t.Errorf("Wednesday = %+v", wed)
-	}
-	if sat := got[5]; !sat.NoSuggestion || !strings.Contains(sat.Reason, "No published prices") {
-		t.Errorf("Saturday = %+v", sat)
-	}
-}
-
-func TestKeepThePlanWhenTripsBeforeTheCheaperDayNeedCharge(t *testing.T) {
-	in := Input{
-		Days:       week(published(0.30), published(0.31), estimate(0.24)),
-		Departures: []Departure{dep(1, 5, 5), dep(2, 6, 10)},
-		SoCKnown:   true,
-	}
-	if mon := Advise(in)[0]; mon.Recommendation != None || mon.CompareDate != "2026-11-11" || !strings.Contains(mon.Summary, "Keep the plan") {
-		t.Errorf("Monday = %+v", mon)
-	}
-}
-
-func TestDeferIgnoresTripsBeforeTheDay(t *testing.T) {
-	// Thursday is dear and Friday cheaper; Tuesday's trip needs charge, but
-	// that happens before Thursday and does not block deferring Thursday.
-	in := Input{
-		Days:       week(published(0.25), published(0.26), estimate(0.27), estimate(0.30), estimate(0.24)),
-		Departures: []Departure{dep(1, 8, 8), dep(3, 0, 5), dep(4, 5, 5)},
-		SoCKnown:   true,
-	}
-	if thu := Advise(in)[3]; thu.Recommendation != Defer || thu.DeferUntil != "2026-11-13" {
-		t.Errorf("Thursday = %+v", thu)
-	}
-}
-
-func TestDeferWhenTheChargeCoversTheTripsUntilACheaperDay(t *testing.T) {
-	in := Input{
-		Days:       week(published(0.30), published(0.31), estimate(0.24), estimate(0.26)),
-		Departures: []Departure{dep(1, 0, 5), dep(2, 0, 5), dep(3, 6, 10)},
-		SoCKnown:   true,
-	}
-	total, home := 9.5, 6.2
-	in.Days[2].SolarKWh, in.Days[2].SolarHomeKWh = &total, &home
-	in.Days[2].Solar = &Solar{Pct: 6, Price: 0.15, GridPrice: 0.26}
-	got := Advise(in)
-	if mon := got[0]; mon.Recommendation != Defer || mon.DeferUntil != "2026-11-11" || mon.Confidence != 2 {
-		t.Fatalf("Monday = %+v", mon)
-	}
-	if !strings.Contains(strings.Join(got[0].Rationale, " "), "about 6 kWh of local solar while the car is home") {
-		t.Errorf("rationale should mention the local solar: %v", got[0].Rationale)
-	}
-	if !strings.Contains(strings.Join(got[2].Rationale, " "), "Sun: 9.5 kWh local solar forecast (EVCC), 6.2 kWh while the car is home.") {
-		t.Errorf("the day's own rationale should show its solar: %v", got[2].Rationale)
-	}
-
-	// Sun too weak to reach the charger's minimum: no claim that it may
-	// cover the charging, and the day says why.
-	in.Days[2].Solar, in.Days[2].Name, in.SolarMinKW = nil, "Wednesday", 1.38
-	got = Advise(in)
-	if strings.Contains(strings.Join(got[0].Rationale, " "), "local solar") {
-		t.Errorf("weak sun should not count in the deferral: %v", got[0].Rationale)
-	}
-	if want := "Wednesday: the sun stays below what the charger needs (about 1.4 kW above household use), so it can't charge the car."; !slices.Contains(got[2].Rationale, want) {
-		t.Errorf("the weak sun should be explained: %v", got[2].Rationale)
-	}
-
-	// After EVCC's forecast, KNMI's sunshine stands in.
-	in.Days[2].SolarKWh, in.Days[2].SolarHomeKWh, in.Days[2].SunshinePct = nil, nil, bft(60)
-	got = Advise(in)
-	if !strings.Contains(strings.Join(got[0].Rationale, " "), "Wed is sunny (60% of possible sunshine, KNMI)") {
-		t.Errorf("KNMI fallback in the deferral: %v", got[0].Rationale)
-	}
-	if !strings.Contains(strings.Join(got[2].Rationale, " "), "Sun: 60% of possible sunshine (KNMI national outlook") {
-		t.Errorf("KNMI fallback for the day: %v", got[2].Rationale)
-	}
-	if got[0].Indicator != "" {
-		t.Errorf("defer has no charge indicator: %q", got[0].Indicator)
-	}
-	// With an unknown SoC the charge cannot be shown to cover the trips.
-	in.SoCKnown = false
-	if mon := Advise(in)[0]; mon.Recommendation != None || !strings.Contains(mon.Summary, "SoC is unknown") {
-		t.Errorf("unknown SoC = %+v", mon)
-	}
-}
-
-func TestSimilarPricesAndNoComparison(t *testing.T) {
-	in := Input{Days: week(published(0.25), published(0.26)), Departures: []Departure{dep(1, 5, 5)}, SoCKnown: true}
-	got := Advise(in)
-	if got[0].Recommendation != None || got[0].NoSuggestion || got[0].Confidence != 3 || !strings.Contains(got[0].Summary, "similar") {
-		t.Errorf("similar = %+v", got[0])
-	}
-	if !got[1].NoSuggestion || !strings.Contains(got[1].Reason, "compare") {
-		t.Errorf("last priced day = %+v", got[1])
-	}
-}
-
-func TestCheapDayWithoutLaterNeed(t *testing.T) {
-	in := Input{Days: week(published(0.20), published(0.30)), Departures: []Departure{dep(1, 0, 5)}, SoCKnown: true}
-	if mon := Advise(in)[0]; mon.Recommendation != None || !strings.Contains(mon.Summary, "need no extra charge") {
-		t.Errorf("Monday = %+v", mon)
-	}
-	// An unknown SoC counts the later trips' energy.
-	in.SoCKnown = false
-	if mon := Advise(in)[0]; mon.Recommendation != ChargeExtra || mon.LaterChargePct != 5 {
-		t.Errorf("unknown SoC = %+v", mon)
-	}
-}
-
-func TestConfidenceAndIndicator(t *testing.T) {
-	// A calm day estimated as cheap is doubtful: medium becomes low.
-	in := Input{Days: week(estimate(0.20), estimate(0.30)), Departures: []Departure{dep(1, 30, 30)}, SoCKnown: true}
-	if c := Advise(in)[0].Confidence; c != 2 {
-		t.Fatalf("estimate vs estimate = %d", c)
-	}
-	in.Days[0].WindBft = bft(2)
-	if a := Advise(in)[0]; a.Confidence != 1 || a.Indicator != "high" {
-		t.Errorf("calm cheap estimate = %+v", a)
-	}
-	in.Days[0].WindBft = nil
-	in.Days[1].Price.Stale = true
-	if c := Advise(in)[0].Confidence; c != 1 {
-		t.Errorf("stale = %d", c)
-	}
-	cases := []struct {
-		diff, need float64
-		want       string
-	}{{0.10, 30, "little"}, {0.20, 30, "medium"}, {0.30, 30, "high"}, {0.30, 20, "medium"}, {0.30, 5, "little"}}
-	for _, c := range cases {
-		if got := indicator(c.diff, c.need); got != c.want {
-			t.Errorf("indicator(%.2f, %.0f) = %s, want %s", c.diff, c.need, got, c.want)
+func sortedBlocks(b []Block) []Block {
+	for i := 1; i < len(b); i++ {
+		for j := i; j > 0 && b[j].Cost < b[j-1].Cost; j-- {
+			b[j], b[j-1] = b[j-1], b[j]
 		}
 	}
+	return b
 }
 
-func TestAwayAllDay(t *testing.T) {
-	in := Input{Days: week(published(0.20), published(0.30)), Departures: []Departure{dep(1, 10, 10)}, SoCKnown: true}
+// repeat is n times the price.
+func repeat(n int, p float64) []float64 {
+	out := make([]float64, n)
+	for i := range out {
+		out[i] = p
+	}
+	return out
+}
+
+func levels() map[string]Level {
+	return map[string]Level{
+		IndicationLittle: {Enabled: true, Steps: []Step{{20, 50}, {30, 80}, {50, 100}}},
+		IndicationMedium: {Enabled: true, Steps: []Step{{30, 40}, {45, 60}, {60, 80}}},
+		IndicationHigh:   {Enabled: false, Steps: []Step{{40, 30}, {60, 50}, {75, 70}}},
+	}
+}
+
+// input is today published at home from 40%, tomorrow published with the
+// given lowest price (nil: not published yet).
+func input(today []Block, tomorrowLowest *float64) Input {
+	days := week(2, published(0.30), published(0.28), estimate(0.29), estimate(0.30), estimate(0.31))
+	days[0].Blocks, days[0].StartSoC = today, f(40)
+	days[1].Lowest = tomorrowLowest
+	days[1].Blocks = blocks(0.28)
+	if tomorrowLowest == nil {
+		days[1].Published = false
+		days[1].Price = estimate(0.28)
+	}
+	return Input{Days: days, SoCKnown: true, Levels: levels()}
+}
+
+func TestDeferWhenTomorrowIsCheaper(t *testing.T) {
+	in := input(blocks(0.25, 0.30, 0.32), f(0.15))
+	a := Advise(in)[0]
+	if a.Recommendation != Defer || a.DeferUntil != "2026-11-10" || a.Confidence != 3 || a.Reference.Basis != RefPublished {
+		t.Fatalf("today = %+v", a)
+	}
+	if !strings.Contains(a.Summary, "Tuesday is cheaper (lowest €0.15 vs €0.25)") {
+		t.Errorf("summary = %q", a.Summary)
+	}
+	// Trips before then need charge: keep the plan, and no charge extra.
+	in.Departures = []Departure{{Date: dates[0], ChargePct: 5}}
+	if a := Advise(in)[0]; a.Recommendation != None || !strings.HasPrefix(a.Summary, "Keep the plan: Tuesday is cheaper") {
+		t.Fatalf("with a trip to charge for = %+v", a)
+	}
+	in.Departures, in.SoCKnown = nil, false
+	if a := Advise(in)[0]; a.Recommendation != None || !strings.Contains(a.Summary, "SoC is unknown") {
+		t.Fatalf("SoC unknown = %+v", a)
+	}
+	// A little cheaper is not enough (8%).
+	if a := Advise(input(blocks(0.25, 0.30), f(0.24))); a[0].Recommendation == Defer {
+		t.Fatalf("4%% cheaper deferred: %+v", a[0])
+	}
+}
+
+func TestDeferWithOrWithoutTheSun(t *testing.T) {
+	sunny := func(solarCost float64) Input {
+		today := blocks(0.25, 0.30)
+		today = append(today, Block{Start: sameDay(12, 0), End: sameDay(12, 15), Cost: solarCost, SlotPrice: solarCost + 0.11, Solar: true, Pct: 3})
+		return input(sortedBlocks(today), f(0.15))
+	}
+	if a := Advise(sunny(0.10))[0]; a.Recommendation != Defer || !strings.Contains(a.Summary, "The sun still charges cheaper: keep the car plugged in from 12:00 to 12:15.") {
+		t.Fatalf("sun cheaper than tomorrow = %q", a.Summary)
+	}
+	// Tomorrow's lowest is below even the sun: no need to stay plugged in.
+	if a := Advise(sunny(0.20))[0]; a.Recommendation != Defer || !strings.Contains(a.Summary, "No need to keep it plugged in for the sun either.") {
+		t.Fatalf("tomorrow cheaper than the sun = %q", a.Summary)
+	}
+}
+
+func TestChargeExtraOnlyAsFarAsTheCheapBlocksGo(t *testing.T) {
+	// Four quarter-hours at €0.10, half of tomorrow's lowest: the top step
+	// (100%) applies, but those blocks add only 6%.
+	in := input(blocks(append(repeat(4, 0.10), repeat(20, 0.30)...)...), f(0.20))
+	a := Advise(in)[0]
+	if a.Recommendation != ChargeExtra || a.TargetSoC != 46 || a.ExtraPct != 6 || a.StepDiscountPct != 50 || a.Confidence != 3 ||
+		a.Indication != IndicationLittle || a.CompareDate != "2026-11-10" {
+		t.Fatalf("today = %+v", a)
+	}
+	if len(a.Blocks) != 1 || a.Blocks[0].From != sameDay(0, 0) || a.Blocks[0].Until != sameDay(1, 0) || a.Blocks[0].Price != 0.10 || a.Blocks[0].Pct != 6 {
+		t.Fatalf("blocks = %+v", a.Blocks)
+	}
+	if a.Summary != "Charge extra to 46%: 00:00–01:00 averages €0.10, 50% or more below tomorrow's lowest (€0.20)." {
+		t.Errorf("summary = %q", a.Summary)
+	}
+	// Cheap pieces apart: summed up, each listed in Why?.
+	split := input(blocks(0.10, 0.30, 0.10, 0.30, 0.10), f(0.20))
+	if a := Advise(split)[0]; a.Summary != "Charge extra to 44%: about 45 min between 00:00 and 01:15 average €0.10, 50% or more below tomorrow's lowest (€0.20)." ||
+		len(a.Blocks) != 3 {
+		t.Errorf("split summary = %q (%d blocks)", a.Summary, len(a.Blocks))
+	}
+	// The trips' target covers it already: nothing extra.
+	in.Days[0].TripTarget = 50
+	if a := Advise(in)[0]; a.Recommendation != None {
+		t.Fatalf("below the trip target = %+v", a)
+	}
+}
+
+func TestStepsFollowTheIndicationOfCheaperDaysAhead(t *testing.T) {
+	// Plenty of blocks 35% below tomorrow's lowest (€0.20), from 30%.
+	in := input(blocks(repeat(60, 0.13)...), f(0.20))
+	in.Days[0].StartSoC = f(30)
+	if a := Advise(in)[0]; a.TargetSoC != 80 || a.StepDiscountPct != 30 || a.Indication != IndicationLittle {
+		t.Fatalf("little indication = %+v", a)
+	}
+	// A windy Thursday: medium, so the same blocks charge only to 40%.
+	in.Days[3].WindBft = bft(5)
+	a := Advise(in)[0]
+	if a.Indication != IndicationMedium || a.TargetSoC != 40 || a.StepDiscountPct != 30 {
+		t.Fatalf("medium indication = %+v", a)
+	}
+	if !strings.Contains(strings.Join(a.Rationale, " "), "Thursday looks cheaper: windy.") {
+		t.Errorf("rationale = %v", a.Rationale)
+	}
+	// A windy Thursday whose estimate is also cheaper: high, switched off.
+	in.Days[3].Price = estimate(0.25)
+	a = Advise(in)[0]
+	if a.Indication != IndicationHigh || a.Recommendation != None || a.Summary != "The coming days look cheaper (high indication), so no extra charge." {
+		t.Fatalf("high indication = %+v", a)
+	}
+	// A dearer estimate takes away the wind's signal.
+	in.Days[3].Price = estimate(0.40)
+	if a := Advise(in)[0]; a.Indication != IndicationLittle {
+		t.Fatalf("windy but dearer = %+v", a)
+	}
+}
+
+func TestHistoryIsTheReferenceBeforeTomorrowIsPublished(t *testing.T) {
+	in := input(blocks(repeat(12, 0.18)...), nil)
+	if a := Advise(in)[0]; !a.NoSuggestion || a.Summary != "Nothing to compare with yet: tomorrow's prices aren't published, and the price history has 0 of 3 days." {
+		t.Fatalf("no history = %+v", a)
+	}
+	in.History = &History{LowAverage: 0.30, Days: 7}
+	a := Advise(in)[0]
+	if a.Recommendation != ChargeExtra || a.Confidence != 2 || a.Reference.Basis != RefHistory || a.Reference.Days != 7 || a.CompareDate != "" {
+		t.Fatalf("a week of history = %+v", a)
+	}
+	// 40% below: little step 2, as far as 12 blocks (18%) go.
+	if a.TargetSoC != 58 || a.StepDiscountPct != 30 || !strings.Contains(a.Summary, "below this week's lowest prices (€0.30)") {
+		t.Fatalf("target = %d (%v): %q", a.TargetSoC, a.StepDiscountPct, a.Summary)
+	}
+	in.History.Days = 4
+	if a := Advise(in)[0]; a.Confidence != 1 {
+		t.Fatalf("four days of history = %+v", a)
+	}
+	// Tomorrow's sun (EVCC's forecast) is a sign of cheaper days ahead.
+	in.Days[1].Solar = &Solar{Pct: 8}
+	if a := Advise(in)[0]; a.Indication != IndicationMedium {
+		t.Fatalf("a sunny tomorrow = %+v", a)
+	}
+}
+
+func TestNegativeAndNearZeroPrices(t *testing.T) {
+	// Tomorrow's lowest is negative, but today goes lower still: no defer,
+	// and blocks at or below €0 count for the top step.
+	in := input(blocks(-0.20, -0.20, 0.10, 0.20), f(-0.10))
+	a := Advise(in)[0]
+	if a.Recommendation != ChargeExtra || a.TargetSoC != 43 || a.StepDiscountPct != 50 || a.Blocks[0].Price != -0.2 {
+		t.Fatalf("negative prices = %+v", a)
+	}
+	// A reference near €0: discounts are measured from €0.01, so €0.004
+	// against €0.005 is 10%, not enough.
+	in = input(blocks(0.004, 0.30), f(0.005))
+	if a := Advise(in)[0]; a.Recommendation == ChargeExtra {
+		t.Fatalf("near zero = %+v", a)
+	}
+}
+
+func TestChargeExtraFromSolar(t *testing.T) {
+	sun := func(cost float64, pct float64) Block {
+		return Block{Start: sameDay(12, 0), End: sameDay(13, 0), Cost: cost, SlotPrice: cost + 0.11, Solar: true, Pct: pct}
+	}
+	// The sun alone covers the step: keep the car plugged in, no plan.
+	in := input(sortedBlocks(append(blocks(0.30, 0.30), sun(0.05, 20))), f(0.20))
+	a := Advise(in)[0]
+	if a.Recommendation != ChargeExtra || !a.Solar || a.SolarPct != 20 || *a.SolarGridPrice != 0.16 || *a.SolarPrice != 0.05 ||
+		!strings.Contains(a.Summary, "no more than tomorrow's lowest (€0.20). Keep the car plugged in.") {
+		t.Fatalf("solar step = %+v", a)
+	}
+	// Sun at the reference price (no discount) still counts: it is never
+	// dearer than charging later.
+	in = input(sortedBlocks(append(blocks(0.21, 0.30), sun(0.20, 5))), f(0.20))
+	if a := Advise(in)[0]; !a.Solar || a.SolarPct != 5 {
+		t.Fatalf("solar at the reference = %+v", a)
+	}
+	// Dearer than the reference: nothing.
+	in = input(sortedBlocks(append(blocks(0.21, 0.30), sun(0.25, 5))), f(0.20))
+	if a := Advise(in)[0]; a.Solar || a.Recommendation != None {
+		t.Fatalf("solar dearer than the reference = %+v", a)
+	}
+}
+
+func TestHintsForTripsAndNegativeSolar(t *testing.T) {
+	in := input(blocks(repeat(8, 0.30)...), f(0.29))
+	in.Days[0].Away = []Away{{Title: "Dentist", Start: sameDay(13, 0), End: sameDay(14, 0), Blocks: []Block{
+		{Start: sameDay(13, 0), End: sameDay(13, 15), Cost: -0.03, SlotPrice: -0.03, Pct: 1.5},
+		{Start: sameDay(13, 15), End: sameDay(13, 30), Cost: -0.05, SlotPrice: -0.05, Pct: 1.5},
+	}}}
+	in.Days[0].NegativeSun = []Span{{From: sameDay(13, 0), Until: sameDay(13, 30), Price: -0.05}}
+	a := Advise(in)[0]
+	if a.AwayHint != "−€0.04/kWh 13:00–13:30 while you're away (Dentist): consider moving the trip to charge then." {
+		t.Errorf("away hint = %q", a.AwayHint)
+	}
+	if a.ExportHint != "Prices are negative 13:00–13:30 (−€0.05/kWh), so exporting solar costs money. The car is away then: use the solar another way, or switch the panels off." {
+		t.Errorf("export hint = %q", a.ExportHint)
+	}
+	// A block as cheap as the top step, but no cheaper than at home: no hint.
+	in.Days[0].Away[0].Blocks = []Block{{Start: sameDay(13, 0), End: sameDay(13, 15), Cost: 0.14, SlotPrice: 0.14, Pct: 1.5}}
+	in.Days[0].Blocks = blocks(0.14, 0.30)
+	if a := Advise(in)[0]; a.AwayHint != "" {
+		t.Errorf("away hint for a price the car also gets at home = %q", a.AwayHint)
+	}
+	in.Days[0].Away[0].Blocks[0].Cost = 0.10
+	if a := Advise(in)[0]; !strings.HasPrefix(a.AwayHint, "€0.10/kWh 13:00–13:15 while you're away (Dentist)") {
+		t.Errorf("away hint for a clearly cheaper block = %q", a.AwayHint)
+	}
+	// Unless the car gets it at home later that day (after the deadline).
+	in.Days[0].HomeLowest = f(0.10)
+	if a := Advise(in)[0]; a.AwayHint != "" {
+		t.Errorf("away hint for a price at home later = %q", a.AwayHint)
+	}
+	in.Days[0].HomeLowest = nil
+	in.Days[0].Away[0].Blocks = []Block{
+		{Start: sameDay(13, 0), End: sameDay(13, 15), Cost: -0.03, SlotPrice: -0.03, Pct: 1.5},
+		{Start: sameDay(13, 15), End: sameDay(13, 30), Cost: -0.05, SlotPrice: -0.05, Pct: 1.5},
+	}
+	in.Days[0].Blocks = blocks(repeat(8, 0.30)...)
+	// Also when tomorrow is cheaper (defer).
+	in.Days[1].Lowest = f(0.20)
+	if a := Advise(in)[0]; a.Recommendation != Defer || !strings.Contains(a.AwayHint, "(Dentist)") {
+		t.Errorf("away hint on a defer day = %+v", a)
+	}
+	in.Days[0].NegativeSun[0].Home = true
+	if a := Advise(in)[0]; !strings.HasSuffix(a.ExportHint, "Keep the car plugged in to use the sun, and switch the panels off if nothing can use it.") {
+		t.Errorf("export hint at home = %q", a.ExportHint)
+	}
+}
+
+func TestUnknownSoCUsesTheStepsTarget(t *testing.T) {
+	in := input(blocks(repeat(4, 0.10)...), f(0.20))
+	in.Days[0].StartSoC = nil
+	a := Advise(in)[0]
+	if a.Recommendation != ChargeExtra || a.TargetSoC != 100 || !strings.Contains(strings.Join(a.Rationale, " "), "SoC unknown") {
+		t.Fatalf("unknown SoC = %+v", a)
+	}
+}
+
+func TestLaterDaysShowTheOutlook(t *testing.T) {
+	in := input(blocks(0.30), f(0.28))
+	days := Advise(in)
+	if d := days[2]; !d.NoSuggestion || d.Outlook != "similar" || d.Recommendation != None {
+		t.Fatalf("Wednesday = %+v", d)
+	}
+	in.Days[3].Price = estimate(0.25)
+	if d := Advise(in)[3]; d.Outlook != "cheaper" || d.Summary != "Not published yet. The outlook expects about €0.25/kWh, 17% below today." {
+		t.Fatalf("Thursday = %+v", d)
+	}
+	in.Days[4].Price = estimate(0.40)
+	if d := Advise(in)[4]; d.Outlook != "dearer" {
+		t.Fatalf("Friday = %+v", d)
+	}
+	in.Days[5].Price, in.Days[5].SunshinePct = nil, sunshine(70)
+	if d := Advise(in)[5]; d.Outlook != "" || !d.NoSuggestion {
+		t.Fatalf("Saturday without an estimate = %+v", d)
+	}
+}
+
+func TestLittleTimeAtHome(t *testing.T) {
+	in := input(blocks(0.10), f(0.20))
 	in.Days[0].HomeHours = 0.5
-	if mon := Advise(in)[0]; mon.Recommendation != None || mon.NoSuggestion || !strings.Contains(mon.Summary, "Little time at home") {
-		t.Errorf("away = %+v", mon)
-	}
-}
-
-// Friday at noon, plugged in at 29%: Friday's published prices average
-// €0.42, Saturday has only the weekly average, Sunday an estimate of €0.33.
-// The charge covers Friday and Saturday; Monday needs +16%.
-func solarFriday() Input {
-	day := func(date, label, name string, p *DayPrice) Day {
-		return Day{Date: date, Label: label, Name: name, Price: p, HomeHours: 16}
-	}
-	monday := time.Date(2026, 11, 16, 7, 30, 0, 0, time.UTC)
-	return Input{
-		Days: []Day{
-			day("2026-11-13", "Fri", "Friday", published(0.42)),
-			day("2026-11-14", "Sat", "Saturday", weekly(0.46)),
-			day("2026-11-15", "Sun", "Sunday", estimate(0.33)),
-			day("2026-11-16", "Mon", "Monday", nil),
-		},
-		Departures: []Departure{{Date: "2026-11-16", DepartAt: monday, ChargePct: 16, EnergyPct: 22}},
-		SoCKnown:   true,
-	}
-}
-
-func withSun(in Input, s *Solar) Input {
-	in.Days[0].Solar = s
-	return in
-}
-
-func TestChargeExtraFromSolarWhenTheSunBeatsLaterDays(t *testing.T) {
-	from, until := time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC), time.Date(2026, 11, 13, 15, 0, 0, 0, time.UTC)
-	got := Advise(withSun(solarFriday(), &Solar{Pct: 4, Price: 0.27, GridPrice: 0.38, From: from, Until: until}))[0]
-	if got.Recommendation != ChargeExtra || !got.Solar || got.CompareDate != "2026-11-15" {
-		t.Fatalf("Friday = %+v", got)
-	}
-	// Sunday is an estimate: medium confidence; the sun covers 4 of the 16%.
-	if got.Confidence != 2 || got.Indicator != "little" || got.SolarPct != 4 || *got.SolarPrice != 0.27 || *got.SolarGridPrice != 0.38 {
-		t.Errorf("confidence %d, indicator %s, solar %.1f%% at %v", got.Confidence, got.Indicator, got.SolarPct, *got.SolarPrice)
-	}
-	if !got.SolarFrom.Equal(from) || !got.SolarUntil.Equal(until) {
-		t.Errorf("solar window %v–%v", got.SolarFrom, got.SolarUntil)
-	}
-	// The grid price leads; the decision counts it without the tax.
-	if want := "Today's sun charges at about €0.38/kWh, or €0.27 without the tax you don't pay on own solar: " +
-		"cheaper than Sunday (about €0.33). Keep the car plugged in."; got.Summary != want {
-		t.Errorf("summary = %q", got.Summary)
-	}
-}
-
-func TestDeferOnlyWhenALaterDayBeatsTheSun(t *testing.T) {
-	// The sun at €0.32 is not clearly cheaper than Sunday's €0.33: Sunday
-	// still beats Friday's grid, so defer, and say the sun still charges.
-	got := Advise(withSun(solarFriday(), &Solar{Pct: 4, Price: 0.32}))[0]
-	if got.Recommendation != Defer || got.Solar || got.DeferUntil != "2026-11-15" {
-		t.Fatalf("Friday = %+v", got)
-	}
-	if want := "Sunday looks cheaper and your charge covers the trips until then. Solar still charges while the car is plugged in."; got.Summary != want {
-		t.Errorf("summary = %q", got.Summary)
-	}
-	// No sun: the plain defer, with Sunday's full name.
-	got = Advise(solarFriday())[0]
-	if got.Recommendation != Defer || got.Summary != "Sunday looks cheaper and your charge covers the trips until then." {
-		t.Errorf("without sun: %+v", got)
-	}
-	// A sliver of sun (under 1%) is not worth advising on.
-	got = Advise(withSun(solarFriday(), &Solar{Pct: 0.5, Price: 0.2}))[0]
-	if got.Solar || got.Recommendation != Defer {
-		t.Errorf("sliver of sun: %+v", got)
+	if a := Advise(in)[0]; a.Recommendation != None || a.Summary != "Little time at home to charge on this day." {
+		t.Fatalf("little time at home = %+v", a)
 	}
 }

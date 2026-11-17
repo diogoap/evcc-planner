@@ -392,7 +392,8 @@ async function applyDemo() {
             <strong>Charge ahead for later trips</strong>
             <div id="hint-ahead" class="field-hint">
               Automatic mode only. Within the published prices, adds later trips to the target when charging
-              for them before the next departure is cheaper than at home just before them.
+              for them before the next departure is cheaper than at home just before them. Charge extra (under
+              Advice) comes on top; EVCC gets the higher target.
             </div>
           </div>
         </div>

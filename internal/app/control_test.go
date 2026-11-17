@@ -214,6 +214,7 @@ func TestAutomaticPlansFollowTheTrips(t *testing.T) {
 func TestExtraPlansShareTheAutomaticPlan(t *testing.T) {
 	ta := newTestApp(t, "")
 	ta.json("POST", "/api/demo/reset", map[string]any{}, http.StatusNoContent, nil)
+	ta.pastWeek(0.40)
 	ta.setting("chargeAhead", false)
 	ta.plug(true, 30)
 	log := &eventLog{ta: ta}

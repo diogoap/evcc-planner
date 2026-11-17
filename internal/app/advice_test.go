@@ -28,12 +28,19 @@ type adviceDay struct {
 	NoSuggestion   bool   `json:"noSuggestion"`
 	Reason         string `json:"reason"`
 	Confidence     int    `json:"confidence"`
-	Indicator      string `json:"indicator"`
-	Action         string `json:"action"`
-	ActionNote     string `json:"actionNote"`
-	Dismissed      bool   `json:"dismissed"`
-	DeferUntil     string `json:"deferUntil"`
-	Price          *struct {
+	Indication     string `json:"indication"`
+	TargetSoC      int    `json:"targetSoc"`
+	Outlook        string `json:"outlook"`
+	Summary        string `json:"summary"`
+	Blocks         []struct {
+		From  string `json:"from"`
+		Until string `json:"until"`
+	} `json:"blocks"`
+	Action     string `json:"action"`
+	ActionNote string `json:"actionNote"`
+	Dismissed  bool   `json:"dismissed"`
+	DeferUntil string `json:"deferUntil"`
+	Price      *struct {
 		Value float64  `json:"value"`
 		Basis string   `json:"basis"`
 		Min   *float64 `json:"min"`
@@ -87,6 +94,23 @@ func (p advicePlan) day(date string) adviceDay {
 
 func (ta *testApp) at(t time.Time) { ta.app.Service.Clock = clock.Fixed{T: t} }
 
+// sameInstant compares two RFC 3339 times written in different zones.
+func sameInstant(a, b string) bool {
+	ta, errA := time.Parse(time.RFC3339, a)
+	tb, errB := time.Parse(time.RFC3339, b)
+	return errA == nil && errB == nil && ta.Equal(tb)
+}
+
+// pastWeek gives the demo seven days of price history with the given
+// lowest price, which charge extra compares with until tomorrow's prices
+// are published. At €0.40 Tuesday's night is about 58% cheaper.
+func (ta *testApp) pastWeek(low float64) {
+	ta.t.Helper()
+	if err := ta.app.Service.SeedPastWeek(low); err != nil {
+		ta.t.Fatal(err)
+	}
+}
+
 func (ta *testApp) evccPlan() *evcc.SocPlan {
 	st, _ := ta.app.Stub.State(context.Background())
 	return st.Vehicles[evcc.StubVehicle].Plan
@@ -112,6 +136,12 @@ func (ta *testApp) poll() {
 
 func TestDemoAdviceUsesPublishedPricesFirst(t *testing.T) {
 	ta := newTestApp(t, "")
+	// Without a price history Tuesday has nothing to compare with: its
+	// prices are published, the next day's are not.
+	if tue := ta.advice().day("2026-11-10"); !tue.NoSuggestion || !strings.Contains(tue.Summary, "price history has 0 of 3 days") {
+		t.Fatalf("Tuesday without history = %+v", tue)
+	}
+	ta.pastWeek(0.40)
 	a := ta.advice().Advice
 	if !a.Enabled || a.AutoApply || len(a.Days) != 7 {
 		t.Fatalf("advice = %+v", a)
@@ -122,13 +152,19 @@ func TestDemoAdviceUsesPublishedPricesFirst(t *testing.T) {
 	if mon.Recommendation != "defer" || mon.Confidence != 3 || mon.DeferUntil != "2026-11-10" || mon.Action != "postpone" {
 		t.Errorf("Monday = %+v", mon)
 	}
-	// Tuesday is published and the outlook's cheapest day.
+	// Tuesday's night is well below the past week's lowest prices; a sunny
+	// Thursday and a windy Sunday make the medium steps apply (60% from
+	// blocks 45% cheaper), up to the Tuesday drop-off.
 	if tue.Recommendation != "charge_extra" || tue.Price.Basis != "published" || tue.Confidence != 2 ||
-		tue.Indicator == "" || tue.Action != "extra_plan" {
+		tue.Indication != "medium" || tue.TargetSoC != 60 || tue.Action != "extra_plan" {
 		t.Errorf("Tuesday = %+v", tue)
 	}
-	if !wed.NoSuggestion || wed.Action != "" || wed.Price.Basis != "weekly" {
+	// Later days are not published: no recommendation, only the outlook.
+	if !wed.NoSuggestion || wed.Action != "" || wed.Price.Basis != "weekly" || wed.Outlook != "" {
 		t.Errorf("Wednesday = %+v", wed)
+	}
+	if thu.Outlook == "" || !strings.HasPrefix(thu.Summary, "Not published yet. The outlook expects about €0.30/kWh") {
+		t.Errorf("Thursday's outlook = %+v", thu)
 	}
 	if thu.Price == nil || thu.Price.Basis != "estimate" || thu.Price.Value < 0.29 || thu.Price.Value > 0.31 || thu.Price.Min != nil {
 		t.Errorf("Thursday's converted estimate = %+v", thu.Price)
@@ -160,6 +196,7 @@ func TestDemoAdviceUsesPublishedPricesFirst(t *testing.T) {
 
 func TestExtraPlanNeedsConfirmationAndRestores(t *testing.T) {
 	ta := newTestApp(t, "")
+	ta.pastWeek(0.40)
 	ta.tripPlans(model.TripPlansManual) // extra plans restore the earlier plan
 	// A plan the extra plan will replace and later restore.
 	ta.json("POST", "/api/evcc/plan", map[string]any{"soc": 50, "time": "2026-11-11T06:00:00Z", "confirm": true}, http.StatusOK, nil)
@@ -173,10 +210,15 @@ func TestExtraPlanNeedsConfirmationAndRestores(t *testing.T) {
 		Notes     []string
 	}
 	ta.json("GET", "/api/advice/2026-11-10/proposal?kind=extra_plan", nil, http.StatusOK, &p)
-	if !p.Available || p.MinSoC != 42 || p.SoC != 80 || !strings.HasPrefix(p.ReadyBy, "2026-11-10T07:48:00") {
+	// The target is charge extra's: 60% from Tuesday's cheap night, ready
+	// when it ends (before the 07:48 departure).
+	if !p.Available || p.MinSoC != 42 || p.SoC != 60 || !strings.HasPrefix(p.ReadyBy, "2026-11-10T05:45:00") ||
+		p.ExpiresAt != p.ReadyBy {
 		t.Fatalf("proposal = %+v", p)
 	}
-	if !strings.Contains(strings.Join(p.Notes, " "), "Replaces the current EVCC plan (50%") {
+	notes := strings.Join(p.Notes, " ")
+	if !strings.Contains(notes, "Replaces the current EVCC plan (50%") ||
+		!strings.Contains(notes, "Charge extra's target: up to 60% with blocks at least 45% below the past 7 days' average lowest price (€0.40)") {
 		t.Errorf("notes = %v", p.Notes)
 	}
 	if plan := ta.evccPlan(); plan == nil || plan.Soc != 50 {
@@ -215,13 +257,13 @@ func TestExtraPlanNeedsConfirmationAndRestores(t *testing.T) {
 	}
 	ta.json("POST", "/api/adjustments", body, http.StatusBadRequest, nil) // only one at a time
 
-	// Before expiry nothing changes; at expiry the trip plan comes back.
-	ta.at(time.Date(2026, 11, 10, 7, 0, 0, 0, ams))
+	// Before expiry nothing changes; at expiry (05:45) the trip plan comes back.
+	ta.at(time.Date(2026, 11, 10, 5, 0, 0, 0, ams))
 	ta.poll()
 	if plan := ta.evccPlan(); plan.Soc != 70 {
 		t.Fatalf("restored too early: %+v", plan)
 	}
-	ta.at(time.Date(2026, 11, 10, 7, 48, 0, 0, ams))
+	ta.at(time.Date(2026, 11, 10, 5, 45, 0, 0, ams))
 	ta.poll()
 	if plan := ta.evccPlan(); plan == nil || plan.Soc != 50 {
 		t.Fatalf("previous plan not restored: %+v", plan)
@@ -234,6 +276,7 @@ func TestExtraPlanNeedsConfirmationAndRestores(t *testing.T) {
 
 func TestExtraPlanWithoutPreviousPlanIsRemoved(t *testing.T) {
 	ta := newTestApp(t, "")
+	ta.pastWeek(0.40)
 	ta.tripPlans(model.TripPlansManual) // extra plans restore the earlier plan
 	ta.json("POST", "/api/adjustments", map[string]any{
 		"kind": "extra_plan", "date": "2026-11-10", "soc": 60, "confirm": true,
@@ -262,6 +305,7 @@ func TestExtraPlanWithoutPreviousPlanIsRemoved(t *testing.T) {
 
 func TestPlanFinishedByEVCCStillRestores(t *testing.T) {
 	ta := newTestApp(t, "")
+	ta.pastWeek(0.40)
 	ta.tripPlans(model.TripPlansManual) // extra plans restore the earlier plan
 	ctx := context.Background()
 	ta.json("POST", "/api/evcc/plan", map[string]any{"soc": 50, "time": "2026-11-11T06:00:00Z", "confirm": true}, http.StatusOK, nil)
@@ -288,6 +332,7 @@ func TestPlanFinishedByEVCCStillRestores(t *testing.T) {
 	// Removed in EVCC before reaching the target: the removal is kept.
 	ta.json("POST", "/api/demo/reset", map[string]any{}, http.StatusNoContent, nil)
 	ta.at(time.Date(2026, 11, 9, 19, 0, 0, 0, ams))
+	ta.pastWeek(0.40)
 	ta.json("POST", "/api/adjustments", extra, http.StatusCreated, &a)
 	ta.app.Stub.DeleteSocPlan(ctx, evcc.StubVehicle)
 	ta.poll()
@@ -298,6 +343,7 @@ func TestPlanFinishedByEVCCStillRestores(t *testing.T) {
 
 func TestManualEVCCChangesAreKept(t *testing.T) {
 	ta := newTestApp(t, "")
+	ta.pastWeek(0.40)
 	ctx := context.Background()
 	var a adjustment
 	ta.json("POST", "/api/adjustments", map[string]any{
@@ -399,8 +445,6 @@ func TestNeedlessPostponementIsNotOffered(t *testing.T) {
 	var s map[string]any
 	ta.json("GET", "/api/settings/advice", nil, http.StatusOK, &s)
 	s["autoApply"], s["autoPostpone"], s["autoMinConfidence"] = true, true, 2
-	s["targetLittle"], s["targetMedium"], s["targetHigh"] = 60, 70, 80
-	s["readyBy"], s["expiryHours"] = "06:00", 1
 	ta.json("PUT", "/api/settings/advice", s, http.StatusOK, nil)
 	if err := ta.app.Service.AutoApply(ctx); err != nil {
 		t.Fatal(err)
@@ -435,6 +479,7 @@ func TestWeakAdviceHasNoPlanAction(t *testing.T) {
 
 func TestDismissAndUndo(t *testing.T) {
 	ta := newTestApp(t, "")
+	ta.pastWeek(0.40)
 	ta.json("POST", "/api/advice/2026-11-10/dismiss", map[string]any{}, http.StatusNoContent, nil)
 	tue := ta.advice().Advice.Days[1]
 	if !tue.Dismissed || tue.Action != "" || tue.Recommendation != "charge_extra" {
@@ -456,10 +501,11 @@ func TestAdviceSettingsAndAutoApply(t *testing.T) {
 	if s["enabled"] != true || s["autoApply"] != false || s["autoMinConfidence"] != 3.0 {
 		t.Fatalf("defaults = %v", s)
 	}
-	// Auto-apply needs a concrete policy.
-	s["autoApply"] = true
-	ta.json("PUT", "/api/settings/advice", s, http.StatusBadRequest, nil)
-
+	// The charge-extra steps per indication of cheaper days ahead.
+	little := s["extraLittle"].(map[string]any)
+	if little["enabled"] != true || len(little["steps"].([]any)) != 3 || s["extraHigh"].(map[string]any)["enabled"] != false {
+		t.Fatalf("default steps = %v", s)
+	}
 	// Off by default: nothing happens.
 	ctx := context.Background()
 	if err := ta.app.Service.AutoApply(ctx); err != nil {
@@ -469,8 +515,8 @@ func TestAdviceSettingsAndAutoApply(t *testing.T) {
 		t.Fatal("auto-apply is off by default")
 	}
 
-	s["targetLittle"], s["targetMedium"], s["targetHigh"] = 60, 70, 80
-	s["readyBy"], s["expiryHours"], s["autoMinConfidence"], s["autoPostpone"] = "06:00", 1, 2, true
+	// Switching it on needs nothing else: plans follow charge extra's blocks.
+	s["autoApply"], s["autoMinConfidence"], s["autoPostpone"] = true, 2, true
 	ta.json("PUT", "/api/settings/advice", s, http.StatusOK, nil)
 
 	// Monday: today's advice is to defer, and postponing is allowed.
@@ -486,9 +532,11 @@ func TestAdviceSettingsAndAutoApply(t *testing.T) {
 		t.Fatalf("auto-apply acts once per day, got %d adjustments", n)
 	}
 
-	// Tuesday just after midnight: charge extra with the configured target,
-	// ready by 06:00 (before the 07:48 departure), restored an hour later.
+	// Tuesday just after midnight: charge extra with the advice's target,
+	// ready when its cheap blocks end (before the 07:48 departure), and
+	// restored then. The past week is Monday's and the six days before.
 	ta.at(time.Date(2026, 11, 10, 0, 30, 0, 0, ams))
+	ta.pastWeek(0.40)
 	ta.poll()
 	if err := ta.app.Service.AutoApply(ctx); err != nil {
 		t.Fatal(err)
@@ -499,11 +547,11 @@ func TestAdviceSettingsAndAutoApply(t *testing.T) {
 			extra = &a
 		}
 	}
-	// The target set for Tuesday's charge indicator.
-	want := map[string]int{"little": 60, "medium": 70, "high": 80}[ta.advice().day("2026-11-10").Indicator]
-	if want == 0 || extra == nil || extra.Source != "auto" || extra.Plan.SoC != float64(want) ||
-		!strings.HasPrefix(extra.ExpiresAt, "2026-11-10T07:00:00") {
-		t.Fatalf("auto extra plan = %+v, want %d%%", extra, want)
+	tue := ta.advice().day("2026-11-10")
+	want := tue.TargetSoC
+	if want == 0 || len(tue.Blocks) == 0 || extra == nil || extra.Source != "auto" || extra.Plan.SoC != float64(want) ||
+		!sameInstant(extra.ExpiresAt, tue.Blocks[len(tue.Blocks)-1].Until) {
+		t.Fatalf("auto extra plan = %+v, want %d%% until the cheap blocks end (%+v)", extra, want, tue.Blocks)
 	}
 	if plan := ta.evccPlan(); plan == nil || plan.Soc != float64(want) {
 		t.Errorf("EVCC plan = %+v", plan)

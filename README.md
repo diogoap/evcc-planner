@@ -353,25 +353,43 @@ to `main` deploy automatically, run `make verify` before pushing.
   converts market prices excl. VAT itself, using the article's own weekly
   excl./incl. pair: retail = weekly incl. + (day − weekly excl.) × 1.21. Each
   price shows how it was obtained (Settings → Connections).
-- **One recommendation per day**, comparing the day's average price with the
-  later days the car is home: **Charge extra** when it is at least 8% cheaper
-  than every later day and later trips will need charge; **Defer optional
-  charging** when a later day is at least 8% cheaper and the projected SoC
-  covers every departure until then; otherwise nothing (keep the plan). Days
-  with only a weekly average, or nothing to compare with, show **No data / no
-  suggestion**.
+- **Three layers:** the next departure is always charged; **Charge ahead**
+  (Settings → Planning) adds later trips when charging for them now is
+  cheaper; **charge extra**, from daily advice, adds a reserve on top when
+  prices are clearly low. EVCC gets the higher target.
+- **One recommendation per day with published prices** (today, and tomorrow
+  after ~14:00); later days show what the outlook expects ("Looks cheaper").
+  - **Defer optional charging** when tomorrow's lowest published price is at
+    least 8% below today's lowest at home and the projected SoC covers every
+    departure until then: charge only for the trips (and from the sun when
+    that is cheaper still). Estimates never defer.
+  - **Charge extra** compares the day's blocks at home with a reference:
+    tomorrow's lowest published price, or before it is published the past 7
+    days' average lowest price (from the price history). The more the coming
+    days look cheaper (outlook estimates, wind, sun: little, medium, or high
+    indication), the bigger the discount needed and the less it charges;
+    Settings → Advice has the steps per indication (by default for little:
+    20% cheaper → 50%, 30% → 80%, 50% → 100%). The target is only what those
+    cheap blocks can charge, so one cheap hour adds a few percent, not a full
+    battery. Blocks at or below €0 always count.
+  - **Charge extra from solar**: when the sun at home (its slot price minus
+    the tax not paid on own solar) is no dearer than the reference, keep the
+    car plugged in; EVCC charges from it by itself.
+  - Hints: a trip that misses very cheap or negative prices ("consider moving
+    the trip"), and negative prices while the sun shines (exporting costs
+    money: use the solar, or switch the panels off).
+  - No reference yet (no published tomorrow and fewer than 3 days of price
+    history): **No data / no suggestion**.
 - **Sun:** EVCC's local solar forecast for today and tomorrow, in kWh for the
   day and while the car is home (before household use); later days show KNMI's
-  national sunshine (% of possible). It is shown and explained, but does not
-  change the recommendation.
-- **Confidence** 1 low / 2 medium / 3 high follows the weaker of the two
-  compared prices (published 3, estimate 2, weekly average 1), lowered for
-  stale sources or KNMI wind that contradicts an estimate. The **charge
-  indicator** (little / medium / high) reflects the price gap and later need;
-  it never prescribes an amount. Low-confidence and no-data advice offer no
-  plan action.
-- **Create extra plan** opens an editable proposal (target in % or kWh,
-  ready-by, expiry) with an EVCC preview. It replaces EVCC's one plan until it
+  national sunshine (% of possible).
+- **Confidence** 1 low / 2 medium / 3 high: 3 against tomorrow's published
+  prices, 2 against a week of price history, 1 against less. Low-confidence
+  and no-data advice offer no plan action. Every rule, with a diagram:
+  [AUTOMATION.md](AUTOMATION.md#charge-extra-daily-advice).
+- **Create extra plan** opens an editable proposal (charge extra's target in %
+  or kWh; ready-by and expiry, by default when its cheap hours end) with an
+  EVCC preview. It replaces EVCC's one plan until it
   expires: the target is at least the next departure's and ready before it
   leaves. **Review postponement** (today only) pauses EVCC's cheap-grid
   charging (its smart cost limit) until the cheaper day; trip plans keep
@@ -381,9 +399,12 @@ to `main` deploy automatically, run `make verify` before pushing.
 - At expiry (or **End now**) the previous plan or limit is restored, unless it
   was changed in EVCC in the meantime; then your change is kept.
 - **Automatically create plans from daily advice** (Settings → Advice) is off by
-  default and needs a SoC target per indicator, a ready-by time, and an expiry.
-  It acts once a day on today's advice with enough confidence, keeps trip
-  targets, and skips plans you set in EVCC.
+  default. It acts once a day on today's advice with enough confidence: an
+  extra plan with charge extra's target, ready when its cheap hours end and
+  ended then. It keeps trip targets and skips plans you set in EVCC. With
+  **Charge extra reminders** on (Settings → Notifications), the phones are
+  told when it creates a plan, and asked to plug in before charge extra's
+  cheap hours when the car is home but unplugged.
 
 ## Activity log and history
 

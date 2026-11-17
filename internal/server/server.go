@@ -105,6 +105,7 @@ func (s *Server) Handler() http.Handler {
 	}
 	if s.Reset != nil {
 		mux.HandleFunc("POST /api/demo/notification-action", s.demoNotificationAction)
+		mux.HandleFunc("POST /api/demo/history", s.demoHistory)
 		mux.HandleFunc("POST /api/demo/reset", func(w http.ResponseWriter, r *http.Request) {
 			if err := s.Reset(r.Context()); err != nil {
 				s.fail(w, err)
@@ -739,6 +740,23 @@ func (s *Server) cancelAdjustment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, a)
+}
+
+// demoHistory gives the demo a past week of prices with the given lowest
+// price, so charge extra has something to compare with (tests only).
+func (s *Server) demoHistory(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Low float64 `json:"low"`
+	}
+	if err := decode(r, &in); err != nil {
+		s.fail(w, err)
+		return
+	}
+	if err := s.Svc.SeedPastWeek(in.Low); err != nil {
+		s.fail(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) demoVehicle(w http.ResponseWriter, r *http.Request) {

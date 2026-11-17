@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/diogoap/evcc-planner/internal/advice"
 	"github.com/diogoap/evcc-planner/internal/audit"
 	"github.com/diogoap/evcc-planner/internal/evcc"
 	"github.com/diogoap/evcc-planner/internal/localtime"
@@ -138,6 +139,10 @@ func (s *Service) Proposal(ctx context.Context, kind, date string) (*ProposalVie
 		latest = next.DepartAt
 		readyBy = minTime(readyBy, next.DepartAt)
 	}
+	// Charge extra's plan is ready when its cheap blocks end.
+	if spans := day.Blocks; len(spans) > 0 && !day.Solar {
+		readyBy = minTime(readyBy, spans[len(spans)-1].Until)
+	}
 	readyBy = readyBy.Truncate(time.Minute)
 	if !readyBy.After(now.Add(15 * time.Minute)) {
 		return unavailable("Too late to charge on this day.")
@@ -147,8 +152,8 @@ func (s *Service) Proposal(ctx context.Context, kind, date string) (*ProposalVie
 	maxExp := minTime(readyBy.Add(maxExpiry), view.To)
 	p.ExpiresAt, p.MaxExpiresAt = &expires, &maxExp
 
-	// Default target: charge on this day what the plan would otherwise add
-	// for this day's and later departures.
+	// Default target: charge extra's, else what the plan would otherwise
+	// add for this day's and later departures.
 	target := max(p.MinSoC, 80)
 	if view.SoC.Known {
 		base := 0.0
@@ -172,13 +177,20 @@ func (s *Service) Proposal(ctx context.Context, kind, date string) (*ProposalVie
 		if veh.LimitSoc > 0 {
 			limit = veh.LimitSoc
 		}
-		if target > max(limit, p.MinSoC) {
+		if target > max(limit, p.MinSoC) && (day.TargetSoC == 0 || day.Solar) {
 			target = max(limit, p.MinSoC)
 			p.Notes = append(p.Notes, fmt.Sprintf("Covering every later trip would need %d%%; the default stops at EVCC's charge limit (%d%%).",
 				min(100, int(math.Ceil(base+need-1e-6))), limit))
 		}
 	} else {
 		p.Notes = append(p.Notes, "The SoC is unknown until the car is plugged in; choose the target yourself.")
+	}
+	// Charge extra's target, from its steps and what the cheap blocks can
+	// charge, replaces that default.
+	if day.TargetSoC > 0 && !day.Solar {
+		target = max(p.MinSoC, day.TargetSoC)
+		p.Notes = append(p.Notes, fmt.Sprintf("Charge extra's target: up to %d%% with blocks at least %.0f%% below %s (Settings → Advice); change it if you like.",
+			day.TargetSoC, day.StepDiscountPct, referenceText(day.Reference)))
 	}
 	p.SoC = min(100, target)
 	if p.CurrentPlan != nil {
@@ -187,9 +199,19 @@ func (s *Service) Proposal(ctx context.Context, kind, date string) (*ProposalVie
 	} else {
 		p.Notes = append(p.Notes, "EVCC has no plan now; this one is removed when it expires.")
 	}
-	p.Notes = append(p.Notes, "The charge indicator is qualitative: choose the amount yourself.")
 	p.Available = true
 	return p, nil
+}
+
+// referenceText is the price charge extra compared with, in a few words.
+func referenceText(r *advice.Reference) string {
+	if r == nil {
+		return "the reference price"
+	}
+	if r.Basis == advice.RefPublished {
+		return fmt.Sprintf("tomorrow's lowest price (€%.2f)", r.Value)
+	}
+	return fmt.Sprintf("the past %d days' average lowest price (€%.2f)", r.Days, r.Value)
 }
 
 func noActionReason(day *DayAdviceView, kind string) string {
@@ -680,24 +702,17 @@ func (s *Service) AutoApply(ctx context.Context) error {
 	in := AdjustInput{Kind: day.Action, Date: today}
 	switch day.Action {
 	case model.AdjustExtraPlan:
-		target, ok := settings.Target(day.Indicator)
-		if !ok {
+		target := day.TargetSoC
+		if target == 0 {
 			return nil
 		}
+		// Ready when charge extra's cheap blocks end (the proposal's
+		// default), and ended then.
 		p, err := s.Proposal(ctx, in.Kind, today)
 		if err != nil || !p.Available {
 			return err
 		}
-		h, m, _ := localtime.ParseClock(settings.ReadyBy)
-		readyBy := minTime(localtime.OnDay(localtime.StartOfDay(s.now(), s.loc()), h, m), *p.LatestReadyBy)
-		if !readyBy.After(s.now().Add(15 * time.Minute)) {
-			return nil
-		}
-		in.SoC, in.ReadyBy = max(target, p.MinSoC), &readyBy
-		in.ExpiresAt = readyBy.Add(time.Duration(*settings.ExpiryHours) * time.Hour)
-		if in.ExpiresAt.After(*p.MaxExpiresAt) {
-			in.ExpiresAt = *p.MaxExpiresAt
-		}
+		in.SoC, in.ReadyBy, in.ExpiresAt = max(target, p.MinSoC), p.ReadyBy, *p.ReadyBy
 	case model.AdjustPostpone:
 		if !settings.AutoPostpone {
 			return nil
@@ -715,5 +730,8 @@ func (s *Service) AutoApply(ctx context.Context) error {
 		return err
 	}
 	s.Log.Info("auto-applied advice", "date", today, "kind", a.Kind, "note", a.Note)
+	if a.Kind == model.AdjustExtraPlan {
+		return s.notifyAutoExtra(ctx, a, day)
+	}
 	return nil
 }

@@ -135,8 +135,11 @@ func (s *Service) Dismiss(ctx context.Context, date string, undo bool) error {
 // adviceDetail is the advice an action was based on.
 func adviceDetail(day *DayAdviceView) json.RawMessage {
 	d := map[string]any{"adviceDate": day.Date, "recommendation": day.Recommendation, "confidence": day.Confidence}
-	if day.Indicator != "" {
-		d["chargeIndicator"] = day.Indicator
+	if day.TargetSoC > 0 {
+		d["targetSoc"] = day.TargetSoC
+	}
+	if day.Indication != "" {
+		d["indication"] = day.Indication
 	}
 	return audit.Marshal(d)
 }
@@ -199,7 +202,11 @@ func (s *Service) buildAdvice(view *PlanView, result planner.Result, socKnown bo
 	}
 	outlookStale := outlook != nil && now.Sub(outlook.FetchedAt) > outlookMaxAge
 
-	in := advice.Input{SoCKnown: socKnown, SolarMinKW: planner.MinChargeKW(planParams(view.Settings))}
+	in := advice.Input{SoCKnown: socKnown, SolarMinKW: planner.MinChargeKW(planParams(view.Settings)), Levels: adviceLevels(settings)}
+	if in.History, err = s.pastLows(today); err != nil {
+		return nil, err
+	}
+	charging := s.aheadSlots()
 	var away [][2]time.Time
 	for _, b := range result.Blocks {
 		away = append(away, [2]time.Time{b.DepartAt, b.ReturnAt})
@@ -248,6 +255,9 @@ func (s *Service) buildAdvice(view *PlanView, result planner.Result, socKnown bo
 			if sc.Pct > 0 {
 				day.Solar = &advice.Solar{Pct: sc.Pct, Price: sc.Price, GridPrice: sc.GridPrice, From: sc.From, Until: sc.Until}
 			}
+		}
+		if day.Price != nil && day.Price.Basis == advice.BasisPublished {
+			s.publishedDay(&day, view, result, slots, charging, solar, start, end, socKnown)
 		}
 		in.Days = append(in.Days, day)
 	}
@@ -303,6 +313,140 @@ func (s *Service) buildAdvice(view *PlanView, result planner.Result, socKnown bo
 	}
 	out.Sources = s.adviceSources(now, slots, solar, outlook, orec, weather, wrec, view.Days)
 	return out, nil
+}
+
+// publishedDay adds what charge extra and defer need for a day with
+// published prices: the charging capacity at home from now until the
+// plan's deadline (the end of the day, or the next departure minus the
+// charging buffer), the trips with what they miss, the day's lowest price
+// once all of it is published, the SoC when charging can start, the trips'
+// target when the window ends at the next departure, and the times prices
+// are negative while the sun shines.
+func (s *Service) publishedDay(day *advice.Day, view *PlanView, result planner.Result, slots []evcc.Rate,
+	charging []planner.Slot, solar *evcc.SolarForecast, start, end time.Time, socKnown bool) {
+	day.Published = true
+	if low, _, _, hours := dayPrices(slots, start, end); low != nil && hours >= end.Sub(start).Hours()-0.01 {
+		day.Lowest = low
+	}
+	settings := view.Settings
+	params := planParams(settings)
+	ap := planner.AheadParams{HouseholdKW: settings.HouseholdKW, SolarTaxSaving: settings.SolarTaxSaving}
+	from, deadline := maxTime(start, view.Now), end
+	next := view.Next
+	byNext := next != nil && !next.DepartAt.Before(from) && next.DepartAt.Before(end)
+	if byNext {
+		deadline = next.DepartAt.Add(-time.Duration(settings.ChargeBufferMin) * time.Minute)
+	}
+	day.Blocks = adviceBlocks(planner.ChargeSlots(charging, homePeriods(result.Blocks, from, deadline), params, ap), s.loc())
+	for _, c := range planner.ChargeSlots(charging, homePeriods(result.Blocks, from, end), params, ap) {
+		if !c.Solar && (day.HomeLowest == nil || c.Cost < *day.HomeLowest) {
+			day.HomeLowest = ptr(c.Cost)
+		}
+	}
+	for _, b := range view.Blocks {
+		bs, be := maxTime(b.DepartAt, from), minTime(b.ReturnAt, end)
+		if !be.After(bs) {
+			continue
+		}
+		day.Away = append(day.Away, advice.Away{
+			Title: strings.Join(b.Titles, ", "), Start: bs, End: be,
+			Blocks: adviceBlocks(planner.ChargeSlots(charging, [][2]time.Time{{bs, be}}, params, ap), s.loc()),
+		})
+	}
+	switch {
+	case !socKnown:
+	case byNext && next.StartSoC != nil:
+		day.StartSoC = ptr(*next.StartSoC)
+	default:
+		// After the last trip back before the window, else the SoC now.
+		at := view.SoC.Projected
+		for _, b := range view.Blocks {
+			if !b.ReturnAt.After(from) && b.ArrivalSoC != nil {
+				at = b.ArrivalSoC
+			}
+		}
+		if at != nil {
+			day.StartSoC = ptr(*at)
+		}
+	}
+	if byNext {
+		day.TripTarget = float64(next.TargetSoC)
+		if t := view.Control.Target; t != nil {
+			day.TripTarget = math.Max(day.TripTarget, float64(t.SoC))
+		}
+	}
+	if solar.Covers(end) {
+		day.NegativeSun = negativeSun(slots, solar, result.Blocks, from, end, settings.HouseholdKW, s.loc())
+	}
+}
+
+// homePeriods are the times in [from, to) outside the away blocks.
+func homePeriods(blocks []planner.Block, from, to time.Time) [][2]time.Time {
+	var out [][2]time.Time
+	at := from
+	for _, b := range blocks {
+		if !b.ReturnAt.After(at) || !b.DepartAt.Before(to) {
+			continue
+		}
+		if b.DepartAt.After(at) {
+			out = append(out, [2]time.Time{at, b.DepartAt})
+		}
+		at = b.ReturnAt
+	}
+	if to.After(at) {
+		out = append(out, [2]time.Time{at, to})
+	}
+	return out
+}
+
+// adviceBlocks converts charging capacity for the advice, in local time.
+func adviceBlocks(list []planner.ChargeSlot, loc *time.Location) []advice.Block {
+	out := make([]advice.Block, len(list))
+	for i, c := range list {
+		out[i] = advice.Block{Start: c.Start.In(loc), End: c.End.In(loc), Cost: c.Cost, SlotPrice: c.SlotPrice, Solar: c.Solar, Pct: c.Pct}
+	}
+	return out
+}
+
+// negativeSun lists the slots in [from, to) with a negative price while the
+// solar forecast exceeds household use, merged where they touch, and
+// whether the car is home then.
+func negativeSun(slots []evcc.Rate, solar *evcc.SolarForecast, blocks []planner.Block, from, to time.Time,
+	householdKW float64, loc *time.Location) []advice.Span {
+	var out []advice.Span
+	for _, r := range slots {
+		start, end := maxTime(r.Start, from), minTime(r.End, to)
+		if !end.After(start) || r.Value >= 0 || solar.EnergyKWh(start, end)/end.Sub(start).Hours() <= householdKW {
+			continue
+		}
+		home := true
+		for _, b := range blocks {
+			if start.Before(b.ReturnAt) && end.After(b.DepartAt) {
+				home = false
+			}
+		}
+		if n := len(out); n > 0 && !start.After(out[n-1].Until) && out[n-1].Home == home {
+			out[n-1].Until = end.In(loc)
+			out[n-1].Price = math.Min(out[n-1].Price, r.Value)
+			continue
+		}
+		out = append(out, advice.Span{From: start.In(loc), Until: end.In(loc), Price: r.Value, Home: home})
+	}
+	return out
+}
+
+// adviceLevels are the charge-extra steps per indication.
+func adviceLevels(a model.AdviceSettings) map[string]advice.Level {
+	out := map[string]advice.Level{}
+	for _, ind := range []string{model.IndicationLittle, model.IndicationMedium, model.IndicationHigh} {
+		l := a.Level(ind)
+		lv := advice.Level{Enabled: l.Enabled}
+		for _, st := range l.Steps {
+			lv.Steps = append(lv.Steps, advice.Step{MinDiscountPct: st.MinDiscountPct, TargetSoC: float64(st.TargetSoC)})
+		}
+		out[ind] = lv
+	}
+	return out
 }
 
 // actionable reports whether advice may lead to a plan action: weak (low

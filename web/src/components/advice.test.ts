@@ -22,8 +22,16 @@ const advice = (over: Partial<DayAdvice>): DayAdvice => ({
   recommendation: 'charge_extra',
   noSuggestion: false,
   confidence: 2,
-  indicator: 'high',
-  summary: 'Published Tue prices are cheaper than the rest of the window.',
+  indication: 'medium',
+  targetSoc: 60,
+  reference: {
+    value: 0.4,
+    basis: 'history',
+    days: 7,
+    detail: 'the average lowest price of the past 7 days (€0.400)',
+  },
+  summary:
+    "Charge extra to 60%: 00:00–06:00 averages €0.17, 45% or more below this week's lowest prices (€0.40).",
   rationale: ['Tue: €0.218/kWh average incl. VAT (published day-ahead prices).'],
   laterChargePct: 30,
   price: { value: 0.218, basis: 'published', detail: 'published day-ahead prices', stale: false },
@@ -48,12 +56,14 @@ function card(a: DayAdvice) {
 }
 
 describe('AdviceCard', () => {
-  it('shows the recommendation, confidence, indicator, and plan action', async () => {
+  it("shows the recommendation, confidence, charge extra's target, and plan action", async () => {
     const w = card(advice({}))
     expect(w.text()).toContain("Tuesday's advice")
-    expect(w.get('[data-testid=advice-label]').text()).toBe('Charge extra')
+    expect(w.get('[data-testid=advice-label]').text()).toBe('Charge extra to 60%')
     expect(w.get('[data-testid=advice-confidence]').text()).toBe('Medium confidence')
-    expect(w.get('[data-testid=advice-indicator]').text()).toBe('Charge: High (more)')
+    expect(w.get('[data-testid=advice-target]').text()).toBe('To 60%')
+    expect(w.get('[data-testid=advice-indication]').text()).toBe('Cheaper days ahead: medium')
+    expect(w.get('[data-testid=advice-reference]').text()).toBe("Past 7 days' lowest €0.40")
     expect(w.get('[data-testid=advice-basis]').text()).toBe('Published')
     // The sun names its source in one word.
     const sun = w.get('[data-testid=advice-sun]')
@@ -65,6 +75,38 @@ describe('AdviceCard', () => {
     await dismiss.trigger('click')
     expect(w.emitted('dismiss')).toEqual([[false]])
     expect(w.get('[data-testid=advice-sources]').text()).toContain('stale')
+  })
+
+  it('shows hints for a trip that misses cheap prices and for negative prices with sun', () => {
+    const w = card(
+      advice({
+        awayHint:
+          "−€0.04/kWh 13:00–13:30 while you're away (Dentist): consider moving the trip to charge then.",
+        exportHint: 'Prices are negative 13:00–13:30 (−€0.05/kWh), so exporting solar costs money.',
+      }),
+    )
+    expect(w.get('[data-testid=advice-away]').text()).toContain('(Dentist)')
+    expect(w.get('[data-testid=advice-export]').text()).toContain('exporting solar costs money')
+    expect(card(advice({})).find('[data-testid=advice-away]').exists()).toBe(false)
+  })
+
+  it('shows what the outlook expects for days not published yet', () => {
+    const w = card(
+      advice({
+        recommendation: 'none',
+        noSuggestion: true,
+        confidence: 0,
+        targetSoc: undefined,
+        indication: undefined,
+        reference: undefined,
+        outlook: 'cheaper',
+        action: undefined,
+        summary: 'Not published yet. The outlook expects about €0.25/kWh, 17% below today.',
+      }),
+    )
+    expect(w.get('[data-testid=advice-label]').text()).toBe('Looks cheaper (not published yet)')
+    expect(w.find('[data-testid=advice-target]').exists()).toBe(false)
+    expect(w.find('button.primary').exists()).toBe(false)
   })
 
   it('says to keep the car plugged in when the sun charges extra, with no plan', () => {
@@ -197,10 +239,10 @@ describe('AdviceBadges', () => {
     expect(w.get('[data-testid=badge-advice]').text()).toBe('Charge extra')
     expect(w.get('[data-testid=badge-confidence]').text()).toBe('2/3')
     expect(w.findAll('[data-testid=badge-confidence] .dot.on')).toHaveLength(2)
-    expect(w.get('[data-testid=badge-indicator]').attributes('aria-label')).toBe(
-      'Charge indicator: High (more)',
+    expect(w.get('[data-testid=badge-target]').text()).toBe('60%')
+    expect(w.get('[data-testid=badge-target]').attributes('title')).toBe(
+      'Charge extra to 60% (medium indication of cheaper days ahead)',
     )
-    expect(w.findAll('[data-testid=badge-indicator] .bar-step.on')).toHaveLength(3)
     expect(w.get('[data-testid=badge-price]').text()).toBe('€0.22')
     expect(w.get('[data-testid=badge-price]').classes()).toContain('basis-published')
     // With published slots the badge shows the day's lowest price.
@@ -234,7 +276,7 @@ describe('AdviceBadges', () => {
       props: {
         advice: advice({
           recommendation: 'defer',
-          indicator: undefined,
+          targetSoc: undefined,
           confidence: 1,
           price: { value: 0.298, basis: 'estimate', detail: 'Tibber outlook estimate', stale: false },
           solarKWh: null,

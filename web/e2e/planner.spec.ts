@@ -70,7 +70,13 @@ test('the week and the chart show fewer days on request; the advice still covers
   await expect(summary).not.toHaveAttribute('aria-label', /Fri 13/)
 })
 
-test('the week shows as columns or as a list, remembered on this device', async ({ page, isMobile }) => {
+test('the week shows as columns or as a list, remembered on this device', async ({
+  page,
+  isMobile,
+  request,
+}) => {
+  // A past week of prices, so Tuesday's advice has something to compare with.
+  expect((await request.post('/api/demo/history', { data: { low: 0.4 } })).status()).toBe(204)
   await page.goto('/')
   await expect(page.getByTestId('week-view-columns')).toHaveAttribute('aria-pressed', 'true')
   await page.getByTestId('week-view-list').click()

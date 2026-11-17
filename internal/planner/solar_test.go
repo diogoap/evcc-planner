@@ -1,7 +1,9 @@
 package planner
 
 import (
+	"fmt"
 	"math"
+	"strings"
 	"testing"
 	"time"
 )
@@ -42,5 +44,38 @@ func TestSolarCountsUsableSurplusWhileHome(t *testing.T) {
 	}
 	if none := Solar(slots, at(12, 0), nil, p, ap); none.Pct != 0 || !none.From.IsZero() {
 		t.Errorf("after the slots: %+v", none)
+	}
+}
+
+func TestChargeSlotsWhileHomeCheapestFirst(t *testing.T) {
+	p := Params{CapacityKWh: 59, EfficiencyPct: 90, ChargePowerKW: 3.68}
+	ap := AheadParams{HouseholdKW: 0.4, SolarTaxSaving: 0.11}
+	at := func(h, m int) time.Time { return time.Date(2026, 11, 13, h, m, 0, 0, time.UTC) }
+	slot := func(h, m int, price, kw float64) Slot {
+		return Slot{Start: at(h, m), End: at(h, m).Add(15 * time.Minute), Price: price, SolarKW: kw}
+	}
+	slots := []Slot{
+		slot(12, 0, 0.20, 0),
+		slot(12, 15, -0.10, 2.4), // negative, with 2.0 kW of surplus
+		slot(12, 30, -0.20, 0),   // away
+		slot(12, 45, 0.05, 0),
+	}
+	home := [][2]time.Time{{at(12, 0), at(12, 30)}, {at(12, 45), at(13, 0)}}
+	got := ChargeSlots(slots, home, p, ap)
+	var order []string
+	for _, c := range got {
+		order = append(order, fmt.Sprintf("%s %.2f %v", c.Start.Format("15:04"), c.Cost, c.Solar))
+	}
+	// Solar at a negative price counts lower still (−0.10 − 0.11); the slot
+	// away is left out; the grid share of the sunny slot is its own piece.
+	want := []string{"12:15 -0.21 true", "12:15 -0.10 false", "12:45 0.05 false", "12:00 0.20 false"}
+	if strings.Join(order, ", ") != strings.Join(want, ", ") {
+		t.Fatalf("charge slots = %v, want %v", order, want)
+	}
+	if c := got[0]; math.Abs(c.Pct-2.0*0.25*0.9/59*100) > 1e-9 || c.SlotPrice != -0.10 {
+		t.Errorf("solar piece = %+v", c)
+	}
+	if c := got[3]; math.Abs(c.Pct-3.68*0.25*0.9/59*100) > 1e-9 {
+		t.Errorf("a full grid slot adds %.3f%%", c.Pct)
 	}
 }

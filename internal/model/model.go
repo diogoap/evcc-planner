@@ -306,23 +306,72 @@ type CalendarSyncStatus struct {
 }
 
 // AdviceSettings control daily charging advice. Advice is advisory: plans are
-// only created automatically when AutoApply is on and the user has set a
-// concrete target for each charge indicator, a ready-by time, and an expiry.
+// only created automatically when AutoApply is on. An automatic extra plan
+// is ready by the end of charge extra's cheap blocks (or the next
+// departure) and ends then.
 type AdviceSettings struct {
-	Enabled           bool   `json:"enabled"`
-	AutoApply         bool   `json:"autoApply"`
-	AutoMinConfidence int    `json:"autoMinConfidence"` // 2 medium or 3 high
-	TargetLittle      *int   `json:"targetLittle"`      // SoC % per charge indicator
-	TargetMedium      *int   `json:"targetMedium"`
-	TargetHigh        *int   `json:"targetHigh"`
-	ReadyBy           string `json:"readyBy"`     // local HH:MM on the advice day
-	ExpiryHours       *int   `json:"expiryHours"` // after the ready-by time
-	AutoPostpone      bool   `json:"autoPostpone"`
+	Enabled           bool `json:"enabled"`
+	AutoApply         bool `json:"autoApply"`
+	AutoMinConfidence int  `json:"autoMinConfidence"` // 2 medium or 3 high
+	AutoPostpone      bool `json:"autoPostpone"`
+	// What charge extra does at each indication of cheaper days ahead.
+	ExtraLittle ExtraLevel `json:"extraLittle"`
+	ExtraMedium ExtraLevel `json:"extraMedium"`
+	ExtraHigh   ExtraLevel `json:"extraHigh"`
 }
 
-// DefaultAdviceSettings shows advice and never acts on it.
+// Indications of cheaper days ahead, from the weekly outlook and the
+// wind and sun forecasts.
+const (
+	IndicationLittle = "little"
+	IndicationMedium = "medium"
+	IndicationHigh   = "high"
+)
+
+// ExtraLevel is charge extra at one indication of cheaper days ahead: off,
+// or three steps, each charging to a higher target with blocks that are
+// cheaper still.
+type ExtraLevel struct {
+	Enabled bool        `json:"enabled"`
+	Steps   []ExtraStep `json:"steps"`
+}
+
+// ExtraStep charges extra up to TargetSoC with the time blocks at least
+// MinDiscountPct cheaper than the reference price.
+type ExtraStep struct {
+	MinDiscountPct float64 `json:"minDiscountPct"`
+	TargetSoC      int     `json:"targetSoc"`
+}
+
+func extraLevel(enabled bool, steps ...[2]float64) ExtraLevel {
+	l := ExtraLevel{Enabled: enabled}
+	for _, s := range steps {
+		l.Steps = append(l.Steps, ExtraStep{MinDiscountPct: s[0], TargetSoC: int(s[1])})
+	}
+	return l
+}
+
+// DefaultAdviceSettings show advice and never act on it. Charge extra
+// charges more the cheaper the blocks are, and less (from deeper
+// discounts) the more the coming days look cheaper.
 func DefaultAdviceSettings() AdviceSettings {
-	return AdviceSettings{Enabled: true, AutoMinConfidence: 3}
+	return AdviceSettings{
+		Enabled: true, AutoMinConfidence: 3,
+		ExtraLittle: extraLevel(true, [2]float64{20, 50}, [2]float64{30, 80}, [2]float64{50, 100}),
+		ExtraMedium: extraLevel(true, [2]float64{30, 40}, [2]float64{45, 60}, [2]float64{60, 80}),
+		ExtraHigh:   extraLevel(false, [2]float64{40, 30}, [2]float64{60, 50}, [2]float64{75, 70}),
+	}
+}
+
+// Level returns the charge-extra steps for an indication.
+func (a AdviceSettings) Level(indication string) ExtraLevel {
+	switch indication {
+	case IndicationMedium:
+		return a.ExtraMedium
+	case IndicationHigh:
+		return a.ExtraHigh
+	}
+	return a.ExtraLittle
 }
 
 // Validate reports the first invalid field.
@@ -330,51 +379,29 @@ func (a AdviceSettings) Validate() error {
 	if a.AutoMinConfidence != 2 && a.AutoMinConfidence != 3 {
 		return fmt.Errorf("minimum confidence must be 2 (medium) or 3 (high)")
 	}
-	prev := 0
-	for _, t := range []struct {
-		name string
-		v    *int
-	}{{"little", a.TargetLittle}, {"medium", a.TargetMedium}, {"high", a.TargetHigh}} {
-		if t.v == nil {
-			continue
+	for _, l := range []struct {
+		name  string
+		level ExtraLevel
+	}{{IndicationLittle, a.ExtraLittle}, {IndicationMedium, a.ExtraMedium}, {IndicationHigh, a.ExtraHigh}} {
+		if len(l.level.Steps) != 3 {
+			return fmt.Errorf("charge extra (%s) needs three steps", l.name)
 		}
-		if *t.v < 10 || *t.v > 100 {
-			return fmt.Errorf("the %s target must be between 10 and 100%%", t.name)
+		prevDiscount, prevTarget := -1.0, 0
+		for _, st := range l.level.Steps {
+			switch {
+			case st.MinDiscountPct < 0 || st.MinDiscountPct > 100:
+				return fmt.Errorf("charge extra (%s): discounts must be between 0 and 100%%", l.name)
+			case st.MinDiscountPct <= prevDiscount:
+				return fmt.Errorf("charge extra (%s): each step needs a bigger discount than the one before", l.name)
+			case st.TargetSoC < 10 || st.TargetSoC > 100:
+				return fmt.Errorf("charge extra (%s): targets must be between 10 and 100%%", l.name)
+			case st.TargetSoC < prevTarget:
+				return fmt.Errorf("charge extra (%s): targets must not go down from step to step", l.name)
+			}
+			prevDiscount, prevTarget = st.MinDiscountPct, st.TargetSoC
 		}
-		if *t.v < prev {
-			return fmt.Errorf("targets must not decrease from little to high")
-		}
-		prev = *t.v
-	}
-	if a.ReadyBy != "" {
-		if _, err := time.Parse("15:04", a.ReadyBy); err != nil {
-			return fmt.Errorf("ready-by time must be HH:MM")
-		}
-	}
-	if a.ExpiryHours != nil && (*a.ExpiryHours < 0 || *a.ExpiryHours > 48) {
-		return fmt.Errorf("expiry must be 0 to 48 hours after the ready-by time")
-	}
-	if a.AutoApply && (a.TargetLittle == nil || a.TargetMedium == nil || a.TargetHigh == nil || a.ReadyBy == "" || a.ExpiryHours == nil) {
-		return fmt.Errorf("automatic plans need a target for each charge indicator, a ready-by time, and an expiry")
 	}
 	return nil
-}
-
-// Target returns the configured SoC for a charge indicator.
-func (a AdviceSettings) Target(indicator string) (int, bool) {
-	var v *int
-	switch indicator {
-	case "little":
-		v = a.TargetLittle
-	case "medium":
-		v = a.TargetMedium
-	case "high":
-		v = a.TargetHigh
-	}
-	if v == nil {
-		return 0, false
-	}
-	return *v, true
 }
 
 // Adjustment kinds and statuses.
@@ -435,13 +462,17 @@ type NotificationSettings struct {
 	// Solar asks to plug in when today's advice is to charge extra from the
 	// sun and the car is home but unplugged.
 	Solar bool `json:"solar"`
+	// Extra asks to plug in when today's advice is to charge extra with a
+	// plan and the car is home but unplugged, and says when an extra plan
+	// is created automatically.
+	Extra bool `json:"extra"`
 }
 
 // DefaultNotificationSettings are off, with the reminder rules ready.
 func DefaultNotificationSettings() NotificationSettings {
 	return NotificationSettings{
 		Phones: []string{}, Early: true, EarlyLeadMin: 30, UrgentLeadMin: 30, QuietFrom: "23:00", QuietTo: "07:00",
-		UrgentInQuiet: true, SnoozeMin: 30, Problems: true, Questions: true, Solar: true,
+		UrgentInQuiet: true, SnoozeMin: 30, Problems: true, Questions: true, Solar: true, Extra: true,
 	}
 }
 
@@ -517,8 +548,10 @@ const (
 	NotifyMissed    = "missed"
 	NotifyQuestion  = "question"
 	NotifyReady     = "ready"
-	NotifySolar     = "solar" // plug in to charge extra from the sun
-	NotifyInfo      = "info"  // a follow-up, e.g. after Skip trip
+	NotifySolar     = "solar"      // plug in to charge extra from the sun
+	NotifyExtra     = "extra"      // plug in for charge extra's plan
+	NotifyExtraPlan = "extra_plan" // an extra plan was created automatically
+	NotifyInfo      = "info"       // a follow-up, e.g. after Skip trip
 
 	NotifySent    = "sent"
 	NotifySnoozed = "snoozed"

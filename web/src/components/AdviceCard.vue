@@ -5,9 +5,9 @@ import {
   adviceLabel,
   basisNames,
   confidenceNames,
-  indicatorLevel,
-  indicatorNames,
+  indicationNames,
   priceFact,
+  referenceText,
   sourceTone,
   sunFact,
   tempText,
@@ -45,9 +45,16 @@ const price = computed(() => priceFact(props.advice))
 const sun = computed(() => sunFact(props.advice))
 const wind = computed(() => windFact(props.advice))
 const temp = computed(() => tempText(props.advice))
-const level = computed(() =>
-  props.advice.indicator && !props.advice.noSuggestion ? indicatorLevel[props.advice.indicator] : 0,
+// Charge extra's target, and how strongly the coming days look cheaper.
+const target = computed(() =>
+  props.advice.recommendation === 'charge_extra' && !props.advice.solar && !props.advice.noSuggestion
+    ? props.advice.targetSoc
+    : undefined,
 )
+const indication = computed(() =>
+  props.advice.indication && !props.advice.noSuggestion ? indicationNames[props.advice.indication] : '',
+)
+const reference = computed(() => referenceText(props.advice))
 </script>
 
 <template>
@@ -87,7 +94,7 @@ const level = computed(() =>
       <span class="advice-icon" :class="`tone-${label.tone}`"><AppIcon :name="label.icon" /></span>
       <strong class="text-lg" data-testid="advice-label">{{ label.text }}</strong>
     </div>
-    <div v-if="advice.confidence || level" class="row gap-1">
+    <div v-if="advice.confidence || target || indication" class="row gap-1">
       <span v-if="advice.confidence" class="badge" data-testid="advice-confidence">
         <span
           v-for="i in 3"
@@ -98,12 +105,18 @@ const level = computed(() =>
         />
         {{ confidenceNames[advice.confidence] }} confidence
       </span>
-      <span v-if="level" class="badge" data-testid="advice-indicator">
-        <span class="bars" aria-hidden="true"
-          ><span v-for="i in 3" :key="i" class="bar-step" :class="{ on: i <= level }"
-        /></span>
-        Charge: {{ indicatorNames[advice.indicator!] }}
+      <span v-if="target" class="badge num" data-testid="advice-target">
+        <AppIcon name="battery" />To {{ target }}%
       </span>
+      <span
+        v-if="indication"
+        class="badge"
+        :title="`How strongly the coming days look cheaper (weekly outlook, wind, sun): ${indication.toLowerCase()}`"
+        data-testid="advice-indication"
+      >
+        Cheaper days ahead: {{ indication.toLowerCase() }}
+      </span>
+      <span v-if="reference" class="badge num" data-testid="advice-reference">{{ reference }}</span>
     </div>
     <p class="m-0">{{ advice.summary }}</p>
 
@@ -144,6 +157,13 @@ const level = computed(() =>
         <dd class="fact-value num">{{ temp }}</dd>
       </div>
     </dl>
+
+    <p v-if="advice.awayHint" class="banner tone-info small m-0" data-testid="advice-away">
+      <AppIcon name="route" /> {{ advice.awayHint }}
+    </p>
+    <p v-if="advice.exportHint" class="banner tone-warn small m-0" data-testid="advice-export">
+      <AppIcon name="solar-panel" /> {{ advice.exportHint }}
+    </p>
 
     <div v-if="adj" class="banner tone-info small m-0" data-testid="advice-adjustment">
       <template v-if="adj.kind === 'extra_plan'">
@@ -220,8 +240,8 @@ const level = computed(() =>
         </li>
       </ul>
       <p class="small muted m-0 mt-2">
-        Advice is qualitative: the charge indicator does not prescribe an amount, and trip targets always stay
-        protected.
+        Charge extra comes on top of the trips' targets, which always stay protected. Its steps (how much
+        cheaper, to which SoC) are set under Settings → Advice.
       </p>
     </details>
   </section>
@@ -267,34 +287,6 @@ const level = computed(() =>
 
 .dot.on {
   background: currentColor;
-}
-
-.bars {
-  display: inline-flex;
-  align-items: flex-end;
-  gap: 2px;
-}
-
-.bar-step {
-  width: 4px;
-  border-radius: 1px;
-  background: var(--control);
-}
-
-.bar-step:nth-child(1) {
-  height: 5px;
-}
-
-.bar-step:nth-child(2) {
-  height: 8px;
-}
-
-.bar-step:nth-child(3) {
-  height: 11px;
-}
-
-.bar-step.on {
-  background: var(--accent-strong);
 }
 
 /* The day's facts as small panels, two per row. */

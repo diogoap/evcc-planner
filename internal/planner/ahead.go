@@ -55,9 +55,10 @@ type Ahead struct {
 
 // unit is charging capacity in part of a slot from one source.
 type unit struct {
-	slot int     // index into the window's slots
-	pct  float64 // SoC points it can still add
-	cost float64 // EUR per kWh from the wall
+	slot  int     // index into the window's slots
+	pct   float64 // SoC points it can still add
+	cost  float64 // EUR per kWh from the wall
+	solar bool
 }
 
 // window is the charging capacity in [from, to), cheapest first.
@@ -100,8 +101,10 @@ func newWindow(slots []Slot, from, to time.Time, p Params, ap AheadParams) *wind
 		w.slots = append(w.slots, Slot{Start: start, End: end, Price: s.Price, SolarKW: s.SolarKW})
 		w.cap = append(w.cap, pct(p.ChargePowerKW*p.EfficiencyPct/100*h, p))
 		w.used = append(w.used, 0)
+		// Solar counts at the slot price minus the tax not paid on it; at a
+		// negative price that is lower still (exporting it would cost money).
 		if solar > 0 {
-			w.units = append(w.units, unit{slot: i, pct: pct(solar*p.EfficiencyPct/100*h, p), cost: math.Max(0, s.Price-ap.SolarTaxSaving)})
+			w.units = append(w.units, unit{slot: i, pct: pct(solar*p.EfficiencyPct/100*h, p), cost: s.Price - ap.SolarTaxSaving, solar: true})
 		}
 		if grid := p.ChargePowerKW - solar; grid > 0 {
 			w.units = append(w.units, unit{slot: i, pct: pct(grid*p.EfficiencyPct/100*h, p), cost: s.Price})
@@ -246,6 +249,35 @@ func (out *Ahead) addLater(res Result, p Params, sorted []Slot, ap AheadParams, 
 	return before
 }
 
+// ChargeSlot is charging capacity in part of a published slot from one
+// source: the SoC points it can add and what a kWh from the wall costs
+// (solar at its slot price minus the tax saving).
+type ChargeSlot struct {
+	Start     time.Time
+	End       time.Time
+	Cost      float64 // EUR per kWh from the wall
+	SlotPrice float64 // the slot's grid price
+	Solar     bool
+	Pct       float64
+}
+
+// ChargeSlots lists the charging capacity in the slots within the periods
+// (e.g. the times the car is home), cheapest first, with the same rules as
+// charging ahead: solar surplus first, above the charger's minimum, at most
+// the charger's power.
+func ChargeSlots(slots []Slot, periods [][2]time.Time, p Params, ap AheadParams) []ChargeSlot {
+	var out []ChargeSlot
+	for _, per := range periods {
+		w := newWindow(slots, per[0], per[1], p, ap)
+		for _, u := range w.units {
+			s := w.slots[u.slot]
+			out = append(out, ChargeSlot{Start: s.Start, End: s.End, Cost: u.cost, SlotPrice: s.Price, Solar: u.solar, Pct: u.pct})
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Cost < out[j].Cost })
+	return out
+}
+
 // SolarCharge is what the forecast solar surplus can add while the car is
 // home: SoC points, the EUR/kWh it counts at (each slot's price minus the
 // tax saving, weighted by energy), the slots' grid price itself (weighted
@@ -288,7 +320,7 @@ func Solar(slots []Slot, from time.Time, away [][2]time.Time, p Params, ap Ahead
 		}
 		kwh := kw * s.End.Sub(start).Hours()
 		wallKWh += kwh
-		cost += kwh * math.Max(0, s.Price-ap.SolarTaxSaving)
+		cost += kwh * (s.Price - ap.SolarTaxSaving)
 		grid += kwh * s.Price
 		out.Pct += pct(kwh*p.EfficiencyPct/100, p)
 		if out.From.IsZero() {

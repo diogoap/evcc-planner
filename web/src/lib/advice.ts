@@ -1,4 +1,4 @@
-import type { AdviceSource, Day, DayAdvice, DayPrice, Indicator } from '../api/types'
+import type { AdviceSource, Day, DayAdvice, DayPrice, Indication } from '../api/types'
 import { clock } from './format'
 import type { Tone } from './status'
 
@@ -9,13 +9,12 @@ export function confidenceLabel(c: number) {
   return c ? `${c}/3 — ${confidenceNames[c]}` : '—'
 }
 
-export const indicatorNames: Record<Indicator, string> = {
+/** How strongly the coming days look cheaper. */
+export const indicationNames: Record<Indication, string> = {
   little: 'Little',
   medium: 'Medium',
-  high: 'High (more)',
+  high: 'High',
 }
-
-export const indicatorLevel: Record<Indicator, number> = { little: 1, medium: 2, high: 3 }
 
 export const basisNames: Record<DayPrice['basis'], string> = {
   published: 'Published',
@@ -23,7 +22,7 @@ export const basisNames: Record<DayPrice['basis'], string> = {
   weekly: 'Weekly average',
 }
 
-export type AdviceIcon = 'bolt' | 'clock' | 'check' | 'dash' | 'sun'
+export type AdviceIcon = 'bolt' | 'clock' | 'check' | 'dash' | 'sun' | 'arrow-down' | 'tag'
 
 interface Label {
   text: string
@@ -42,7 +41,7 @@ export function adviceLabel(a: DayAdvice, day?: Day): Label {
       case 'charge_extra':
         if (a.solar) return { text: 'Charge extra from solar', short: 'Solar', tone: 'ok', icon: 'sun' }
         return {
-          text: 'Charge extra',
+          text: a.targetSoc ? `Charge extra to ${a.targetSoc}%` : 'Charge extra',
           short: 'Charge extra',
           tone: a.confidence >= 2 ? 'ok' : 'muted',
           icon: 'bolt',
@@ -59,6 +58,13 @@ export function adviceLabel(a: DayAdvice, day?: Day): Label {
   // Today's trips may all be done while its advice still applies.
   if (day?.status === 'completed')
     return { text: 'Completed', short: 'Completed', tone: 'muted', icon: 'check' }
+  // Days without published prices show what the outlook expects.
+  if (a.outlook === 'cheaper')
+    return { text: 'Looks cheaper (not published yet)', short: 'Cheaper?', tone: 'muted', icon: 'arrow-down' }
+  if (a.outlook === 'dearer')
+    return { text: 'Looks dearer (not published yet)', short: 'Dearer?', tone: 'muted', icon: 'tag' }
+  if (a.outlook === 'similar')
+    return { text: 'Looks similar (not published yet)', short: 'Similar?', tone: 'muted', icon: 'dash' }
   if (a.noSuggestion)
     return { text: 'No data / no suggestion', short: 'No data', tone: 'muted', icon: 'dash' }
   const needsCharge = day && (day.chargePct > 0 || ['shortfall', 'unknown', 'exceeds'].includes(day.status))
@@ -186,4 +192,12 @@ export const sourceTone: Record<AdviceSource['status'], Tone> = {
   missing: 'warn',
   error: 'bad',
   stub: 'warn',
+}
+
+/** "Tomorrow's lowest €0.20" or "Past 7 days' lowest €0.30": what charge extra compared with. */
+export function referenceText(a: DayAdvice) {
+  const r = a.reference
+  if (!r) return ''
+  const v = `€${r.value.toFixed(2)}`
+  return r.basis === 'published' ? `Tomorrow's lowest ${v}` : `Past ${r.days ?? 7} days' lowest ${v}`
 }

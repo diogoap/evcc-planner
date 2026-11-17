@@ -260,15 +260,25 @@ func TestAdviceSettingsDismissalsAndAdjustments(t *testing.T) {
 	if err != nil || !got.Enabled || got.AutoApply || got.AutoMinConfidence != 3 {
 		t.Fatalf("defaults = %+v %v", got, err)
 	}
-	target := 70
-	got.TargetHigh = &target
+	got.ExtraHigh.Enabled = true
+	got.ExtraHigh.Steps[0].TargetSoC = 35
 	got.Enabled = false
 	if err := s.SaveAdviceSettings(got); err != nil {
 		t.Fatal(err)
 	}
 	got, _ = s.AdviceSettings(model.DefaultAdviceSettings())
-	if got.Enabled || got.TargetHigh == nil || *got.TargetHigh != 70 {
+	if got.Enabled || !got.ExtraHigh.Enabled || len(got.ExtraHigh.Steps) != 3 || got.ExtraHigh.Steps[0].TargetSoC != 35 ||
+		got.ExtraLittle.Steps[2].TargetSoC != 100 {
 		t.Fatalf("saved = %+v", got)
+	}
+	// Settings saved before charge extra had steps (targets per charge
+	// indicator) load with the default steps.
+	if _, err := s.q.Exec(`UPDATE settings SET value = ? WHERE key = ?`,
+		`{"enabled":true,"autoMinConfidence":3,"targetLittle":50,"targetMedium":65,"targetHigh":80}`, adviceKey); err != nil {
+		t.Fatal(err)
+	}
+	if old, err := s.AdviceSettings(model.DefaultAdviceSettings()); err != nil || !old.ExtraMedium.Enabled || old.ExtraMedium.Steps[1].TargetSoC != 60 {
+		t.Fatalf("old settings = %+v, %v", old, err)
 	}
 
 	s.Dismiss("2026-11-10", "charge_extra", time.Now())

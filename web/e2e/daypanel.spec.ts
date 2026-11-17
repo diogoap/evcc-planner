@@ -6,6 +6,8 @@ import { expect, test, type Page } from '@playwright/test'
 test.beforeEach(async ({ request }) => {
   const res = await request.post('/api/demo/reset', { data: {} })
   expect(res.status()).toBe(204)
+  // A past week of prices for Tuesday's charge extra to compare with.
+  expect((await request.post('/api/demo/history', { data: { low: 0.4 } })).status()).toBe(204)
 })
 
 async function settled(page: Page) {
@@ -24,7 +26,9 @@ test('a day opens in a panel with its trips, charging, advice, and actions', asy
   await expect(panel.getByTestId('trip-recurring:1:2026-11-10')).toBeVisible()
   await expect(panel.getByTestId('day-charging')).toContainText('07:48 needs 42%')
   await expect(panel.getByTestId('day-windows')).toContainText('Expected')
-  await expect(panel.getByTestId('panel-advice').getByTestId('advice-label')).toHaveText('Charge extra')
+  await expect(panel.getByTestId('panel-advice').getByTestId('advice-label')).toHaveText(
+    'Charge extra to 60%',
+  )
   await expect(panel.getByTestId('day-send')).toHaveText('Send plan: Trips tomorrow')
 
   await settled(page)

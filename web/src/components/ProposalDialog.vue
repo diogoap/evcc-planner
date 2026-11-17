@@ -2,7 +2,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { api } from '../api/client'
 import type { AdjustmentKind, Preview, Proposal } from '../api/types'
-import { confidenceLabel, indicatorNames } from '../lib/advice'
+import { confidenceLabel, indicationNames } from '../lib/advice'
 import { clock, dateTime, dayLong, duration, localDate, zonedToISO } from '../lib/format'
 import ModalDialog from './ModalDialog.vue'
 import PriceChart from './PriceChart.vue'
@@ -115,8 +115,13 @@ async function confirm() {
     <p v-if="!p && !error" class="muted small">Loading the proposal…</p>
     <template v-if="p">
       <p v-if="p.advice" class="small m-0 mb-3">
-        <template v-if="p.advice.indicator"
-          >Charge indicator: <strong>{{ indicatorNames[p.advice.indicator] }}</strong> ·
+        <template v-if="p.advice.targetSoc && !p.advice.solar"
+          >Charge extra to <strong>{{ p.advice.targetSoc }}%</strong>
+          <template v-if="p.advice.indication">
+            ({{ indicationNames[p.advice.indication].toLowerCase() }} indication of cheaper days
+            ahead)</template
+          >
+          ·
         </template>
         Confidence: {{ confidenceLabel(p.advice.confidence) }}
       </p>

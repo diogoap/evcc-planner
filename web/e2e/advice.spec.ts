@@ -3,10 +3,14 @@ import { expect, test, type Page } from '@playwright/test'
 // Demo forecasts at the fixed clock (Monday 9 November 2026, 19:00): EVCC has
 // published Monday and Tuesday; the demo outlook names Tuesday the cheapest
 // and Thursday the dearest day; other days only have its weekly average.
+// A past week of prices (lowest €0.40, seeded for the tests) is what
+// Tuesday's charge extra compares with, as Wednesday isn't published yet.
 
 test.beforeEach(async ({ request }) => {
   const res = await request.post('/api/demo/reset', { data: {} })
   expect(res.status()).toBe(204)
+  const history = await request.post('/api/demo/history', { data: { low: 0.4 } })
+  expect(history.status()).toBe(204)
 })
 
 async function shot(page: Page, name: string) {
@@ -33,7 +37,10 @@ test('daily advice per day, with a confirmed extra plan that can be ended', asyn
   await expect(page.getByTestId('day-panel')).toContainText('Tuesday 10 November')
   // The Overview's advice card follows the day opened.
   await expect(overviewAdvice).toContainText("Tuesday's advice")
+  await expect(card.getByTestId('advice-label')).toHaveText('Charge extra to 60%')
   await expect(card.getByTestId('advice-confidence')).toHaveText('Medium confidence')
+  await expect(card.getByTestId('advice-indication')).toHaveText('Cheaper days ahead: medium')
+  await expect(card.getByTestId('advice-reference')).toHaveText("Past 7 days' lowest €0.40")
   await expect(card.getByTestId('advice-basis')).toHaveText('Published')
   await expect(card.getByTestId('advice-sun')).toContainText('while home')
   await expect(card.getByTestId('advice-sun')).toContainText('EVCC')
@@ -44,19 +51,19 @@ test('daily advice per day, with a confirmed extra plan that can be ended', asyn
   // Opening the proposal writes nothing.
   await card.getByRole('button', { name: 'Create extra plan' }).click()
   let dialog = page.getByRole('dialog', { name: /Create extra plan — Tuesday 10 November/ })
-  await expect(dialog.getByTestId('proposal-soc')).toHaveValue('80')
+  await expect(dialog.getByTestId('proposal-soc')).toHaveValue('60')
   await expect(dialog.getByTestId('proposal-protected')).toContainText('needs 42%')
   await dialog.getByRole('button', { name: 'Cancel' }).click()
   await expect(page.getByTestId('evcc-plan')).toHaveText('None')
 
   await card.getByRole('button', { name: 'Create extra plan' }).click()
   dialog = page.getByRole('dialog', { name: /Create extra plan/ })
-  await dialog.getByTestId('proposal-soc').fill('60')
+  await dialog.getByTestId('proposal-soc').fill('70')
   await shot(page, 'extra-plan')
   await dialog.getByRole('button', { name: 'Confirm and create plan' }).click()
-  await expect(page.getByText('Extra plan sent to EVCC: 60% by Tue 10 Nov, 07:48')).toBeVisible()
-  await expect(page.getByTestId('evcc-plan')).toContainText('60% by Tue 10 Nov, 07:48')
-  await expect(page.getByTestId('active-adjustment')).toContainText('60% by Tue 10 Nov, 07:48')
+  await expect(page.getByText('Extra plan sent to EVCC: 70% by Tue 10 Nov, 05:45')).toBeVisible()
+  await expect(page.getByTestId('evcc-plan')).toContainText('70% by Tue 10 Nov, 05:45')
+  await expect(page.getByTestId('active-adjustment')).toContainText('70% by Tue 10 Nov, 05:45')
   await expect(card.getByTestId('advice-adjustment')).toContainText('Extra plan active')
 
   await card.getByRole('button', { name: 'End now and restore' }).click()
@@ -103,21 +110,24 @@ test('review a postponement of cheap-grid charging', async ({ page }) => {
   await expect(page.getByTestId('active-adjustment')).toContainText('Cheap charging paused')
 })
 
-test('advice auto-apply is off by default and needs a policy', async ({ page }) => {
+test('charge extra steps per indication, and auto-apply off by default', async ({ page }) => {
   await page.goto('/settings')
   await page.getByRole('link', { name: 'Advice' }).click()
+  // The steps for each indication of cheaper days ahead; high is off.
+  await expect(page.getByTestId('extra-little-enabled')).toBeChecked()
+  await expect(page.getByTestId('extra-little-0-discount')).toHaveValue('20')
+  await expect(page.getByTestId('extra-little-2-target')).toHaveValue('100')
+  await expect(page.getByTestId('extra-high-enabled')).not.toBeChecked()
+  await page.getByTestId('extra-high-enabled').check()
+  await page.getByTestId('extra-medium-0-target').fill('45')
+
   const auto = page.getByTestId('advice-auto')
   await expect(auto).toHaveAttribute('aria-checked', 'false')
-  await expect(auto).toBeDisabled()
-  await expect(page.getByTestId('advice-auto-hint')).toContainText('Set a target for each indicator')
-  await expect(page.getByTestId('advice-enabled')).toHaveAttribute('aria-checked', 'true')
-
-  await page.getByTestId('advice-targetLittle').fill('60')
-  await page.getByTestId('advice-targetMedium').fill('70')
-  await page.getByTestId('advice-targetHigh').fill('80')
-  await page.getByTestId('advice-readyBy').fill('06:00')
-  await page.getByTestId('advice-expiryHours').fill('2')
+  // Automatic plans need nothing else: they are ready when charge extra's
+  // cheap hours end.
   await expect(auto).toBeEnabled()
+  await expect(page.getByTestId('advice-auto-hint')).toContainText('ready when its cheap hours end')
+  await expect(page.getByTestId('advice-enabled')).toHaveAttribute('aria-checked', 'true')
   await auto.click()
   await page.getByRole('button', { name: 'Save advice settings' }).click()
   await expect(page.getByText('Advice settings saved')).toBeVisible()
@@ -126,6 +136,16 @@ test('advice auto-apply is off by default and needs a policy', async ({ page }) 
   await page.reload()
   await page.getByRole('link', { name: 'Advice' }).click()
   await expect(page.getByTestId('advice-auto')).toHaveAttribute('aria-checked', 'true')
+  await expect(page.getByTestId('extra-high-enabled')).toBeChecked()
+  await expect(page.getByTestId('extra-medium-0-target')).toHaveValue('45')
+  // Each step needs a bigger discount than the one before; the server
+  // refuses otherwise, and the saved steps stay.
+  await page.getByTestId('extra-medium-1-discount').fill('30')
+  await page.getByRole('button', { name: 'Save advice settings' }).click()
+  await expect(page.getByRole('alert')).toContainText(
+    'charge extra (medium): each step needs a bigger discount than the one before',
+  )
+  await page.getByRole('button', { name: 'Discard' }).click()
   await page.goto('/')
   await expect(page.getByTestId('auto-apply')).toHaveText('Plans created automatically')
 
