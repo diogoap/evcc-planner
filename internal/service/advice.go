@@ -289,9 +289,9 @@ func (s *Service) buildAdvice(view *PlanView, result planner.Result, socKnown bo
 		}
 		if actionable(a) && !dv.Dismissed && dv.Adjustment == nil {
 			switch {
-			// Charging ahead from solar needs no plan: EVCC charges from the
+			// Charging extra from solar needs no plan: EVCC charges from the
 			// sun by itself while the car is plugged in.
-			case a.Recommendation == advice.ChargeAhead && !a.Solar:
+			case a.Recommendation == advice.ChargeExtra && !a.Solar:
 				dv.Action = model.AdjustExtraPlan
 			case a.Recommendation == advice.Defer && a.Date == today:
 				if dv.ActionNote = s.postponeNeedless(snap, now, a.DeferUntil); dv.ActionNote == "" {
@@ -308,7 +308,7 @@ func (s *Service) buildAdvice(view *PlanView, result planner.Result, socKnown bo
 // actionable reports whether advice may lead to a plan action: weak (low
 // confidence) and no-data advice never do.
 func actionable(a advice.Advice) bool {
-	return !a.NoSuggestion && a.Confidence >= 2 && (a.Recommendation == advice.ChargeAhead || a.Recommendation == advice.Defer)
+	return !a.NoSuggestion && a.Confidence >= 2 && (a.Recommendation == advice.ChargeExtra || a.Recommendation == advice.Defer)
 }
 
 func estimateDetail(p *forecast.Price) string {

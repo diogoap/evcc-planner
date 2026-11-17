@@ -81,7 +81,7 @@ async function save() {
         <strong>Daily advice</strong>
       </div>
       <p class="field-hint m-0 mt-n2">
-        One recommendation per day (charge ahead, defer, or nothing) from published prices, the weekly price
+        One recommendation per day (charge extra, defer, or nothing) from published prices, the weekly price
         outlook, KNMI weather, and your trips. It never changes EVCC by itself.
       </p>
 

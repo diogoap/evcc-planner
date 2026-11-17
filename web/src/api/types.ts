@@ -265,7 +265,7 @@ export interface Plan {
   consumption: ConsumptionView
 }
 
-export type Recommendation = 'none' | 'charge_ahead' | 'defer'
+export type Recommendation = 'none' | 'charge_extra' | 'defer'
 export type Indicator = 'little' | 'medium' | 'high'
 export type PriceBasis = 'published' | 'estimate' | 'weekly'
 export type AdjustmentKind = 'extra_plan' | 'postpone'
@@ -349,7 +349,7 @@ export interface DayAdvice {
   /** Why advice that would offer an action offers none: it would change nothing in EVCC. */
   actionNote?: string
   /**
-   * Charge ahead from solar: keep the car plugged in while the sun shines
+   * Charge extra from solar: keep the car plugged in while the sun shines
    * (solarFrom to solarUntil), for up to solarPct; no plan. It counts at
    * solarPrice (without the tax not paid on own solar); the grid charges
    * solarGridPrice in those slots.
@@ -687,7 +687,7 @@ export interface NotificationSettings {
   problems: boolean
   questions: boolean
   ready: boolean
-  /** Plug in for the sun: today's advice is to charge ahead from solar. */
+  /** Plug in for the sun: today's advice is to charge extra from solar. */
   solar: boolean
 }
 

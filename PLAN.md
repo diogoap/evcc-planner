@@ -102,7 +102,7 @@ Example: 100 km total at 18 kWh/100 km, 59 kWh usable capacity, and a configurab
 | Recommendation | Meaning |
 | --- | --- |
 | **Nothing** (`none`) | Keep the scheduled plan, or keep no plan when none is needed. For weak/missing forecasts, show **No data / no suggestion** with the reason and no charge indicator. |
-| **Charge extra/ahead** (`charge_ahead`) | That day's useful charging slots are cheaper than following days; show a qualitative charge indicator. Prefer published next-day prices whenever available. |
+| **Charge extra** (`charge_extra`; called charge ahead until 2026-11-17) | That day's useful charging slots are cheaper than following days; show a qualitative charge indicator. Prefer published next-day prices whenever available. |
 | **Defer/postpone** (`defer`) | Lower prices are expected ahead and current/projected SoC covers demand until a later feasible charging opportunity. Required departure targets remain binding. |
 
 - UI: each day shows its recommendation, confidence level, qualitative charge indicator, rationale, wind/sun, and source freshness. Clearly label estimated prices and weak/stale/missing inputs; insufficient evidence produces no charging suggestion.
@@ -171,7 +171,7 @@ As implemented (2026-11-11):
 - ✅ **Notifications** through the Home Assistant Companion app; button presses come back over Home Assistant's websocket (no YAML).
 - ✅ **Plug-in reminders:** early (cheapest window), urgent (latest plug-in time), and too late; Remind in 30 min, Skip trip, View plan. Quiet hours 23:00–07:00; deduplicated and cleared on plug-in.
 - ✅ **Problems and questions:** charging stopped, unplugged early, EVCC not in Smart mode (only while plugged in), missed target, Needs-review calendar events, optional ready message.
-- ✅ **Charge ahead from solar** (2026-11-13): daily advice prices today's and tomorrow's solar surplus while the car is home (slot price minus the €0.11/kWh tax not paid) and says "keep the car plugged in" when that beats the later days; defer only when a later day beats the sun. No plan: EVCC charges from the sun by itself. A **Plug in for the sun** notification goes out when the car is home and unplugged during the sun (Solar reminders, on by default). Advice summaries use full day names ("Sunday looks cheaper").
+- ✅ **Charge extra from solar** (2026-11-13; called charge ahead from solar until 2026-11-17): daily advice prices today's and tomorrow's solar surplus while the car is home (slot price minus the €0.11/kWh tax not paid) and says "keep the car plugged in" when that beats the later days; defer only when a later day beats the sun. No plan: EVCC charges from the sun by itself. A **Plug in for the sun** notification goes out when the car is home and unplugged during the sun (Solar reminders, on by default). Advice summaries use full day names ("Sunday looks cheaper").
 - Decisions (2026-11-12): Automatic for existing installs; replace lower chosen plans in Automatic and On plug-in; pauses end on their own; websocket for button presses; €0.05/kWh minimum saving; quiet hours 23:00–07:00; solar valued at the grid price minus €0.11/kWh tax. EVCC must be in Smart mode (it has only Off, Smart, and Fast); the planner warns but never switches the mode, since another automation sets Off while the car is away. Notification buttons need an admin token (Home Assistant only lets admins subscribe to their events).
 
 </details>

@@ -278,7 +278,7 @@ const sunnyWednesday = "2026-11-11T10:15:00+01:00"
 
 // A sunny Wednesday in the demo: today's solar surplus while the car is home
 // (late morning to mid-afternoon) beats the later days, so the advice is to
-// charge ahead from the sun, with no plan; an unplugged car at home gets a
+// charge extra from the sun, with no plan; an unplugged car at home gets a
 // reminder to plug in, cleared once it is plugged in.
 func TestPlugInForTheSun(t *testing.T) {
 	ta := newTestAppAt(t, "", sunnyWednesday)
@@ -300,7 +300,7 @@ func TestPlugInForTheSun(t *testing.T) {
 	}
 	ta.json("GET", "/api/plan", nil, http.StatusOK, &p)
 	wed := p.Advice.Days[0]
-	if wed.Date != "2026-11-11" || wed.Recommendation != "charge_ahead" || !wed.Solar || wed.Action != "" {
+	if wed.Date != "2026-11-11" || wed.Recommendation != "charge_extra" || !wed.Solar || wed.Action != "" {
 		t.Fatalf("Wednesday's advice = %+v", wed)
 	}
 	if !strings.HasPrefix(wed.Summary, "Today's sun charges at about €0.") || !strings.Contains(wed.Summary, "without the tax you don't pay on own solar") ||

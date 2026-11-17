@@ -25,7 +25,7 @@ THIS WEEK                          [columns|list] [+ Add trip]
   9    10    11    12    13    14    15
  done  +8%  +21%  +10%  +8%  +12%   -
  defer ahead  -    keep   -   -  !   -
-(defer, charge ahead, keep plan, no data; ! = to review)
+(defer, charge extra, keep plan, no data; ! = to review)
 
 MONDAY'S ADVICE
 Defer optional charging · confidence 3/3
@@ -91,7 +91,7 @@ Lowest EUR 0.14 at 14:00 · published
 Sun 7.6 kWh while home · wind 5 Bft
 
 ADVICE
-Charge ahead · confidence 2/3 · little
+Charge extra · confidence 2/3 · little
 [Create extra plan] [Dismiss]  Why?
 
 [+ Add trip] [Send plan through Tue] [Open in Trips]

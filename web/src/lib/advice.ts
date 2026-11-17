@@ -39,11 +39,11 @@ interface Label {
 export function adviceLabel(a: DayAdvice, day?: Day): Label {
   if (!a.noSuggestion) {
     switch (a.recommendation) {
-      case 'charge_ahead':
-        if (a.solar) return { text: 'Charge ahead from solar', short: 'Solar', tone: 'ok', icon: 'sun' }
+      case 'charge_extra':
+        if (a.solar) return { text: 'Charge extra from solar', short: 'Solar', tone: 'ok', icon: 'sun' }
         return {
-          text: 'Charge ahead',
-          short: 'Charge ahead',
+          text: 'Charge extra',
+          short: 'Charge extra',
           tone: a.confidence >= 2 ? 'ok' : 'muted',
           icon: 'bolt',
         }

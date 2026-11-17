@@ -38,7 +38,7 @@ const toggles: { key: 'problems' | 'questions' | 'ready' | 'solar'; label: strin
   {
     key: 'solar',
     label: 'Solar reminders',
-    hint: 'Asks you to plug in when the car is home on a day whose advice is to charge ahead from the sun.',
+    hint: 'Asks you to plug in when the car is home on a day whose advice is to charge extra from the sun.',
   },
 ]
 

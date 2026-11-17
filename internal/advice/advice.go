@@ -6,12 +6,12 @@
 // estimate from the weekly outlook, then only the outlook's weekly average.
 // A day is compared with the later days the car can charge on:
 //
-//   - charge ahead from solar: the day's solar surplus while the car is home
+//   - charge extra from solar: the day's solar surplus while the car is home
 //     (valued at its slot price minus the tax not paid on own solar) is
 //     cheaper than every later day by at least Threshold and later trips will
 //     need charging; EVCC charges from it by itself, so the car only needs to
 //     be plugged in (no plan);
-//   - charge ahead: the day is cheaper than every later day by at least
+//   - charge extra: the day is cheaper than every later day by at least
 //     Threshold and later trips will need charging;
 //   - defer: a later day is cheaper by at least Threshold and the projected
 //     SoC covers every departure until then;
@@ -32,7 +32,7 @@ import (
 // Recommendations.
 const (
 	None        = "none"
-	ChargeAhead = "charge_ahead"
+	ChargeExtra = "charge_extra"
 	Defer       = "defer"
 )
 
@@ -126,13 +126,13 @@ type Advice struct {
 	NoSuggestion   bool     `json:"noSuggestion"` // weak or missing evidence
 	Reason         string   `json:"reason,omitempty"`
 	Confidence     int      `json:"confidence"`          // 1 low, 2 medium, 3 high; 0 without a suggestion
-	Indicator      string   `json:"indicator,omitempty"` // little, medium, high (charge ahead)
+	Indicator      string   `json:"indicator,omitempty"` // little, medium, high (charge extra)
 	Summary        string   `json:"summary"`
 	Rationale      []string `json:"rationale"`
 	CompareDate    string   `json:"compareDate,omitempty"` // the later day compared with
 	DeferUntil     string   `json:"deferUntil,omitempty"`  // defer: the cheaper day
 	LaterChargePct float64  `json:"laterChargePct"`        // charge the plan adds after this day
-	// Solar marks charge ahead from solar: keep the car plugged in while the
+	// Solar marks charge extra from solar: keep the car plugged in while the
 	// sun shines (SolarFrom to SolarUntil), for up to SolarPct. It counts at
 	// SolarPrice (the grid price minus the tax not paid on own solar), while
 	// the grid charges SolarGridPrice in those slots.
@@ -196,7 +196,7 @@ func adviseDay(in Input, i int) Advice {
 	solar := d.Solar != nil && d.Solar.Pct >= minSolarPct
 	if solar && a.LaterChargePct >= 1 {
 		if sdiff := (cheapest.Price.Value - d.Solar.Price) / math.Abs(cheapest.Price.Value); sdiff >= Threshold {
-			return solarAhead(in, i, a, cheapest, sdiff)
+			return solarExtra(in, i, a, cheapest, sdiff)
 		}
 	}
 	// Positive: this day is cheaper than every later day.
@@ -212,13 +212,13 @@ func adviseDay(in Input, i int) Advice {
 			a.Summary = "Cheaper than later days, but later trips need no extra charge."
 			return a
 		}
-		a.Recommendation = ChargeAhead
+		a.Recommendation = ChargeExtra
 		a.Indicator = indicator(diff, a.LaterChargePct)
 		a.Rationale = append(a.Rationale, fmt.Sprintf("Trips later in the window need about +%.0f%% SoC.", a.LaterChargePct))
 		if !in.SoCKnown {
 			a.Rationale = append(a.Rationale, "SoC unknown: the later need is estimated from trip energy.")
 		}
-		a.Summary = fmt.Sprintf("%s prices are cheaper than the rest of the window; charging ahead covers later trips.",
+		a.Summary = fmt.Sprintf("%s prices are cheaper than the rest of the window; charging extra covers later trips.",
 			titleBasis(d))
 		return a
 	case -diff >= Threshold:
@@ -269,13 +269,13 @@ func adviseDay(in Input, i int) Advice {
 	}
 }
 
-// solarAhead advises charging ahead from the day's solar surplus: EVCC
+// solarExtra advises charging extra from the day's solar surplus: EVCC
 // charges from it by itself in Smart mode, so the car only needs to be
 // plugged in while the sun shines.
-func solarAhead(in Input, i int, a Advice, cheapest Day, diff float64) Advice {
+func solarExtra(in Input, i int, a Advice, cheapest Day, diff float64) Advice {
 	d := in.Days[i]
 	s := d.Solar
-	a.Recommendation = ChargeAhead
+	a.Recommendation = ChargeExtra
 	a.Solar = true
 	a.CompareDate = cheapest.Date
 	a.Confidence = confidence(d, cheapest, true)

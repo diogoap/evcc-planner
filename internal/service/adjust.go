@@ -205,7 +205,7 @@ func noActionReason(day *DayAdviceView, kind string) string {
 	case kind == model.AdjustPostpone:
 		return "This day's advice is not to postpone."
 	}
-	return "This day's advice is not to charge ahead."
+	return "This day's advice is not to charge extra."
 }
 
 // postponeNeedless says why pausing cheap-grid charging until a later day

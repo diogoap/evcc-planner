@@ -17,7 +17,7 @@ test('daily advice per day, with a confirmed extra plan that can be ended', asyn
   await page.goto('/')
   // The week strip: each day's advice and price.
   const tue = page.getByTestId('day-2026-11-10')
-  await expect(tue.getByTestId('badge-advice')).toHaveText('Charge ahead')
+  await expect(tue.getByTestId('badge-advice')).toHaveText('Charge extra')
   // Published days show their lowest price, marked by a down arrow.
   await expect(tue.getByTestId('badge-price')).toHaveText(/^€0\.\d\d$/)
   await expect(tue.getByTestId('badge-price').getByRole('img', { name: 'Lowest' })).toBeAttached()

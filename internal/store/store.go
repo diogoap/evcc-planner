@@ -217,6 +217,9 @@ var migrations = []string{
 		value REAL NOT NULL,
 		observed_at TEXT NOT NULL
 	);`,
+	// The advice's "charge ahead" is now "charge extra" (the name charge
+	// ahead stays with the trip plans).
+	`UPDATE advice_dismissals SET recommendation = 'charge_extra' WHERE recommendation = 'charge_ahead';`,
 }
 
 // Open opens (creating if needed) the database at path and migrates it.

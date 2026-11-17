@@ -123,7 +123,7 @@ func TestDemoAdviceUsesPublishedPricesFirst(t *testing.T) {
 		t.Errorf("Monday = %+v", mon)
 	}
 	// Tuesday is published and the outlook's cheapest day.
-	if tue.Recommendation != "charge_ahead" || tue.Price.Basis != "published" || tue.Confidence != 2 ||
+	if tue.Recommendation != "charge_extra" || tue.Price.Basis != "published" || tue.Confidence != 2 ||
 		tue.Indicator == "" || tue.Action != "extra_plan" {
 		t.Errorf("Tuesday = %+v", tue)
 	}
@@ -437,7 +437,7 @@ func TestDismissAndUndo(t *testing.T) {
 	ta := newTestApp(t, "")
 	ta.json("POST", "/api/advice/2026-11-10/dismiss", map[string]any{}, http.StatusNoContent, nil)
 	tue := ta.advice().Advice.Days[1]
-	if !tue.Dismissed || tue.Action != "" || tue.Recommendation != "charge_ahead" {
+	if !tue.Dismissed || tue.Action != "" || tue.Recommendation != "charge_extra" {
 		t.Fatalf("dismissed = %+v", tue)
 	}
 	if ta.evccPlan() != nil {
@@ -486,7 +486,7 @@ func TestAdviceSettingsAndAutoApply(t *testing.T) {
 		t.Fatalf("auto-apply acts once per day, got %d adjustments", n)
 	}
 
-	// Tuesday just after midnight: charge ahead with the configured target,
+	// Tuesday just after midnight: charge extra with the configured target,
 	// ready by 06:00 (before the 07:48 departure), restored an hour later.
 	ta.at(time.Date(2026, 11, 10, 0, 30, 0, 0, ams))
 	ta.poll()

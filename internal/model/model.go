@@ -379,7 +379,7 @@ func (a AdviceSettings) Target(indicator string) (int, bool) {
 
 // Adjustment kinds and statuses.
 const (
-	AdjustExtraPlan = "extra_plan" // a temporary one-off SoC plan (charge ahead)
+	AdjustExtraPlan = "extra_plan" // a temporary one-off SoC plan (charge extra)
 	AdjustPostpone  = "postpone"   // cheap-grid charging paused (defer)
 
 	AdjustActive    = "active"
@@ -432,7 +432,7 @@ type NotificationSettings struct {
 	Problems       bool   `json:"problems"`
 	Questions      bool   `json:"questions"`
 	Ready          bool   `json:"ready"`
-	// Solar asks to plug in when today's advice is to charge ahead from the
+	// Solar asks to plug in when today's advice is to charge extra from the
 	// sun and the car is home but unplugged.
 	Solar bool `json:"solar"`
 }
@@ -517,7 +517,7 @@ const (
 	NotifyMissed    = "missed"
 	NotifyQuestion  = "question"
 	NotifyReady     = "ready"
-	NotifySolar     = "solar" // plug in to charge ahead from the sun
+	NotifySolar     = "solar" // plug in to charge extra from the sun
 	NotifyInfo      = "info"  // a follow-up, e.g. after Skip trip
 
 	NotifySent    = "sent"

@@ -248,7 +248,7 @@ func (r *reminders) cleanUp() {
 	}, "No longer needed")
 }
 
-// solarAdvice is today's advice when it is to charge ahead from the sun and
+// solarAdvice is today's advice when it is to charge extra from the sun and
 // has not been dismissed. Any confidence will do: plugging in changes
 // nothing in EVCC by itself.
 func (r *reminders) solarAdvice() *DayAdviceView {
@@ -266,7 +266,7 @@ func (r *reminders) solarAdvice() *DayAdviceView {
 }
 
 // solar asks to plug in while the car is home and unplugged on a day whose
-// advice is to charge ahead from the sun: from half an hour before the
+// advice is to charge extra from the sun: from half an hour before the
 // solar surplus starts until half an hour before it ends. EVCC charges from
 // the sun by itself once the car is plugged in.
 func (r *reminders) solar() {

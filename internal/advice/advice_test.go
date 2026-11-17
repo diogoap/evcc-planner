@@ -32,7 +32,7 @@ func dep(day int, charge, energy float64) Departure {
 	return Departure{Date: dates[day], DepartAt: t.Add(8 * time.Hour), ChargePct: charge, EnergyPct: energy}
 }
 
-func TestChargeAheadOnACheapPublishedDay(t *testing.T) {
+func TestChargeExtraOnACheapPublishedDay(t *testing.T) {
 	in := Input{
 		Days:       week(published(0.27), published(0.218), weekly(0.25), estimate(0.298), weekly(0.25), nil, nil),
 		Departures: []Departure{dep(1, 4, 10), dep(2, 3, 4), dep(3, 8, 8), dep(4, 6, 6)},
@@ -42,7 +42,7 @@ func TestChargeAheadOnACheapPublishedDay(t *testing.T) {
 	tue := got[1]
 	// Weekly averages are not day-specific but still count as later price
 	// levels: Tuesday is compared with Wednesday's, so confidence is low.
-	if tue.Recommendation != ChargeAhead || tue.Confidence != 1 || tue.CompareDate != "2026-11-11" {
+	if tue.Recommendation != ChargeExtra || tue.Confidence != 1 || tue.CompareDate != "2026-11-11" {
 		t.Fatalf("Tuesday = %+v", tue)
 	}
 	// The outlook naming Tuesday the week's cheapest day makes it medium.
@@ -164,7 +164,7 @@ func TestCheapDayWithoutLaterNeed(t *testing.T) {
 	}
 	// An unknown SoC counts the later trips' energy.
 	in.SoCKnown = false
-	if mon := Advise(in)[0]; mon.Recommendation != ChargeAhead || mon.LaterChargePct != 5 {
+	if mon := Advise(in)[0]; mon.Recommendation != ChargeExtra || mon.LaterChargePct != 5 {
 		t.Errorf("unknown SoC = %+v", mon)
 	}
 }
@@ -228,10 +228,10 @@ func withSun(in Input, s *Solar) Input {
 	return in
 }
 
-func TestChargeAheadFromSolarWhenTheSunBeatsLaterDays(t *testing.T) {
+func TestChargeExtraFromSolarWhenTheSunBeatsLaterDays(t *testing.T) {
 	from, until := time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC), time.Date(2026, 11, 13, 15, 0, 0, 0, time.UTC)
 	got := Advise(withSun(solarFriday(), &Solar{Pct: 4, Price: 0.27, GridPrice: 0.38, From: from, Until: until}))[0]
-	if got.Recommendation != ChargeAhead || !got.Solar || got.CompareDate != "2026-11-15" {
+	if got.Recommendation != ChargeExtra || !got.Solar || got.CompareDate != "2026-11-15" {
 		t.Fatalf("Friday = %+v", got)
 	}
 	// Sunday is an estimate: medium confidence; the sun covers 4 of the 16%.

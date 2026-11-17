@@ -38,7 +38,7 @@ notifications is in [AUTOMATION.md](AUTOMATION.md).
 - Published prices come from EVCC: today, and tomorrow from about 14:00. Later days are estimated from Tibber's weekly outlook (read by AI, with every number checked against the article). Wind and sun come from KNMI's weather outlook.
 - Each day gets one piece of advice: charge extra, wait for a cheaper day, or nothing. It comes with a confidence (1–3) and an amount (little, medium, more).
 - **Create extra plan** and **Review postponement** ask before changing anything and are undone when they expire. Applying advice automatically is optional and off by default.
-- Charge ahead from the sun: "keep the car plugged in" when today's or tomorrow's sun is the cheapest energy.
+- Charge extra from the sun: "keep the car plugged in" when today's or tomorrow's sun is the cheapest energy.
 
 ## Price history
 

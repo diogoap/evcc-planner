@@ -24,7 +24,7 @@ test('a day opens in a panel with its trips, charging, advice, and actions', asy
   await expect(panel.getByTestId('trip-recurring:1:2026-11-10')).toBeVisible()
   await expect(panel.getByTestId('day-charging')).toContainText('07:48 needs 42%')
   await expect(panel.getByTestId('day-windows')).toContainText('Expected')
-  await expect(panel.getByTestId('panel-advice').getByTestId('advice-label')).toHaveText('Charge ahead')
+  await expect(panel.getByTestId('panel-advice').getByTestId('advice-label')).toHaveText('Charge extra')
   await expect(panel.getByTestId('day-send')).toHaveText('Send plan: Trips tomorrow')
 
   await settled(page)

@@ -34,7 +34,7 @@ const day = (over: Partial<Day>): Day => ({
 
 describe('adviceLabel', () => {
   it('names each recommendation', () => {
-    expect(adviceLabel(advice({ recommendation: 'charge_ahead' })).text).toBe('Charge ahead')
+    expect(adviceLabel(advice({ recommendation: 'charge_extra' })).text).toBe('Charge extra')
     expect(adviceLabel(advice({ recommendation: 'defer' })).text).toBe('Defer optional charging')
     expect(adviceLabel(advice({ noSuggestion: true, confidence: 0 })).text).toBe('No data / no suggestion')
     expect(adviceLabel(advice({}), day({ status: 'completed' })).text).toBe('Completed')
@@ -50,8 +50,8 @@ describe('adviceLabel', () => {
   })
 
   it('mutes low-confidence advice', () => {
-    expect(adviceLabel(advice({ recommendation: 'charge_ahead', confidence: 1 })).tone).toBe('muted')
-    expect(adviceLabel(advice({ recommendation: 'charge_ahead', confidence: 2 })).tone).toBe('ok')
+    expect(adviceLabel(advice({ recommendation: 'charge_extra', confidence: 1 })).tone).toBe('muted')
+    expect(adviceLabel(advice({ recommendation: 'charge_extra', confidence: 2 })).tone).toBe('ok')
   })
 })
 

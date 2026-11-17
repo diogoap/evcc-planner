@@ -225,7 +225,7 @@ func TestEveryChangeRecordsOneEvent(t *testing.T) {
 	ta.json("POST", "/api/advice/2026-11-10/dismiss", map[string]any{}, http.StatusNoContent, nil)
 	e = log.one("advice.dismiss", ui)
 	changed(t, e, "dismissed", false, true)
-	if e.Detail["recommendation"] != "charge_ahead" || !strings.Contains(e.Summary, "Tue 10 Nov") {
+	if e.Detail["recommendation"] != "charge_extra" || !strings.Contains(e.Summary, "Tue 10 Nov") {
 		t.Errorf("dismiss = %+v", e)
 	}
 	ta.json("POST", "/api/advice/2026-11-10/dismiss", map[string]any{"undo": true}, http.StatusNoContent, nil)
@@ -278,7 +278,7 @@ func TestAdviceChangesAreRecordedWithTheirSource(t *testing.T) {
 	}, http.StatusCreated, &a)
 	e := log.one("adjustment.create", model.SourceUI)
 	changed(t, e, "evccPlan", "50% by 2026-11-11 07:00", "70% by 2026-11-10 07:48")
-	if e.SubjectID != itoa(a.ID) || e.Related != "plan" || e.Detail["recommendation"] != "charge_ahead" {
+	if e.SubjectID != itoa(a.ID) || e.Related != "plan" || e.Detail["recommendation"] != "charge_extra" {
 		t.Errorf("extra plan = %+v", e)
 	}
 

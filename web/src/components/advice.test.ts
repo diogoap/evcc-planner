@@ -19,7 +19,7 @@ const { default: ProposalDialog } = await import('./ProposalDialog.vue')
 
 const advice = (over: Partial<DayAdvice>): DayAdvice => ({
   date: '2026-11-10',
-  recommendation: 'charge_ahead',
+  recommendation: 'charge_extra',
   noSuggestion: false,
   confidence: 2,
   indicator: 'high',
@@ -51,7 +51,7 @@ describe('AdviceCard', () => {
   it('shows the recommendation, confidence, indicator, and plan action', async () => {
     const w = card(advice({}))
     expect(w.text()).toContain("Tuesday's advice")
-    expect(w.get('[data-testid=advice-label]').text()).toBe('Charge ahead')
+    expect(w.get('[data-testid=advice-label]').text()).toBe('Charge extra')
     expect(w.get('[data-testid=advice-confidence]').text()).toBe('Medium confidence')
     expect(w.get('[data-testid=advice-indicator]').text()).toBe('Charge: High (more)')
     expect(w.get('[data-testid=advice-basis]').text()).toBe('Published')
@@ -67,7 +67,7 @@ describe('AdviceCard', () => {
     expect(w.get('[data-testid=advice-sources]').text()).toContain('stale')
   })
 
-  it('says to keep the car plugged in when the sun charges ahead, with no plan', () => {
+  it('says to keep the car plugged in when the sun charges extra, with no plan', () => {
     const w = card(
       advice({
         solar: true,
@@ -82,7 +82,7 @@ describe('AdviceCard', () => {
           "Tomorrow's sun charges at about €0.38/kWh, or €0.27 without the tax you don't pay on own solar: cheaper than Sunday (about €0.33). Keep the car plugged in.",
       }),
     )
-    expect(w.get('[data-testid=advice-label]').text()).toBe('Charge ahead from solar')
+    expect(w.get('[data-testid=advice-label]').text()).toBe('Charge extra from solar')
     // The grid price in the sun's slots, as on the price chart.
     expect(w.get('[data-testid=advice-solar]').text()).toBe(
       'Keep the car plugged in from 10:30 to 14:30: EVCC charges from the sun by itself, about 4% at €0.38/kWh.',
@@ -194,7 +194,7 @@ const weather = {
 describe('AdviceBadges', () => {
   it('shows the key figures as badges', () => {
     const w = mount(AdviceBadges, { props: { advice: advice({ weather: { ...weather, windBft: 5 } }) } })
-    expect(w.get('[data-testid=badge-advice]').text()).toBe('Charge ahead')
+    expect(w.get('[data-testid=badge-advice]').text()).toBe('Charge extra')
     expect(w.get('[data-testid=badge-confidence]').text()).toBe('2/3')
     expect(w.findAll('[data-testid=badge-confidence] .dot.on')).toHaveLength(2)
     expect(w.get('[data-testid=badge-indicator]').attributes('aria-label')).toBe(
@@ -295,12 +295,12 @@ describe('WeekStrip advice', () => {
       },
     })
     const tile = w.get('[data-testid="day-2026-11-10"]')
-    expect(tile.get('[data-testid=badge-advice]').text()).toBe('Charge ahead')
-    // Charging ahead from the sun has its own short label and icon.
+    expect(tile.get('[data-testid=badge-advice]').text()).toBe('Charge extra')
+    // Charging extra from the sun has its own short label and icon.
     const sunny = mount(WeekStrip, { props: { days, advice: [advice({ solar: true })] } })
     expect(sunny.get('[data-testid=badge-advice]').text()).toBe('Solar')
     expect(tile.get('[data-testid=badge-price]').text()).toBe('€0.14')
-    expect(tile.text()).toContain('Charge ahead, confidence medium')
+    expect(tile.text()).toContain('Charge extra, confidence medium')
     expect(tile.attributes('aria-pressed')).toBe('true')
     await tile.trigger('click')
     expect(w.emitted('select')).toEqual([['2026-11-10']])
@@ -341,7 +341,7 @@ describe('WeekList', () => {
       expect(row.text()).toContain(text)
     // Calendar trips to review sit with the advice.
     expect(row.get('.wl-advice [data-testid=review-count]').text()).toBe('1 trip to review')
-    expect(row.get('[data-testid=badge-advice]').text()).toBe('Charge ahead')
+    expect(row.get('[data-testid=badge-advice]').text()).toBe('Charge extra')
     expect(row.get('[data-testid=badge-confidence]').text()).toBe('2/3')
     // Price and weather in their own columns: the average, as for estimates,
     // over the lowest published slot.

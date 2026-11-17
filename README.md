@@ -15,7 +15,7 @@ confirmed, manual **Send plan to EVCC**.
 
 **V2:** daily forecast ingestion (Tibber's weekly price outlook structured
 with OpenRouter, KNMI's weather outlook) and one advisory recommendation per
-day (charge ahead, defer, or nothing), with confirmed **Create extra plan**
+day (charge extra, defer, or nothing), with confirmed **Create extra plan**
 and **Review postponement** actions that are undone when they expire.
 Optional auto-apply, off by default.
 
@@ -354,7 +354,7 @@ to `main` deploy automatically, run `make verify` before pushing.
   excl./incl. pair: retail = weekly incl. + (day − weekly excl.) × 1.21. Each
   price shows how it was obtained (Settings → Connections).
 - **One recommendation per day**, comparing the day's average price with the
-  later days the car is home: **Charge ahead** when it is at least 8% cheaper
+  later days the car is home: **Charge extra** when it is at least 8% cheaper
   than every later day and later trips will need charge; **Defer optional
   charging** when a later day is at least 8% cheaper and the projected SoC
   covers every departure until then; otherwise nothing (keep the plan). Days

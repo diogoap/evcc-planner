@@ -154,6 +154,9 @@ share it:
 
 ## Charge ahead for later trips
 
+"Charge ahead" is only this trip feature; the daily advice's extra charge is
+called **charge extra** (until 2026-11-17 it was also called charge ahead).
+
 With **Charge ahead for later trips** on (Automatic mode only), the target can
 include trips after the next departure, when charging for them before the
 next departure is clearly cheaper.
@@ -222,7 +225,7 @@ would count as €0.14/kWh, and Utrecht would be charged from the sun instead.)
 EVCC still picks the actual slots. The planner shows its own estimate of them
 on the price chart, labelled as an estimate.
 
-## Charge ahead from solar (daily advice)
+## Charge extra from solar (daily advice)
 
 For today and tomorrow, where EVCC's solar forecast reaches, daily advice also
 prices the day's **solar surplus while the car is home**, valued as in
@@ -231,7 +234,7 @@ forecast minus household use (below the charger's minimum it counts as none),
 at the slot's price minus the tax not paid on own solar (€0.11/kWh). Slots
 without a published price use the day's estimate.
 
-- **Charge ahead from solar:** when that solar price is at least 8% below the
+- **Charge extra from solar:** when that solar price is at least 8% below the
   cheapest later day and later trips need charging. Example: Friday's grid
   averages €0.42 and Sunday's estimate is €0.33, but the sun during €0.35–0.40
   slots counts as €0.24–0.29, so "Today's sun charges at about €0.38/kWh, or
@@ -350,7 +353,7 @@ gantt
 | **Missed target** | Unplugged within 30 minutes of the departure with less than its minimum target. Also an activity entry, even with notifications off. | "Left for Utrecht with 48% (target 52%)." |
 | **Question** | A calendar event marked Needs review, within the seven days. Buttons: **Count it** (confirm) and **Not a trip** (turn off). | "Is 'Dinner' (Thu 19:00) a car trip?" |
 | **Ready** (off by default) | Plugged in and the target reached before the departure. | "Ready for Utrecht: 64%." |
-| **Plug in for the sun** | Today's advice is to [charge ahead from solar](#charge-ahead-from-solar-daily-advice), the car is home (no trip in progress; at home by the car location sensor, if set) and unplugged, from 30 minutes before the solar surplus starts until 30 minutes before it ends, outside quiet hours. Any confidence: plugging in changes nothing in EVCC by itself. Buttons: **Remind in 30 min** (never after the sun's end), **View plan**. | "Plug in for the sun: Sunshine until about 14:30 charges the car at about €0.38/kWh (€0.27 without the tax on own solar), cheaper than Sunday. Plug in to use it." |
+| **Plug in for the sun** | Today's advice is to [charge extra from solar](#charge-extra-from-solar-daily-advice), the car is home (no trip in progress; at home by the car location sensor, if set) and unplugged, from 30 minutes before the solar surplus starts until 30 minutes before it ends, outside quiet hours. Any confidence: plugging in changes nothing in EVCC by itself. Buttons: **Remind in 30 min** (never after the sun's end), **View plan**. | "Plug in for the sun: Sunshine until about 14:30 charges the car at about €0.38/kWh (€0.27 without the tax on own solar), cheaper than Sunday. Plug in to use it." |
 
 Each is sent once per trip (unplugged early: once per unplug; not in Smart
 mode: once per mode; plug in for the sun: once per day). Charging stopped, not

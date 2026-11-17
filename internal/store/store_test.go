@@ -271,10 +271,10 @@ func TestAdviceSettingsDismissalsAndAdjustments(t *testing.T) {
 		t.Fatalf("saved = %+v", got)
 	}
 
-	s.Dismiss("2026-11-10", "charge_ahead", time.Now())
+	s.Dismiss("2026-11-10", "charge_extra", time.Now())
 	s.Dismiss("2026-11-12", "defer", time.Now())
 	s.Undismiss("2026-11-12")
-	if d, _ := s.Dismissals(); len(d) != 1 || d["2026-11-10"] != "charge_ahead" {
+	if d, _ := s.Dismissals(); len(d) != 1 || d["2026-11-10"] != "charge_extra" {
 		t.Fatalf("dismissals = %v", d)
 	}
 
@@ -332,6 +332,37 @@ func TestSoCMigrationKeepsTheLastReading(t *testing.T) {
 	if err != nil || r == nil || r.Source != model.SoCSourceEVCC || r.Percent != 38 || r.RangeKm == nil || *r.RangeKm != 122 ||
 		!r.ObservedAt.Equal(time.Date(2026, 11, 9, 15, 45, 0, 0, time.UTC)) {
 		t.Fatalf("migrated reading = %+v %v", r, err)
+	}
+}
+
+func TestChargeAheadDismissalsBecomeChargeExtra(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "old.db")
+	db, err := sql.Open("sqlite", "file:"+path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	last := slices.IndexFunc(migrations, func(m string) bool { return strings.Contains(m, "'charge_extra'") })
+	for _, m := range migrations[:last] {
+		if _, err := db.Exec(m); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := db.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, last)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO advice_dismissals (date, recommendation, dismissed_at) VALUES
+		('2026-11-10', 'charge_ahead', '2026-11-09T18:00:00Z'), ('2026-11-11', 'defer', '2026-11-09T18:00:00Z')`); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if d, err := s.Dismissals(); err != nil || d["2026-11-10"] != "charge_extra" || d["2026-11-11"] != "defer" {
+		t.Fatalf("dismissals after the rename = %v, %v", d, err)
 	}
 }
 
