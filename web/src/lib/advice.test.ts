@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import type { Day, DayAdvice } from '../api/types'
-import { adviceLabel, confidenceLabel, referenceText, sunText, tempText, windText } from './advice'
+import type { Target } from '../api/types'
+import {
+  adviceLabel,
+  confidenceLabel,
+  goodPrices,
+  referenceText,
+  sunText,
+  tempText,
+  windText,
+} from './advice'
 
 const advice = (over: Partial<DayAdvice>): DayAdvice => ({
   date: '2026-11-10',
@@ -113,5 +122,55 @@ describe('weather texts', () => {
         }),
       ),
     ).toBe("Thu's expected lowest €0.29")
+  })
+})
+
+describe('goodPrices', () => {
+  const target = (over: Partial<Target>): Target => ({
+    soc: 60,
+    minSoc: 42,
+    readyBy: '2026-11-10T06:48:00Z',
+    tripKey: 'recurring:1:2026-11-10',
+    title: 'School drop-off',
+    covered: false,
+    ahead: [],
+    savingEur: 0,
+    charging: [],
+    ...over,
+  })
+  const ahead = {
+    tripKey: 'k',
+    title: 'Office',
+    departAt: '2026-11-12T07:00:00Z',
+    energyPct: 9,
+    priceAhead: 0.18,
+  }
+
+  it('marks days whose low prices charge extra or charge ahead charges at', () => {
+    const extra = advice({ date: '2026-11-10', recommendation: 'charge_extra', targetSoc: 60 })
+    const solar = advice({ date: '2026-11-11', recommendation: 'charge_extra', targetSoc: 50, solar: true })
+    expect([...goodPrices([extra, solar], null)]).toEqual([
+      ['2026-11-10', 'Good price: cheap enough to charge extra to 60%'],
+    ])
+    // Charge ahead: the days of the trip plan's expected charging (Amsterdam
+    // time: 23:30 UTC on the 9th is the 10th).
+    const t = target({
+      ahead: [{ ...ahead, priceLater: 0.3, savingEur: 1.2 }],
+      savingEur: 1.2,
+      charging: [
+        { start: '2026-11-09T18:00:00Z', end: '2026-11-09T18:15:00Z', value: 0.2 },
+        { start: '2026-11-09T23:30:00Z', end: '2026-11-09T23:45:00Z', value: 0.15 },
+      ],
+    })
+    expect(Object.fromEntries(goodPrices([extra], t))).toEqual({
+      '2026-11-10':
+        'Good price: cheap enough to charge extra to 60%; the trip plan charges later trips ahead (saves about €1.20)',
+      '2026-11-09': 'Good price: the trip plan charges later trips ahead (saves about €1.20)',
+    })
+    // Without later trips charged ahead, or once covered, the plan's own
+    // charging is not highlighted; neither is advice without a suggestion.
+    expect(goodPrices([], target({ charging: t.charging })).size).toBe(0)
+    expect(goodPrices([], { ...t, covered: true }).size).toBe(0)
+    expect(goodPrices([{ ...extra, noSuggestion: true }], null).size).toBe(0)
   })
 })

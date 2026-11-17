@@ -17,6 +17,7 @@ import TripEditor from '../components/TripEditor.vue'
 import WeekList from '../components/WeekList.vue'
 import WeekStrip from '../components/WeekStrip.vue'
 import { historyLink } from '../lib/activity'
+import { goodPrices } from '../lib/advice'
 import { dayShort } from '../lib/format'
 import { chartsApart, layout, shownDays } from '../layout'
 import { expectedCharging } from '../lib/status'
@@ -48,6 +49,8 @@ const advice = computed(
     adviceDays.value.find((d) => !d.noSuggestion) ??
     adviceDays.value[0],
 )
+// Days whose lowest price the planner charges at: highlighted in the week.
+const good = computed(() => goodPrices(adviceDays.value, plan.value?.control.target ?? null))
 const proposing = ref<{ kind: AdjustmentKind; date: string } | null>(null)
 // The planner's estimate of the charging slots for the automatic target.
 const expected = computed(() => (plan.value ? expectedCharging(plan.value) : []))
@@ -206,6 +209,7 @@ function cancelAdjustment(id: number) {
             :days="days"
             :advice="adviceDays"
             :selected="panelDate ?? advice?.date"
+            :good="good"
             @select="openDay"
           />
           <WeekList
@@ -213,13 +217,14 @@ function cancelAdjustment(id: number) {
             :days="days"
             :advice="adviceDays"
             :selected="panelDate ?? advice?.date"
+            :good="good"
             @select="(d) => (selected = d)"
             @open="openDay"
           />
           <p v-if="weekView === 'columns' && adviceDays.length" class="small muted m-0 mt-2 week-legend">
             <AppIcon name="bolt" /> charge extra · <AppIcon name="clock" /> defer ·
-            <AppIcon name="check" /> keep or no plan · <AppIcon name="dash" /> no data. Tap a day for its
-            advice.
+            <AppIcon name="check" /> keep or no plan · <AppIcon name="dash" /> no data. A green price is one
+            the plan charges at (charge extra or charge ahead). Tap a day for its advice.
           </p>
         </section>
 

@@ -9,8 +9,14 @@ import AppIcon from './AppIcon.vue'
 // The days at a glance: the charge each day's departures need and its
 // advice. Phones show a word and an icon per day; wide screens add distance,
 // energy, the first departure, and the price. Screen readers get all of it,
-// in words, on every screen.
-const props = defineProps<{ days: Day[]; advice: DayAdvice[]; selected?: string }>()
+// in words, on every screen. Lowest prices the planner charges at (charge
+// extra, or charge ahead) are highlighted, with why in `good`.
+const props = defineProps<{
+  days: Day[]
+  advice: DayAdvice[]
+  selected?: string
+  good?: Map<string, string>
+}>()
 const emit = defineEmits<{ select: [date: string] }>()
 
 const byDate = computed(() => new Map(props.advice.map((a) => [a.date, a])))
@@ -31,6 +37,7 @@ const tiles = computed(() =>
       advice: adv,
       confidence: a?.confidence ? `, confidence ${confidenceNames[a.confidence].toLowerCase()}` : '',
       price: a ? priceBadge(a) : null,
+      good: props.good?.get(d.date),
     }
   }),
 )
@@ -71,14 +78,14 @@ const tiles = computed(() =>
       <span
         v-if="t.price"
         class="week-wide badge"
-        :class="`basis-${t.price.basis}`"
-        :title="t.price.title"
+        :class="t.good ? 'tone-ok' : `basis-${t.price.basis}`"
+        :title="t.good ? `${t.price.title}. ${t.good}` : t.price.title"
         data-testid="badge-price"
         ><AppIcon
-          :name="t.price.lowest ? 'arrow-down' : 'tag'"
+          :name="t.good ? 'bolt' : t.price.lowest ? 'arrow-down' : 'tag'"
           :label="t.price.lowest ? 'Lowest' : undefined"
         />{{ t.price.text }}</span
-      >
+      ><span v-if="t.price && t.good" class="sr-only">. {{ t.good }}</span>
       <span v-if="t.day.reviewCount" class="week-review pill tone-warn" :title="reviewText(t.day.reviewCount)"
         ><span aria-hidden="true">!</span
         ><span class="week-wide">{{ reviewText(t.day.reviewCount) }}</span></span

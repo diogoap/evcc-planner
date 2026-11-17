@@ -347,6 +347,34 @@ describe('WeekStrip advice', () => {
     await tile.trigger('click')
     expect(w.emitted('select')).toEqual([['2026-11-10']])
   })
+
+  it('highlights a lowest price the plan charges at', () => {
+    const days: Day[] = [
+      {
+        date: '2026-11-10',
+        distanceKm: 0,
+        energyKWh: 0,
+        tripCount: 0,
+        disabledCount: 0,
+        doneCount: 0,
+        reviewCount: 0,
+        status: 'none',
+        chargePct: 0,
+      },
+    ]
+    const props = { days, advice: [advice({ price: { ...advice({}).price!, min: 0.14 } })] }
+    const plain = mount(WeekStrip, { props }).get('[data-testid=badge-price]')
+    expect(plain.classes()).toContain('basis-published')
+    const good = new Map([['2026-11-10', 'Good price: cheap enough to charge extra to 60%']])
+    const tile = mount(WeekStrip, { props: { ...props, good } }).get('[data-testid="day-2026-11-10"]')
+    const badge = tile.get('[data-testid=badge-price]')
+    expect(badge.classes()).toContain('tone-ok')
+    expect(badge.classes()).not.toContain('basis-published')
+    expect(badge.attributes('title')).toContain('. Good price: cheap enough to charge extra to 60%')
+    expect(badge.text()).toBe('€0.14')
+    // Screen readers hear why.
+    expect(tile.text()).toContain('€0.14. Good price: cheap enough to charge extra to 60%')
+  })
 })
 
 describe('WeekList', () => {
@@ -389,6 +417,7 @@ describe('WeekList', () => {
     // over the lowest published slot.
     expect(row.get('[data-testid=badge-price]').text()).toBe('€0.22 avg')
     expect(row.get('[data-testid=price-min]').text()).toBe('€0.14 min')
+    expect(row.get('[data-testid=price-min]').classes()).not.toContain('tone-ok')
     expect(row.findAll('[data-testid=badge-price]')).toHaveLength(1)
     // Sunny (over 50%) and windy (Bft 5 or more) days are highlighted.
     const [sunshine, wind] = [row.get('[data-testid=badge-sunshine]'), row.get('[data-testid=badge-wind]')]
@@ -411,6 +440,19 @@ describe('WeekList', () => {
     })
     expect(calm.get('[data-testid=badge-sunshine]').classes()).not.toContain('tone-ok')
     expect(calm.get('[data-testid=badge-wind]').classes()).not.toContain('tone-ok')
+    // A lowest price the plan charges at is highlighted.
+    const goodRow = mount(WeekList, {
+      props: {
+        days,
+        advice: [advice({ price: { ...advice({}).price!, min: 0.14 } })],
+        good: new Map([['2026-11-10', 'Good price: the trip plan charges later trips ahead']]),
+      },
+    }).get('[data-testid="day-2026-11-10"]')
+    const good = goodRow.get('[data-testid=price-min]')
+    expect(good.classes()).toContain('tone-ok')
+    expect(good.attributes('title')).toBe('Good price: the trip plan charges later trips ahead')
+    expect(good.text()).toBe('€0.14 min')
+    expect(goodRow.text()).toContain('€0.14 min. Good price: the trip plan charges later trips ahead')
   })
 
   it('on wide screens, a row selects its day and the last column opens it', async () => {

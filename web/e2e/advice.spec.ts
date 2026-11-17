@@ -25,6 +25,12 @@ test('daily advice per day, with a confirmed extra plan that can be ended', asyn
   // Published days show their lowest price, marked by a down arrow.
   await expect(tue.getByTestId('badge-price')).toHaveText(/^€0\.\d\d$/)
   await expect(tue.getByTestId('badge-price').getByRole('img', { name: 'Lowest' })).toBeAttached()
+  // Charge extra charges at it: a good price, highlighted.
+  await expect(tue.getByTestId('badge-price')).toHaveClass(/tone-ok/)
+  await expect(tue.getByTestId('badge-price')).toHaveAttribute(
+    'title',
+    /Good price: cheap enough to charge extra to 60%/,
+  )
   const wed = page.getByTestId('day-2026-11-11')
   await expect(wed.getByTestId('badge-advice')).toHaveText('No data')
   await expect(wed.getByTestId('badge-price')).toHaveText('~€0.25')

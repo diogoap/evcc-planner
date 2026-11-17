@@ -17,7 +17,15 @@ import AppIcon from './AppIcon.vue'
 // Wide screens (every column showing): a row selects its day for the advice
 // card, and the button in the last column opens the day. On narrower
 // screens the stacked row opens the day itself.
-const props = defineProps<{ days: Day[]; advice: DayAdvice[]; selected?: string }>()
+//
+// Lowest prices the planner charges at (charge extra, or charge ahead) are
+// highlighted, with why in `good`.
+const props = defineProps<{
+  days: Day[]
+  advice: DayAdvice[]
+  selected?: string
+  good?: Map<string, string>
+}>()
 const emit = defineEmits<{ select: [date: string]; open: [date: string] }>()
 
 // The same width as the wide layout below (720 px).
@@ -40,6 +48,7 @@ const rows = computed(() => {
       wind: a?.weather?.windBft ?? null,
       solar: a?.sunSource === 'evcc' && a.solarKWh != null ? a.solarKWh : null,
       price: a?.price ?? null,
+      good: props.good?.get(d.date),
     }
   })
 })
@@ -87,7 +96,14 @@ const rows = computed(() => {
             >{{ r.price.basis === 'published' ? '' : '~' }}€{{ r.price.value.toFixed(2) }} avg</span
           >
           <span v-else class="muted">–</span>
-          <span v-if="r.price?.min != null" class="small muted num" data-testid="price-min"
+          <span
+            v-if="r.price?.min != null && r.good"
+            class="badge tone-ok"
+            :title="r.good"
+            data-testid="price-min"
+            ><AppIcon name="bolt" />€{{ r.price.min.toFixed(2) }} min</span
+          ><span v-if="r.price?.min != null && r.good" class="sr-only">. {{ r.good }}</span>
+          <span v-else-if="r.price?.min != null" class="small muted num" data-testid="price-min"
             >€{{ r.price.min.toFixed(2) }} min</span
           >
         </span>

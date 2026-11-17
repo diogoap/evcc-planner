@@ -1,5 +1,5 @@
-import type { AdviceSource, Day, DayAdvice, DayPrice, Indication } from '../api/types'
-import { clock } from './format'
+import type { AdviceSource, Day, DayAdvice, DayPrice, Indication, Target } from '../api/types'
+import { clock, localDate } from './format'
 import type { Tone } from './status'
 
 export const confidenceNames = ['', 'Low', 'Medium', 'High'] as const
@@ -103,6 +103,30 @@ export function priceBadge(
     basis: p.basis,
     title: `${basisNames[p.basis]}: ${p.detail}`,
   }
+}
+
+/**
+ * Days whose low prices the planner charges at, with why: the day's advice
+ * is to charge extra from the grid, or the trip plan charges later trips
+ * ahead in its hours (its expected charging). The week highlights their
+ * lowest price.
+ */
+export function goodPrices(advice: DayAdvice[], target: Target | null): Map<string, string> {
+  const why = new Map<string, string[]>()
+  const add = (date: string, text: string) => {
+    const list = why.get(date) ?? []
+    if (!list.includes(text)) why.set(date, [...list, text])
+  }
+  for (const a of advice) {
+    if (a.recommendation === 'charge_extra' && !a.solar && !a.noSuggestion && a.targetSoc)
+      add(a.date, `cheap enough to charge extra to ${a.targetSoc}%`)
+  }
+  if (target && !target.covered && target.ahead.length) {
+    const saving = target.savingEur > 0 ? ` (saves about €${target.savingEur.toFixed(2)})` : ''
+    for (const r of target.charging)
+      add(localDate(r.start), `the trip plan charges later trips ahead${saving}`)
+  }
+  return new Map([...why].map(([date, list]) => [date, `Good price: ${list.join('; ')}`]))
 }
 
 /**
