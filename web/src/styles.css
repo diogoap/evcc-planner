@@ -1187,6 +1187,12 @@ details summary {
     padding-bottom: calc(var(--bottom-nav-h) + var(--space-6) + env(safe-area-inset-bottom));
   }
 
+  /* While typing the keyboard covers the bar, and iOS could leave it in
+     the middle of the page after the keyboard closes (lib/keyboard.ts). */
+  html.typing .bottom-nav {
+    display: none;
+  }
+
   .toasts {
     bottom: calc(var(--bottom-nav-h) + var(--space-3) + env(safe-area-inset-bottom));
   }

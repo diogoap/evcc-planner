@@ -48,6 +48,15 @@ test('main navigation: tabs on wide screens, a bar at the bottom on phones', asy
   const last = await page.locator('main > :last-child').boundingBox()
   const bar = await bottom.boundingBox()
   expect(last!.y + last!.height).toBeLessThanOrEqual(bar!.y)
+
+  // While typing the bar hides (the keyboard covers it, and iOS could leave
+  // it mid-page after the keyboard closes); it comes back afterwards.
+  await bottom.getByRole('link', { name: 'Settings' }).click()
+  const address = page.getByTestId('home-address')
+  await address.focus()
+  await expect(bottom).toBeHidden()
+  await address.blur()
+  await expect(bottom).toBeVisible()
 })
 
 test('refresh reloads the plan and shows when it was updated', async ({ page }) => {

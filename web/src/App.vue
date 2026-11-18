@@ -5,6 +5,7 @@ import AppIcon, { type IconName } from './components/AppIcon.vue'
 import PullToRefresh from './components/PullToRefresh.vue'
 import { chartsApart } from './layout'
 import { clock } from './lib/format'
+import { watchKeyboard } from './lib/keyboard'
 import { checkVersion, loadMeta, refresh, refreshNow, state } from './store'
 
 // The main destinations: tabs at the top on wide screens, a bar at the bottom
@@ -20,6 +21,8 @@ const nav: { to: string; label: string; short?: string; icon: IconName; apart?: 
 ]
 
 let timer: number | undefined
+// The bottom bar hides while typing (see lib/keyboard.ts).
+const stopKeyboard = watchKeyboard()
 
 onMounted(async () => {
   try {
@@ -40,6 +43,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  stopKeyboard()
   window.clearInterval(timer)
   document.removeEventListener('visibilitychange', resumed)
 })
