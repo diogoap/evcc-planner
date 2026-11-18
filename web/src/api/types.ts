@@ -634,13 +634,23 @@ export interface AISettingsView {
   defaultPrompt: string
   /** The planner's rules with your settings and EVCC's charge limit. */
   defaultGoals: string
-  /** Models offered for AI mode, the default first; others can be typed in. */
-  models: string[]
+  /** Models offered for AI mode, sorted by name, with prices; others can be typed in. */
+  models: AIModelOption[]
+  /** When the prices were read from OpenRouter (YYYY-MM-DD). */
+  pricesDate: string
   macros: AIMacro[]
   defaultModel: string
   /** How decisions are made; empty without a model. */
   decider: string
   note?: string
+}
+
+/** A model offered for AI mode: OpenRouter's USD per million tokens, and a typical run's cost. */
+export interface AIModelOption {
+  id: string
+  inputPerM: number
+  outputPerM: number
+  runUsd: number
 }
 
 export type AITrigger = 'prices' | 'plug_in' | 'manual'

@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
+	"sort"
+	"strings"
 	"time"
 )
 
@@ -479,11 +481,68 @@ type AISettings struct {
 // DefaultAIModel is the OpenRouter model AI mode uses until another is set.
 const DefaultAIModel = "~anthropic/claude-haiku-latest"
 
-// AIModels are the models offered under Settings → Advice → AI mode, the
-// default first; any other OpenRouter model can be typed in.
-var AIModels = []string{
-	DefaultAIModel, "~anthropic/claude-sonnet-latest", "~openai/gpt-luna-latest", "~openai/gpt-terra-latest",
-	"~z-ai/glm-latest", "~z-ai/glm-flash-latest", "~x-ai/grok-latest", "qwen/qwen3.8-flash",
+// AIModel is a model offered for AI mode, with OpenRouter's price (USD
+// per million tokens, as of AIModelPricesDate) and what a typical run costs
+// at it.
+type AIModel struct {
+	ID         string  `json:"id"`
+	InputPerM  float64 `json:"inputPerM"`
+	OutputPerM float64 `json:"outputPerM"`
+	RunUSD     float64 `json:"runUsd"`
+}
+
+// AIModelPricesDate is when the prices below were read from OpenRouter;
+// they change over time.
+const AIModelPricesDate = "2026-11-18"
+
+// A typical AI run: the default prompt with a week of data, and the answer
+// (tokens).
+const (
+	AIRunInputTokens  = 7000
+	AIRunOutputTokens = 4500
+)
+
+// AIModels are the models offered under Settings → Advice → AI mode,
+// sorted by name (ignoring the "~"); any other OpenRouter model can be
+// typed in. All support strict structured outputs. OpenRouter's "~…-latest"
+// aliases follow a family's newest model; the others are fixed versions,
+// chosen for a low price per run.
+var AIModels = sortModels([]AIModel{
+	// Anthropic
+	{ID: "~anthropic/claude-fable-latest", InputPerM: 8, OutputPerM: 40},
+	{ID: DefaultAIModel, InputPerM: 0.10, OutputPerM: 0.50},
+	{ID: "~anthropic/claude-opus-latest", InputPerM: 4, OutputPerM: 20},
+	{ID: "~anthropic/claude-sonnet-latest", InputPerM: 2, OutputPerM: 10},
+	// OpenAI
+	{ID: "~openai/gpt-astra-latest", InputPerM: 8, OutputPerM: 40},
+	{ID: "~openai/gpt-luna-latest", InputPerM: 0.10, OutputPerM: 0.50},
+	{ID: "~openai/gpt-sol-latest", InputPerM: 2, OutputPerM: 10},
+	{ID: "~openai/gpt-terra-latest", InputPerM: 1, OutputPerM: 5},
+	{ID: "openai/gpt-oss-120b", InputPerM: 0.15, OutputPerM: 0.60},
+	// Others
+	{ID: "~deepseek/deepseek-flash-latest", InputPerM: 0.036, OutputPerM: 0.50},
+	{ID: "google/gemini-3.5-flash-lite", InputPerM: 0.30, OutputPerM: 2.50},
+	{ID: "meta/muse-ember", InputPerM: 0.10, OutputPerM: 0.50},
+	{ID: "minimax/minimax-m3.1-flash", InputPerM: 0.075, OutputPerM: 0.30},
+	{ID: "mistralai/mistral-small-2603", InputPerM: 0.15, OutputPerM: 0.60},
+	{ID: "qwen/qwen3.8-flash", InputPerM: 0.15, OutputPerM: 0.47},
+	{ID: "~x-ai/grok-latest", InputPerM: 2, OutputPerM: 6},
+	{ID: "xiaomi/mimo-v2.6-flash", InputPerM: 0.14, OutputPerM: 0.28},
+	{ID: "~z-ai/glm-flash-latest", InputPerM: 0.04, OutputPerM: 0.078},
+	{ID: "~z-ai/glm-latest", InputPerM: 0.07, OutputPerM: 1.40},
+})
+
+// sortModels sorts the models by name, ignoring the "~" of aliases, and
+// adds what a typical run costs.
+func sortModels(list []AIModel) []AIModel {
+	for i := range list {
+		m := &list[i]
+		m.RunUSD = (AIRunInputTokens*m.InputPerM + AIRunOutputTokens*m.OutputPerM) / 1e6
+	}
+	sort.Slice(list, func(i, j int) bool {
+		return strings.TrimPrefix(list[i].ID, "~") < strings.TrimPrefix(list[j].ID, "~")
+	})
+	return list
 }
 
 // DefaultAISettings run after new prices and on plug-in, up to three times

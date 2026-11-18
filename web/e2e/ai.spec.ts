@@ -124,7 +124,7 @@ test('choose the AI model from the list, or type another', async ({ page }) => {
   await openAI(page)
   const choice = page.getByTestId('ai-model-choice')
   await expect(choice).toHaveValue('~anthropic/claude-haiku-latest')
-  await expect(choice.locator('option')).toHaveCount(9)
+  await expect(choice.locator('option')).toHaveCount(20)
   await choice.selectOption('~openai/gpt-luna-latest')
   await page.getByRole('button', { name: 'Save AI settings' }).click()
   await expect(page.getByText('AI settings saved')).toBeVisible()

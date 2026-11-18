@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -78,8 +80,23 @@ func TestAISettingsAndPreview(t *testing.T) {
 		v.DefaultModel != "~anthropic/claude-haiku-latest" || !strings.HasPrefix(v.Decider, "Stand-in") {
 		t.Fatalf("defaults = %+v", v)
 	}
-	if len(v.Models) != 8 || v.Models[0] != model.DefaultAIModel || v.Models[7] != "qwen/qwen3.8-flash" {
-		t.Errorf("models = %v", v.Models)
+	// The models offered, sorted by name ignoring the "~", with the default
+	// and each one's price and cost per typical run (7,000 tokens in, 4,500 out).
+	ids := make([]string, len(v.Models))
+	for i, m := range v.Models {
+		ids[i] = m.ID
+		if m.InputPerM <= 0 || m.OutputPerM <= 0 || m.RunUSD <= 0 {
+			t.Errorf("%s has no price: %+v", m.ID, m)
+		}
+		if m.ID == model.DefaultAIModel && math.Abs(m.RunUSD-0.00295) > 1e-9 {
+			t.Errorf("default model run = %v", m.RunUSD)
+		}
+	}
+	if len(ids) != 19 || ids[0] != "~anthropic/claude-fable-latest" || !slices.Contains(ids, model.DefaultAIModel) ||
+		v.PricesDate != "2026-11-18" || !slices.IsSortedFunc(ids, func(a, b string) int {
+		return strings.Compare(strings.TrimPrefix(a, "~"), strings.TrimPrefix(b, "~"))
+	}) {
+		t.Errorf("models = %v (prices %s)", ids, v.PricesDate)
 	}
 	if v.Macros[0].Name != "now" || v.Macros[0].Description == "" {
 		t.Errorf("macros = %+v", v.Macros)

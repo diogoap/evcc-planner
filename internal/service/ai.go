@@ -66,7 +66,8 @@ type AISettingsView struct {
 	DefaultGoals  string           `json:"defaultGoals"`
 	Macros        []aiplan.Macro   `json:"macros"`
 	DefaultModel  string           `json:"defaultModel"` // model.DefaultAIModel
-	Models        []string         `json:"models"`       // offered; others can be typed in
+	Models        []model.AIModel  `json:"models"`       // offered, with prices; others can be typed in
+	PricesDate    string           `json:"pricesDate"`   // when the prices were read
 	Decider       string           `json:"decider"`      // how decisions are made
 	Note          string           `json:"note,omitempty"`
 }
@@ -91,7 +92,8 @@ func (s *Service) AISettingsView() (AISettingsView, error) {
 	decider, note := s.aiDecider(v)
 	return AISettingsView{
 		Settings: v, DefaultPrompt: aiplan.DefaultPrompt, DefaultGoals: goals, Macros: aiplan.Macros,
-		DefaultModel: model.DefaultAIModel, Models: model.AIModels, Decider: decider, Note: note,
+		DefaultModel: model.DefaultAIModel, Models: model.AIModels, PricesDate: model.AIModelPricesDate,
+		Decider: decider, Note: note,
 	}, err
 }
 

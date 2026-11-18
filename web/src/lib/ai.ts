@@ -1,4 +1,4 @@
-import type { AIDayResult, AIMacro, AITrigger } from '../api/types'
+import type { AIDayResult, AIMacro, AIModelOption, AITrigger } from '../api/types'
 import { clock, dayMonth, localDate } from './format'
 
 /** What started an AI run. */
@@ -59,6 +59,22 @@ export function recommendationText(d: AIDayResult) {
     default:
       return 'Nothing extra'
   }
+}
+
+/** A small US dollar amount with two significant digits: "$0.23", "$0.0029", "$40". */
+export function usd(v: number) {
+  return `$${v >= 1 ? Number(v.toFixed(2)) : Number(v.toPrecision(2))}`
+}
+
+/** A price per million tokens, in cents where it has them: "$0.10", "$2.50", "$0.036", "$40". */
+export function perMillion(v: number) {
+  if (Number.isInteger(v)) return `$${v}`
+  return `$${Number(v.toFixed(2)) === v ? v.toFixed(2) : v}`
+}
+
+/** A model in the list: "~anthropic/claude-haiku-latest · ≈ $0.0030/run (default)". */
+export function modelLabel(m: AIModelOption, defaultModel: string) {
+  return `${m.id} · ≈ ${usd(m.runUsd)}/run${m.id === defaultModel ? ' (default)' : ''}`
 }
 
 /** "about 2,300 tokens" */

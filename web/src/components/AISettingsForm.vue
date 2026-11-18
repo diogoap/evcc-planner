@@ -2,7 +2,17 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { api } from '../api/client'
 import type { AIPreview, AISettings, AISettingsView } from '../api/types'
-import { insertMacro, macroText, tokensText, unknownMacros, unusedMacros } from '../lib/ai'
+import {
+  insertMacro,
+  macroText,
+  modelLabel,
+  perMillion,
+  tokensText,
+  unknownMacros,
+  unusedMacros,
+  usd,
+} from '../lib/ai'
+import { shortDate } from '../lib/format'
 import { useUnsaved } from '../lib/unsaved'
 import { notify, refresh } from '../store'
 import SaveBar from './SaveBar.vue'
@@ -30,7 +40,7 @@ const otherInput = ref<HTMLInputElement | null>(null)
 const modelChoice = computed({
   get: () => {
     const m = settings.value?.model ?? ''
-    return !otherChosen.value && info.value?.models.includes(m) ? m : OTHER
+    return !otherChosen.value && info.value?.models.some((o) => o.id === m) ? m : OTHER
   },
   set: (v: string) => {
     otherChosen.value = v === OTHER
@@ -38,6 +48,10 @@ const modelChoice = computed({
     else nextTick(() => otherInput.value?.focus())
   },
 })
+// The chosen model's price; none for a model typed in.
+const chosenModel = computed(() => info.value?.models.find((m) => m.id === modelChoice.value) ?? null)
+const pricesDate = computed(() => (info.value ? shortDate(info.value.pricesDate, { year: true }) : ''))
+
 // Discarding goes back to the saved model's own choice.
 watch(unsaved.dirty, (d) => {
   if (!d) otherChosen.value = false
@@ -184,14 +198,22 @@ async function save() {
           <label class="field">
             Model
             <select v-model="modelChoice" aria-describedby="hint-ai-model" data-testid="ai-model-choice">
-              <option v-for="m in info.models" :key="m" :value="m">
-                {{ m }}{{ m === info.defaultModel ? ' (default)' : '' }}
+              <option v-for="m in info.models" :key="m.id" :value="m.id">
+                {{ modelLabel(m, info.defaultModel) }}
               </option>
               <option :value="OTHER">Other model…</option>
             </select>
+            <span v-if="chosenModel" class="field-hint" data-testid="ai-model-price"
+              >{{ perMillion(chosenModel.inputPerM) }} in, {{ perMillion(chosenModel.outputPerM) }} out per
+              million tokens: ≈ {{ usd(chosenModel.runUsd) }} a run<template v-if="settings.maxRunsPerDay"
+                >, ≈ {{ usd(chosenModel.runUsd * settings.maxRunsPerDay * 30) }} a month at
+                {{ settings.maxRunsPerDay }} a day</template
+              >.</span
+            >
             <span id="hint-ai-model" class="field-hint"
-              >An OpenRouter model with strict structured outputs. For another one, choose Other model… and
-              type its ID, e.g. ~openai/gpt-luna-latest.</span
+              >An OpenRouter model with strict structured outputs. Costs are OpenRouter's prices on
+              {{ pricesDate }} (they change) for a typical run of about 7,000 tokens in and 4,500 out. For
+              another model, choose Other model… and type its ID, e.g. ~openai/gpt-luna-latest.</span
             >
           </label>
           <label v-if="modelChoice === OTHER" class="field">

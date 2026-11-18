@@ -43,7 +43,12 @@ const view = (over: Partial<AISettings> = {}): AISettingsView => ({
     { name: 'energy_prices', description: 'Published prices.' },
   ],
   defaultModel: '~anthropic/claude-haiku-latest',
-  models: ['~anthropic/claude-haiku-latest', '~openai/gpt-luna-latest', 'qwen/qwen3.8-flash'],
+  models: [
+    { id: '~anthropic/claude-haiku-latest', inputPerM: 0.1, outputPerM: 0.5, runUsd: 0.003 },
+    { id: '~anthropic/claude-opus-latest', inputPerM: 4, outputPerM: 20, runUsd: 0.118 },
+    { id: 'qwen/qwen3.8-flash', inputPerM: 0.15, outputPerM: 0.47, runUsd: 0.0031 },
+  ],
+  pricesDate: '2026-11-18',
   decider: 'OpenRouter ~anthropic/claude-haiku-latest',
 })
 
@@ -89,13 +94,18 @@ describe('AISettingsForm', () => {
     await flushPromises()
     const choice = w.get('[data-testid="ai-model-choice"]')
     expect((choice.element as HTMLSelectElement).value).toBe('~anthropic/claude-haiku-latest')
+    // Each with what a typical run costs; the chosen one's price below.
     expect(choice.findAll('option').map((o) => o.text())).toEqual([
-      '~anthropic/claude-haiku-latest (default)',
-      '~openai/gpt-luna-latest',
-      'qwen/qwen3.8-flash',
+      '~anthropic/claude-haiku-latest · ≈ $0.003/run (default)',
+      '~anthropic/claude-opus-latest · ≈ $0.12/run',
+      'qwen/qwen3.8-flash · ≈ $0.0031/run',
       'Other model…',
     ])
+    expect(w.get('[data-testid="ai-model-price"]').text()).toBe(
+      '$0.10 in, $0.50 out per million tokens: ≈ $0.003 a run, ≈ $0.27 a month at 3 a day.',
+    )
     expect(w.find('[data-testid="ai-model"]').exists()).toBe(false)
+    expect(w.get('#hint-ai-model').text()).toContain("OpenRouter's prices on 18 Nov 2026")
     expect(w.get('#hint-ai-model').text()).toContain('e.g. ~openai/gpt-luna-latest')
 
     // One of the list.
@@ -108,6 +118,8 @@ describe('AISettingsForm', () => {
     expect(document.activeElement).toBe(other.element)
     await other.setValue('~mistral/devstral-latest')
     expect((choice.element as HTMLSelectElement).value).toBe('other')
+    // A model typed in has only its ID, no price.
+    expect(w.find('[data-testid="ai-model-price"]').exists()).toBe(false)
     await w.get('form').trigger('submit')
     await flushPromises()
     expect(api.saveAISettings).toHaveBeenCalledWith(

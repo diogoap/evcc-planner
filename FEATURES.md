@@ -56,7 +56,7 @@ notifications is in [AUTOMATION.md](AUTOMATION.md).
 - The rules stay: every trip's own minimum is charged by the planner itself (also right when you plug in), charge ahead stays at or below its cap, a plan you choose pauses it, and windows outside the published prices are ignored. Every answer is checked; corrections are listed with the run.
 - It runs when tomorrow's prices are published and when you plug in, at most 3 times a day (configurable; the last run waits for tomorrow's prices), and with **Run now** on the Overview or under Settings → Advice → AI mode. A failed run is tried again after an hour. Until the first AI plan, or when the last one is more than a day old, the automatic rules apply.
 - Settings → Advice → AI mode shows the goals the AI gets (by default the planner's rules with your settings, such as EVCC's charge limit as a battery-care preference) and lets you edit them, and edits the prompt, with placeholders such as `{{energy_prices}}` and `{{trips}}` filled with the data; a default prompt is included. **Preview with today's data** shows what would be sent. Each run keeps what was sent and what came back.
-- Uses OpenRouter (`OPENROUTER_API_KEY`); the model is its own setting: pick one of eight (default `~anthropic/claude-haiku-latest`) or type another. Demo mode has a stand-in that repeats the automatic rules.
+- Uses OpenRouter (`OPENROUTER_API_KEY`); the model is its own setting: pick one of 19, each with its cost per run (default `~anthropic/claude-haiku-latest`), or type another. Demo mode has a stand-in that repeats the automatic rules.
 
 ## Price history
 

@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import type { AIMacro } from '../api/types'
-import { insertMacro, recommendationText, tokensText, unknownMacros, unusedMacros } from './ai'
+import {
+  insertMacro,
+  modelLabel,
+  perMillion,
+  recommendationText,
+  tokensText,
+  unknownMacros,
+  unusedMacros,
+  usd,
+} from './ai'
 
 const macros: AIMacro[] = [
   { name: 'now', description: 'The time.' },
@@ -46,6 +55,30 @@ describe('recommendationText', () => {
       recommendationText({ ...day, recommendation: 'defer', deferUntil: '2026-11-11', postpone: true }),
     ).toBe('Defer until Wed 11 Nov, pausing cheap-grid charging')
     expect(recommendationText({ ...day, recommendation: 'none' })).toBe('Nothing extra')
+  })
+
+  it('writes small dollar amounts with two significant digits', () => {
+    expect([0.2336, 0.0584, 0.000631, 0.00295, 40, 8, 0.036, 26.28].map(usd)).toEqual([
+      '$0.23',
+      '$0.058',
+      '$0.00063',
+      '$0.0029',
+      '$40',
+      '$8',
+      '$0.036',
+      '$26.28',
+    ])
+    expect([0.1, 2.5, 0.036, 40, 0.47, 1.4].map(perMillion)).toEqual([
+      '$0.10',
+      '$2.50',
+      '$0.036',
+      '$40',
+      '$0.47',
+      '$1.40',
+    ])
+    const m = { id: '~z-ai/glm-latest', inputPerM: 0.07, outputPerM: 1.4, runUsd: 0.00679 }
+    expect(modelLabel(m, '~anthropic/claude-haiku-latest')).toBe('~z-ai/glm-latest · ≈ $0.0068/run')
+    expect(modelLabel(m, '~z-ai/glm-latest')).toBe('~z-ai/glm-latest · ≈ $0.0068/run (default)')
   })
 
   it('rounds token counts', () => {
