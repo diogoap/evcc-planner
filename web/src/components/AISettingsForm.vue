@@ -169,7 +169,7 @@ async function save() {
               data-testid="ai-model"
             />
             <span id="hint-ai-model" class="field-hint"
-              >An OpenRouter model with strict structured outputs, e.g. openai/gpt-luna-latest. Default:
+              >An OpenRouter model with strict structured outputs, e.g. ~openai/gpt-luna-latest. Default:
               {{ info.defaultModel }}.</span
             >
           </label>

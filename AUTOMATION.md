@@ -496,7 +496,7 @@ flowchart TD
   sent and what came back**); runs are deleted with the activity log, keeping
   the last good one.
 - **Model:** any OpenRouter model with strict structured outputs (default
-  `anthropic/claude-haiku-latest`; e.g. `openai/gpt-luna-latest`), separate
+  `~anthropic/claude-haiku-latest`; e.g. `~openai/gpt-luna-latest`), separate
   from the forecast's model under Settings → Connections. Without `OPENROUTER_API_KEY` there are
   no runs; demo mode has a labelled stand-in that repeats the automatic
   rules.
@@ -672,7 +672,7 @@ where **Preview with today's data** still works):
 | After new prices | On | Also when no AI plan applies. |
 | When the car is plugged in | On | The trip plan is written first. |
 | Automatic runs per day | 3 | 0–10; runs by hand are always allowed. The last waits for tomorrow's prices until an AI plan has seen them. |
-| Model | anthropic/claude-haiku-latest | Any OpenRouter model with strict structured outputs, e.g. openai/gpt-luna-latest. Separate from the forecast's model under Connections. |
+| Model | ~anthropic/claude-haiku-latest | Any OpenRouter model with strict structured outputs, e.g. ~openai/gpt-luna-latest. Separate from the forecast's model under Connections. |
 | Goals | the planner's rules | What `{{goals}}` holds; edit to steer the AI (e.g. battery care against price). **Default goals** puts the generated text back. |
 | Prompt | the default | Placeholders are filled with the data. |
 | Automatically create plans from the AI's advice | as Automatic rules' | Like the Automatic rules' switch, but on today's AI advice (an extra plan with the AI's target, ready when its window ends). Until changed here, this and the next two follow the Automatic rules' settings. |

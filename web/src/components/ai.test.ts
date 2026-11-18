@@ -24,7 +24,7 @@ const view = (over: Partial<AISettings> = {}): AISettingsView => ({
     maxRunsPerDay: 3,
     onPrices: true,
     onPlugIn: true,
-    model: 'anthropic/claude-haiku-latest',
+    model: '~anthropic/claude-haiku-latest',
     prompt: defaultPrompt,
     goals: defaultGoals,
     autoApply: false,
@@ -41,8 +41,8 @@ const view = (over: Partial<AISettings> = {}): AISettingsView => ({
     { name: 'trips', description: 'Trips of the next 7 days.' },
     { name: 'energy_prices', description: 'Published prices.' },
   ],
-  defaultModel: 'anthropic/claude-haiku-latest',
-  decider: 'OpenRouter anthropic/claude-haiku-latest',
+  defaultModel: '~anthropic/claude-haiku-latest',
+  decider: 'OpenRouter ~anthropic/claude-haiku-latest',
 })
 
 describe('AISettingsForm', () => {
@@ -86,9 +86,9 @@ describe('AISettingsForm', () => {
     const w = mount(AISettingsForm, { props: { active: true } })
     await flushPromises()
     expect((w.get('[data-testid="ai-model"]').element as HTMLInputElement).value).toBe(
-      'anthropic/claude-haiku-latest',
+      '~anthropic/claude-haiku-latest',
     )
-    expect(w.get('#hint-ai-model').text()).toContain('e.g. openai/gpt-luna-latest')
+    expect(w.get('#hint-ai-model').text()).toContain('e.g. ~openai/gpt-luna-latest')
   })
 
   it('shows the goals, saves your own, and puts the default back', async () => {

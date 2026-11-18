@@ -75,7 +75,7 @@ func TestAISettingsAndPreview(t *testing.T) {
 	ta.json("GET", "/api/settings/ai", nil, http.StatusOK, &v)
 	if v.Settings.MaxRunsPerDay != 3 || !v.Settings.OnPrices || !v.Settings.OnPlugIn || v.Settings.Model != model.DefaultAIModel ||
 		v.Settings.Prompt != aiplan.DefaultPrompt || v.DefaultPrompt != aiplan.DefaultPrompt || len(v.Macros) != len(aiplan.Macros) ||
-		v.DefaultModel != "anthropic/claude-haiku-latest" || !strings.HasPrefix(v.Decider, "Stand-in") {
+		v.DefaultModel != "~anthropic/claude-haiku-latest" || !strings.HasPrefix(v.Decider, "Stand-in") {
 		t.Fatalf("defaults = %+v", v)
 	}
 	if v.Macros[0].Name != "now" || v.Macros[0].Description == "" {
@@ -124,12 +124,20 @@ func TestAISettingsAndPreview(t *testing.T) {
 	}
 	changed(t, log.one("settings.update", model.SourceUI), "prompt", "custom (42 characters)", "default")
 
+	// OpenRouter's aliases for a family's latest model start with "~".
+	ta.json("PUT", "/api/settings/ai", map[string]any{"model": "~openai/gpt-luna-latest"}, http.StatusOK, &v)
+	if v.Settings.Model != "~openai/gpt-luna-latest" || v.Decider != "Stand-in (no AI model): repeats the automatic rules" {
+		t.Errorf("alias model = %+v", v.Settings)
+	}
+	ta.json("PUT", "/api/settings/ai", map[string]any{"model": "openai/~gpt"}, http.StatusBadRequest, nil)
+	log.fresh()
+
 	// The default model is stored as the default, so it follows later changes.
-	ta.json("PUT", "/api/settings/ai", map[string]any{"model": " anthropic/claude-haiku-latest "}, http.StatusOK, &v)
+	ta.json("PUT", "/api/settings/ai", map[string]any{"model": " ~anthropic/claude-haiku-latest "}, http.StatusOK, &v)
 	if saved, _ := ta.app.Store.AISettings(model.DefaultAISettings()); saved.Model != "" || v.Settings.Model != model.DefaultAIModel {
 		t.Errorf("default model stored as %q", saved.Model)
 	}
-	changed(t, log.one("settings.update", model.SourceUI), "model", "anthropic/claude-sonnet-5.5", "default (anthropic/claude-haiku-latest)")
+	changed(t, log.one("settings.update", model.SourceUI), "model", "~openai/gpt-luna-latest", "default (~anthropic/claude-haiku-latest)")
 
 	// Own goals replace {{goals}}; the default text is stored as the default.
 	goals := "- Charge extra up to 100% when prices are negative.\n- Keep the battery above 30%."
@@ -269,12 +277,12 @@ func TestAIModeKeepsTheFoundationalRules(t *testing.T) {
 	f := &fakeAI{content: aiDecision}
 	ta.useAI(f)
 	ta.checkAI()
-	if f.calls != 1 || f.last.Model != "anthropic/claude-haiku-latest" || f.last.System != aiplan.SystemPrompt ||
+	if f.calls != 1 || f.last.Model != "~anthropic/claude-haiku-latest" || f.last.System != aiplan.SystemPrompt ||
 		!strings.Contains(f.last.User, `T3 "School pickup": leaves 2026-11-11 14:33`) {
 		t.Fatalf("request = %+v", f.last)
 	}
 	s := ta.aiStatus()
-	if s.Latest.Model != "test/model" || s.Latest.PromptTokens != 2300 || s.Latest.Decider != "OpenRouter anthropic/claude-haiku-latest" {
+	if s.Latest.Model != "test/model" || s.Latest.PromptTokens != 2300 || s.Latest.Decider != "OpenRouter ~anthropic/claude-haiku-latest" {
 		t.Errorf("run = %+v", s.Latest)
 	}
 	res := s.Latest.Result

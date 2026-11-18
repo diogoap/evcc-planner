@@ -477,7 +477,7 @@ type AISettings struct {
 }
 
 // DefaultAIModel is the OpenRouter model AI mode uses until another is set.
-const DefaultAIModel = "anthropic/claude-haiku-latest"
+const DefaultAIModel = "~anthropic/claude-haiku-latest"
 
 // DefaultAISettings run after new prices and on plug-in, up to three times
 // a day, with the default model and prompt, and never act on the AI's
@@ -493,7 +493,9 @@ const (
 	MaxGoalsChars  = 4000
 )
 
-var modelRe = regexp.MustCompile(`^[A-Za-z0-9._:/@+-]{1,200}$`)
+// modelRe matches OpenRouter model IDs, including the "~" of its aliases
+// for a family's latest model (e.g. ~anthropic/claude-haiku-latest).
+var modelRe = regexp.MustCompile(`^~?[A-Za-z0-9._:/@+-]{1,200}$`)
 
 // Validate reports the first invalid field; the prompt's placeholders are
 // checked by the service.
