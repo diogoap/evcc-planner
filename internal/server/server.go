@@ -85,6 +85,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/settings/connections", s.getConnectionSettings)
 	mux.HandleFunc("PUT /api/settings/connections", s.putConnectionSettings)
 	mux.HandleFunc("GET /api/homeassistant/sensors", s.homeAssistantSensors)
+	mux.HandleFunc("GET /api/settings/ai", s.getAISettings)
+	mux.HandleFunc("PUT /api/settings/ai", s.putAISettings)
+	mux.HandleFunc("GET /api/ai", s.aiStatus)
+	mux.HandleFunc("POST /api/ai/run", s.runAI)
+	mux.HandleFunc("GET /api/ai/runs/{id}", s.aiRun)
+	mux.HandleFunc("POST /api/ai/preview", s.previewAI)
 	mux.HandleFunc("GET /api/settings/notifications", s.getNotificationSettings)
 	mux.HandleFunc("PUT /api/settings/notifications", s.putNotificationSettings)
 	mux.HandleFunc("GET /api/notifications", s.notifications)
@@ -517,6 +523,83 @@ func (s *Server) refreshEVCC(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.Svc.Status())
 }
 
+func (s *Server) getAISettings(w http.ResponseWriter, r *http.Request) {
+	v, err := s.Svc.AISettingsView()
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, v)
+}
+
+func (s *Server) putAISettings(w http.ResponseWriter, r *http.Request) {
+	v, err := s.Svc.AISettings()
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	if err := decode(r, &v); err != nil {
+		s.fail(w, err)
+		return
+	}
+	saved, err := s.Svc.SaveAISettings(r.Context(), v)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, saved)
+}
+
+func (s *Server) aiStatus(w http.ResponseWriter, r *http.Request) {
+	v, err := s.Svc.AIStatus()
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, v)
+}
+
+// runAI makes an AI plan now; it waits for the model's answer, which is
+// kept even if the page is closed meanwhile.
+func (s *Server) runAI(w http.ResponseWriter, r *http.Request) {
+	v, err := s.Svc.RunAINow(context.WithoutCancel(r.Context()))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, v)
+}
+
+func (s *Server) aiRun(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	run, err := s.Svc.AIRun(id)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, run)
+}
+
+func (s *Server) previewAI(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Prompt string `json:"prompt"`
+	}
+	if err := decode(r, &in); err != nil {
+		s.fail(w, err)
+		return
+	}
+	v, err := s.Svc.PreviewAIPrompt(r.Context(), in.Prompt)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, v)
+}
+
 func (s *Server) getNotificationSettings(w http.ResponseWriter, r *http.Request) {
 	v, err := s.Svc.NotificationSettings()
 	if err != nil {
@@ -785,6 +868,9 @@ func (s *Server) demoVehicle(w http.ResponseWriter, r *http.Request) {
 	// What the EVCC job does after its next poll.
 	if err := s.Svc.SyncPlan(r.Context()); err != nil {
 		s.Log.Warn("automatic plan check failed", "err", err)
+	}
+	if err := s.Svc.CheckAI(r.Context()); err != nil {
+		s.Log.Warn("AI plan check failed", "err", err)
 	}
 	if err := s.Svc.CheckNotifications(r.Context()); err != nil {
 		s.Log.Warn("notification check failed", "err", err)

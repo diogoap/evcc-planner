@@ -3,6 +3,8 @@ import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
 import { api } from '../api/client'
 import type { Connection, HASensor, Place, Settings, TripPlans } from '../api/types'
+import AIRunCard from '../components/AIRunCard.vue'
+import AISettingsForm from '../components/AISettingsForm.vue'
 import AdviceSettingsForm from '../components/AdviceSettingsForm.vue'
 import ConnectionSettingsForm from '../components/ConnectionSettingsForm.vue'
 import ConsumptionSetting from '../components/ConsumptionSetting.vue'
@@ -13,16 +15,19 @@ import PageSkeleton from '../components/PageSkeleton.vue'
 import SaveBar from '../components/SaveBar.vue'
 import ToggleSwitch from '../components/ToggleSwitch.vue'
 import { ago } from '../lib/format'
-import { controlLabel } from '../lib/status'
+import { controlLabel, keepsPlan } from '../lib/status'
 import { useUnsaved } from '../lib/unsaved'
 import { mutate, notify, refresh, resumeAutomaticPlans, state, syncCalendar } from '../store'
 
-type Tab = 'home' | 'planning' | 'places' | 'advice' | 'notifications' | 'connections'
+type Tab = 'home' | 'planning' | 'advice' | 'ai' | 'places' | 'notifications' | 'connections'
+// Planning, Advice, and AI sit together: the trip plan mode decides which
+// of their parts apply.
 const tabs: [Tab, string][] = [
   ['home', 'Home & vehicle'],
   ['planning', 'Planning'],
-  ['places', 'Places'],
   ['advice', 'Advice'],
+  ['ai', 'AI'],
+  ['places', 'Places'],
   ['notifications', 'Notifications'],
   ['connections', 'Connections'],
 ]
@@ -63,6 +68,7 @@ const error = ref('')
 const demo = reactive({ connected: false, soc: 45 })
 const refreshing = ref(false)
 const forecastDetails = ref<InstanceType<typeof ForecastDetails> | null>(null)
+const aiRun = ref<InstanceType<typeof AIRunCard> | null>(null)
 
 const fields: { key: keyof Settings; label: string; unit: string; step: string; hint: string }[] = [
   {
@@ -118,6 +124,11 @@ const fields: { key: keyof Settings; label: string; unit: string; step: string; 
 
 const modes: { value: TripPlans; label: string; hint: string }[] = [
   {
+    value: 'ai',
+    label: 'AI mode',
+    hint: 'Like Automatic, but an AI model decides charge ahead, charge extra, charging from solar, and when to wait for cheaper prices, from the prices, trips, outlook, weather, and the past 30 days. It runs after new prices and when you plug in (Settings → AI). Every trip’s own minimum is still charged by itself, also when you plug in, and the automatic rules apply until the first AI plan.',
+  },
+  {
     value: 'automatic',
     label: 'Automatic',
     hint: 'Keeps EVCC’s plan matched to your trips while the car is plugged in: after every EVCC check, trip or setting change, and calendar sync. A plan you choose yourself (in EVCC or with Send plan) pauses it while that plan covers the next departure; one with less is replaced.',
@@ -125,7 +136,7 @@ const modes: { value: TripPlans; label: string; hint: string }[] = [
   {
     value: 'plug_in',
     label: 'On plug-in',
-    hint: 'Sends the next departure’s target once when the car is plugged in. A plan with the same or a higher target is kept; a lower one is replaced.',
+    hint: 'Sends the next departure’s target once when the car is plugged in, with later trips charged ahead when that is on (below). A plan in EVCC with at least that target is kept; a lower one is replaced.',
   },
   {
     value: 'manual',
@@ -149,6 +160,11 @@ const aheadFields: { key: keyof Settings; label: string; unit: string; step: str
     step: '1',
     hint: 'Charging ahead never raises the target above this. A trip’s own need can still go up to 100%.',
   },
+]
+
+// Solar at home: every mode uses these (advice, the chart's charging
+// estimate, AI mode's data).
+const solarFields: { key: keyof Settings; label: string; unit: string; step: string; hint: string }[] = [
   {
     key: 'householdKW',
     label: 'Household use during the day',
@@ -164,6 +180,20 @@ const aheadFields: { key: keyof Settings; label: string; unit: string; step: str
     hint: 'Solar comes first: a solar kWh counts as the grid price at that moment minus this, the tax you don’t pay on it.',
   },
 ]
+
+// Why charge ahead does or doesn't apply in the mode chosen in the form.
+const aheadNote = computed(() => {
+  switch (settings.value?.tripPlans) {
+    case 'manual':
+      return 'Not used in Manual mode: Send plan to EVCC covers the trips of one to three days you choose.'
+    case 'plug_in':
+      return 'Included in the plan sent when you plug in.'
+    case 'ai':
+      return 'In AI mode the AI decides charge ahead. These apply only while no AI plan applies (right after choosing AI mode, without an OpenRouter key, or when the last plan is more than a day old); the highest target also limits the AI.'
+  }
+  return ''
+})
+const savedMode = computed(() => state.plan?.settings.tripPlans)
 
 const control = computed(() =>
   state.plan ? controlLabel(state.plan.control, !!state.status?.connected) : null,
@@ -331,6 +361,27 @@ async function applyDemo() {
           :used="state.plan?.consumption ?? null"
           :now="state.plan?.now"
         />
+        <fieldset class="stack panel gap-3">
+          <legend class="small muted">Solar at home</legend>
+          <div class="form-grid">
+            <label v-for="f in solarFields" :key="f.key" class="field">
+              {{ f.label }}
+              <span class="unit">
+                <input
+                  v-model.number="settings[f.key]"
+                  type="number"
+                  :step="f.step"
+                  min="0"
+                  required
+                  :aria-describedby="`hint-${f.key}`"
+                  :data-testid="`setting-${f.key}`"
+                />
+                <span>{{ f.unit }}</span>
+              </span>
+              <span :id="`hint-${f.key}`" class="field-hint">{{ f.hint }}</span>
+            </label>
+          </div>
+        </fieldset>
         <p class="small muted m-0">
           Saved privately in the planner's database. Config files only seed the vehicle and buffer values on
           first use.
@@ -365,7 +416,7 @@ async function applyDemo() {
           </label>
         </fieldset>
         <div
-          v-if="control && state.plan?.control.mode === 'automatic'"
+          v-if="control && state.plan && keepsPlan(state.plan.control.mode)"
           class="banner"
           :class="`tone-${control.tone}`"
           role="status"
@@ -380,41 +431,53 @@ async function applyDemo() {
           >
             Resume
           </button>
-        </div>
-        <div class="row items-start nowrap">
-          <ToggleSwitch
-            v-model="settings.chargeAhead"
-            label="Charge ahead for later trips"
-            aria-describedby="hint-ahead"
-            data-testid="setting-chargeAhead"
-          />
-          <div class="small">
-            <strong>Charge ahead for later trips</strong>
-            <div id="hint-ahead" class="field-hint">
-              Automatic mode only. Within the published prices, adds later trips to the target when charging
-              for them before the next departure is cheaper than at home just before them. Charge extra (under
-              Advice) comes on top; EVCC gets the higher target.
-            </div>
+          <div v-if="state.plan.ai" class="mt-1" data-testid="planning-ai">
+            {{ state.plan.ai.inUse ? 'AI plan in use.' : state.plan.ai.note }}
+            <a href="#" @click.prevent="go('ai')">AI settings and the latest run</a>
           </div>
         </div>
-        <div class="form-grid">
-          <label v-for="f in aheadFields" :key="f.key" class="field">
-            {{ f.label }}
-            <span class="unit">
-              <input
-                v-model.number="settings[f.key]"
-                type="number"
-                :step="f.step"
-                min="0"
-                required
-                :aria-describedby="`hint-${f.key}`"
-                :data-testid="`setting-${f.key}`"
-              />
-              <span>{{ f.unit }}</span>
-            </span>
-            <span :id="`hint-${f.key}`" class="field-hint">{{ f.hint }}</span>
-          </label>
-        </div>
+        <fieldset
+          class="stack panel gap-3"
+          :disabled="settings.tripPlans === 'manual'"
+          data-testid="ahead-settings"
+        >
+          <legend class="small muted">Charge ahead</legend>
+          <p v-if="aheadNote" class="banner tone-info small m-0" data-testid="ahead-note">{{ aheadNote }}</p>
+          <div class="row items-start nowrap">
+            <ToggleSwitch
+              v-model="settings.chargeAhead"
+              label="Charge ahead for later trips"
+              aria-describedby="hint-ahead"
+              data-testid="setting-chargeAhead"
+            />
+            <div class="small">
+              <strong>Charge ahead for later trips</strong>
+              <div id="hint-ahead" class="field-hint">
+                Within the published prices, adds later trips to the target when charging for them before the
+                next departure is cheaper than at home just before them. Charge extra (under Advice) comes on
+                top; EVCC gets the higher target.
+              </div>
+            </div>
+          </div>
+          <div class="form-grid">
+            <label v-for="f in aheadFields" :key="f.key" class="field">
+              {{ f.label }}
+              <span class="unit">
+                <input
+                  v-model.number="settings[f.key]"
+                  type="number"
+                  :step="f.step"
+                  min="0"
+                  required
+                  :aria-describedby="`hint-${f.key}`"
+                  :data-testid="`setting-${f.key}`"
+                />
+                <span>{{ f.unit }}</span>
+              </span>
+              <span :id="`hint-${f.key}`" class="field-hint">{{ f.hint }}</span>
+            </label>
+          </div>
+        </fieldset>
         <SaveBar
           :dirty="unsaved.dirty.value"
           :saving="saving"
@@ -464,7 +527,17 @@ async function applyDemo() {
       </form>
     </section>
 
-    <AdviceSettingsForm v-if="tab === 'advice'" @dirty="(d) => (childDirty = d)" />
+    <AdviceSettingsForm v-if="tab === 'advice'" :mode="savedMode" @dirty="(d) => (childDirty = d)" />
+
+    <div v-if="tab === 'ai'" class="stack">
+      <p v-if="savedMode !== 'ai'" class="banner tone-info m-0" role="status" data-testid="ai-off">
+        AI mode is off, so these settings don't apply. Choose AI mode under
+        <a href="#" @click.prevent="go('planning')">Planning</a> to use them. You can still preview the
+        prompt.
+      </p>
+      <AIRunCard ref="aiRun" :active="savedMode === 'ai'" />
+      <AISettingsForm :active="savedMode === 'ai'" @dirty="(d) => (childDirty = d)" @saved="aiRun?.load()" />
+    </div>
 
     <NotificationSettingsForm v-if="tab === 'notifications'" @dirty="(d) => (childDirty = d)" />
 

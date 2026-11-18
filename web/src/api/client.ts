@@ -1,4 +1,9 @@
 import type {
+  AIPreview,
+  AIRun,
+  AISettings,
+  AISettingsView,
+  AIView,
   ActivityFilter,
   ActivityPage,
   ActivityUsage,
@@ -135,6 +140,14 @@ export const api = {
     `/api/activity/export${activityQuery(f, { format })}`,
   demoVehicle: (connected: boolean, soc: number) =>
     request<Status>('POST', '/api/demo/vehicle', { connected, soc }),
+
+  aiSettings: () => request<AISettingsView>('GET', '/api/settings/ai'),
+  saveAISettings: (s: AISettings) => request<AISettingsView>('PUT', '/api/settings/ai', s),
+  ai: () => request<AIView>('GET', '/api/ai'),
+  /** Makes an AI plan now; waits for the model's answer. */
+  runAI: () => request<AIView>('POST', '/api/ai/run', {}),
+  aiRun: (id: number) => request<AIRun>('GET', `/api/ai/runs/${id}`),
+  previewAI: (prompt: string) => request<AIPreview>('POST', '/api/ai/preview', { prompt }),
 
   notificationSettings: () => request<NotificationSettings>('GET', '/api/settings/notifications'),
   saveNotificationSettings: (s: NotificationSettings) =>

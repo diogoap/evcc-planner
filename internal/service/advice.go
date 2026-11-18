@@ -27,7 +27,9 @@ const (
 
 // AdviceView is the daily advice for the plan window.
 type AdviceView struct {
-	Enabled     bool               `json:"enabled"`
+	Enabled bool `json:"enabled"`
+	// AutoApply: plans are created from the advice automatically (Settings →
+	// Advice, or Settings → AI in AI mode; never in Manual mode).
 	AutoApply   bool               `json:"autoApply"`
 	Days        []DayAdviceView    `json:"days"`
 	Sources     []SourceView       `json:"sources"`
@@ -53,6 +55,10 @@ type DayAdviceView struct {
 	// because it would change nothing in EVCC.
 	ActionNote string            `json:"actionNote,omitempty"`
 	Adjustment *model.Adjustment `json:"adjustment,omitempty"` // active for this day
+	// AI: decided by the AI model (AI mode), not the automatic rules;
+	// AIPostpone: the AI asks to postpone cheap-grid charging.
+	AI         bool `json:"ai,omitempty"`
+	AIPostpone bool `json:"-"`
 }
 
 // SourceView is one advice input with its freshness.
@@ -168,8 +174,14 @@ func (s *Service) buildAdvice(view *PlanView, result planner.Result, socKnown bo
 	if err != nil {
 		return nil, err
 	}
+	// AI mode always shows advice: the AI's, or the rules' until it has a plan.
+	policy, err := s.autoPolicy()
+	if err != nil {
+		return nil, err
+	}
+	settings.Enabled = settings.Enabled || view.Settings.TripPlans == model.TripPlansAI
 	out := &AdviceView{
-		Enabled: settings.Enabled, AutoApply: settings.AutoApply,
+		Enabled: settings.Enabled, AutoApply: policy.on,
 		Days: []DayAdviceView{}, Sources: []SourceView{}, Adjustments: []model.Adjustment{},
 	}
 	now := view.Now
@@ -297,18 +309,7 @@ func (s *Service) buildAdvice(view *PlanView, result planner.Result, socKnown bo
 				dv.Adjustment = &adjustments[j]
 			}
 		}
-		if actionable(a) && !dv.Dismissed && dv.Adjustment == nil {
-			switch {
-			// Charging extra from solar needs no plan: EVCC charges from the
-			// sun by itself while the car is plugged in.
-			case a.Recommendation == advice.ChargeExtra && !a.Solar:
-				dv.Action = model.AdjustExtraPlan
-			case a.Recommendation == advice.Defer && a.Date == today:
-				if dv.ActionNote = s.postponeNeedless(snap, now, a.DeferUntil); dv.ActionNote == "" {
-					dv.Action = model.AdjustPostpone
-				}
-			}
-		}
+		s.adviceAction(&dv, snap, now)
 		out.Days = append(out.Days, dv)
 	}
 	out.Sources = s.adviceSources(now, slots, solar, outlook, orec, weather, wrec, view.Days)

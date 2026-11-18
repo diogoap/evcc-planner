@@ -27,9 +27,10 @@ notifications is in [AUTOMATION.md](AUTOMATION.md).
 ## Charging plans in EVCC
 
 - Send a plan (target SoC and deadline) to EVCC yourself. A confirmation first shows EVCC's preview, with the planned charging's average price and total cost (also for extra plans).
-- Three modes: Manual; On plug-in (sends once when you plug in); Automatic (the default: keeps EVCC's single plan in line with your trips).
+- Four modes: Manual (only what you send; the advice only recommends); On plug-in (sends once when you plug in, with charge ahead); Automatic (the default: keeps EVCC's single plan in line with your trips); AI mode (like Automatic, but an AI model decides, see below).
+- Settings → Planning, Advice, and AI sit together; the parts that don't apply to the chosen mode are greyed out and say why (in AI mode the whole Advice tab).
 - A plan you set yourself pauses Automatic until that plan is done, or until you press Resume.
-- Charge ahead: the target also covers later trips when charging now is at least €0.05/kWh cheaper (solar counts first), up to 90%.
+- Charge ahead (every mode but Manual): the target also covers later trips when charging now is at least €0.05/kWh cheaper (solar counts first), up to 90%. On plug-in keeps a plan in EVCC with at least that target and replaces a lower one.
 - The planner never changes EVCC's limits, repeating plans, or charging mode.
 
 ## Prices and daily advice
@@ -43,7 +44,17 @@ notifications is in [AUTOMATION.md](AUTOMATION.md).
   - **Charge extra from solar**: keep the car plugged in when the sun is no dearer than the reference.
 - Later days show what the outlook expects ("Looks cheaper").
 - Hints for a trip that misses very cheap or negative prices, and for negative prices while the sun shines (use the solar or switch the panels off).
-- **Create extra plan** and **Review postponement** ask before changing anything and are undone when they expire. An extra plan is ready when its cheap hours end. Applying advice automatically is optional and off by default.
+- **Create extra plan** and **Review postponement** ask before changing anything and are undone when they expire. An extra plan is ready when its cheap hours end. Applying advice automatically is optional, off by default, and never happens in Manual mode.
+
+## AI mode
+
+- A fourth way to plan (Settings → Planning). Like Automatic, but an AI model decides charge ahead, charge extra, charging from solar, and when to wait for cheaper prices.
+- It gets the published prices (every 15-minute slot), the trips of the next 7 days (times and distances only, no titles or places), the charge each day needs, Tibber's weekly outlook, KNMI's weather, EVCC's solar forecast, the past 30 days (prices, driving, energy, wind, sun), the car and charger, the SoC, and the goals. It may add a reserve when the coming days drive more than usual.
+- It answers with the target for the next trip, each day's advice (how much and when), what mattered, and a short explanation. For how much to charge extra, the prompt gives a rough guide with example values (your Advice steps are not sent; in AI mode they only apply until there is an AI plan). The solar forecast shows, per hour, the surplus the car can use and its price (the grid price minus the tax not paid on own solar). The advice always shows it, with an **AI** badge, the same actions (Create extra plan, Review postponement), and the planner's own prices. Its own switch under Settings → AI creates those plans automatically (off by default); the Advice tab doesn't apply in AI mode.
+- The rules stay: every trip's own minimum is charged by the planner itself (also right when you plug in), charge ahead stays at or below its cap, a plan you choose pauses it, and windows outside the published prices are ignored. Every answer is checked; corrections are listed with the run.
+- It runs when tomorrow's prices are published and when you plug in, at most 3 times a day (configurable), and with **Run now** on the Overview or under Settings → AI. A failed run is tried again after an hour. Until the first AI plan, or when the last one is more than a day old, the automatic rules apply.
+- Settings → AI edits the prompt, with placeholders such as `{{energy_prices}}` and `{{trips}}` filled with the data; a default prompt is included. **Preview with today's data** shows what would be sent. Each run keeps what was sent and what came back.
+- Uses OpenRouter (`OPENROUTER_API_KEY`); the model can differ from the forecast's. Demo mode has a stand-in that repeats the automatic rules.
 
 ## Price history
 
@@ -60,18 +71,19 @@ notifications is in [AUTOMATION.md](AUTOMATION.md).
 - Problems: charging stopped, unplugged early, EVCC not in Smart mode, target missed. Questions about unclear calendar events. An optional "ready" message. "Plug in for the sun".
 - Charge extra: "Plug in for charge extra" before its cheap hours when the car is home but unplugged (for a cheap night, just before quiet hours), and a message when an extra plan is created automatically.
 - Quiet hours (23:00–07:00 by default). Each message is sent once and is cleared when you plug in.
+- In AI mode, messages about charging start with "AI mode:".
 
 ## Screens
 
 - **Overview:** a "will the car be ready?" card, the week (tiles or a list, 3–7 days), the day's advice, and the charts (SoC over prices, published prices, price history).
 - In the week, a day's lowest price turns green (with a ⚡) when the plan charges at it: charge extra, or the trip plan charging later trips ahead. Its tooltip says which.
 - **Day panel:** one day's trips, charging, prices, weather, and advice, with quick actions. In the week's tiles, a tap shows the day's advice in the advice card; press and hold (or right-click) opens the day, as does the date on the advice card or a tap on the chart.
-- **Trips**, **Recurring trips**, **Activity**, and **Settings** pages.
+- **Trips**, **Recurring trips**, **Activity**, and **Settings** pages (Settings has a tab for AI mode).
 - Works on phones (bottom bar, installable as an app, pull to refresh) and in light and dark mode. Checked for contrast, keyboard focus, screen reader labels, and 44 px touch targets.
 
 ## Activity log
 
-- Every change, every write to EVCC, and every call to an outside service, with before → after values. Filter it, or export it as CSV or JSON.
+- Every change, every write to EVCC, every AI plan, and every call to an outside service, with before → after values. Filter it, or export it as CSV or JSON.
 - Monthly use of outside services, such as Google Routes against its free allowance.
 - Entries older than 90 days are deleted (you can change this). The price history is kept.
 - Keys, tokens, and secret calendar links are never stored.

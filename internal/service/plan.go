@@ -32,12 +32,17 @@ type PlanView struct {
 	Warnings    []string         `json:"warnings"`
 	Advice      *AdviceView      `json:"advice"`
 	Control     ControlView      `json:"control"`
+	// AI is AI mode's state (nil in other modes).
+	AI *AIPlanView `json:"ai,omitempty"`
 	// Consumption is what the plan uses and where it comes from;
 	// Settings.ConsumptionKWhPer100Km holds the same value.
 	Consumption ConsumptionView `json:"consumption"`
 	// Each local date's enabled trips, also those already driven, for the
 	// day history.
 	driving map[string]driving
+	// rules holds the automatic rules' decisions when an AI plan replaced
+	// them.
+	rules *rulesBaseline
 }
 
 // SoCView describes the SoC used for planning, where it came from, and how
@@ -408,6 +413,11 @@ func (s *Service) Plan(ctx context.Context) (*PlanView, error) {
 	}
 	if view.Advice, err = s.buildAdvice(view, result, socIn.Known); err != nil {
 		return nil, err
+	}
+	if settings.TripPlans == model.TripPlansAI {
+		if err := s.applyAI(view, result); err != nil {
+			return nil, err
+		}
 	}
 	return view, nil
 }

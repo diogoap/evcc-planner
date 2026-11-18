@@ -522,6 +522,16 @@ func TestAdviceSettingsAndAutoApply(t *testing.T) {
 	s["autoApply"], s["autoMinConfidence"], s["autoPostpone"] = true, 2, true
 	ta.json("PUT", "/api/settings/advice", s, http.StatusOK, nil)
 
+	// Manual mode never acts on its own, and says so.
+	ta.tripPlans(model.TripPlansManual)
+	if err := ta.app.Service.AutoApply(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if a := ta.advice().Advice; len(a.Adjustments) != 0 || a.AutoApply {
+		t.Fatalf("auto-apply in Manual mode: %+v", a.Adjustments)
+	}
+	ta.tripPlans(model.TripPlansAutomatic)
+
 	// Monday: today's advice is to defer, and postponing is allowed.
 	if err := ta.app.Service.AutoApply(ctx); err != nil {
 		t.Fatal(err)

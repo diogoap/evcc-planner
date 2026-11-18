@@ -169,3 +169,21 @@ func TestOwnSolarBeatsACheaperNight(t *testing.T) {
 	a := ChargeAhead(res, params, slots(4), aheadDefaults)
 	near(t, "target with sun", a.TargetSoC, 27, 1e-6)
 }
+
+func TestChargeForAChosenTarget(t *testing.T) {
+	// AI mode chose 50% by the school run: the cheapest slots charge the 20
+	// points from 30%; a target below the departure's own is raised to it.
+	res := exampleResult(t, at(9, 21, 30))
+	a := ChargeFor(res, params, prices(0.23, at(11, 0, 0), nil), aheadDefaults, 50)
+	near(t, "target", a.TargetSoC, 50, 1e-6)
+	var hours float64
+	for _, s := range a.Charging {
+		if s.Price != 0.23 {
+			t.Errorf("slot %+v is not among the cheapest", s)
+		}
+		hours += s.End.Sub(s.Start).Hours()
+	}
+	near(t, "charging hours", hours, 0.20*59/(3.68*0.9), 1e-6)
+	near(t, "raised to the minimum", ChargeFor(res, params, nil, aheadDefaults, 10).TargetSoC, 27, 1e-6)
+	near(t, "at most full", ChargeFor(res, params, nil, aheadDefaults, 120).TargetSoC, 100, 1e-6)
+}

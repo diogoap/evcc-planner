@@ -159,6 +159,26 @@ describe('controlLabel', () => {
     expect(controlLabel(control({ target: null }), true).detail).toBe('No upcoming trip needs a plan.')
   })
 
+  it('says what On plug-in sends', () => {
+    expect(controlLabel(control({ mode: 'plug_in' }), false)).toEqual({
+      mode: 'Sent when plugged in',
+      detail: 'Sends 42% by Tue 10 Nov, 07:48 when plugged in.',
+      tone: 'info',
+    })
+    expect(controlLabel(control({ mode: 'plug_in' }), true).detail).toBe(
+      'Target 42% by Tue 10 Nov, 07:48, sent once when plugged in.',
+    )
+  })
+
+  it('names AI mode, which keeps the plan like automatic mode', () => {
+    expect(controlLabel(control({ mode: 'ai' }), true)).toEqual({
+      mode: 'AI mode',
+      detail: 'Target 42% by Tue 10 Nov, 07:48.',
+      tone: 'info',
+    })
+    expect(controlLabel(control({ mode: 'ai', paused: true }), true).mode).toBe('AI mode · paused')
+  })
+
   it('explains a pause', () => {
     const paused = control({ paused: true, pausedPlan: { soc: 80, time: '2026-11-11T06:00:00Z' } })
     expect(controlLabel(paused, true)).toEqual({

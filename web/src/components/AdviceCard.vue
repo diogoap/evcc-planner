@@ -105,7 +105,14 @@ const reference = computed(() => referenceText(props.advice))
       <span class="advice-icon" :class="`tone-${label.tone}`"><AppIcon :name="label.icon" /></span>
       <strong class="text-lg" data-testid="advice-label">{{ label.text }}</strong>
     </div>
-    <div v-if="advice.confidence || target || indication" class="row gap-1">
+    <div v-if="advice.confidence || target || indication || advice.ai" class="row gap-1">
+      <span
+        v-if="advice.ai"
+        class="badge tone-info"
+        title="Decided by the AI model (AI mode, Settings → AI)"
+        data-testid="advice-ai"
+        >AI</span
+      >
       <span v-if="advice.confidence" class="badge" data-testid="advice-confidence">
         <span
           v-for="i in 3"
@@ -250,7 +257,11 @@ const reference = computed(() => referenceText(props.advice))
           >
         </li>
       </ul>
-      <p class="small muted m-0 mt-2">
+      <p v-if="advice.ai" class="small muted m-0 mt-2">
+        Decided by the AI model (AI mode). Charge extra comes on top of the trips' targets, which always stay
+        protected. The prompt and the latest run are under Settings → AI; prices shown are the planner's own.
+      </p>
+      <p v-else class="small muted m-0 mt-2">
         Charge extra comes on top of the trips' targets, which always stay protected. Its steps (how much
         cheaper, to which SoC) are set under Settings → Advice.
       </p>

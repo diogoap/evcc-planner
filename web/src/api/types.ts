@@ -41,7 +41,7 @@ export interface Settings {
   solarTaxSaving: number
 }
 
-export type TripPlans = 'manual' | 'plug_in' | 'automatic'
+export type TripPlans = 'manual' | 'plug_in' | 'automatic' | 'ai'
 
 export type ConsumptionUnit = 'kwh_per_100km' | 'km_per_kwh'
 
@@ -74,6 +74,9 @@ export interface Target {
   /** The planner's estimate of the charging slots; EVCC picks the actual ones. */
   charging: Rate[]
   horizonEnd?: string
+  /** "ai" when the AI plan set the target (AI mode), with its reason. */
+  source?: 'ai'
+  reason?: string
 }
 
 export interface AheadTrip {
@@ -263,6 +266,20 @@ export interface Plan {
   advice: AdviceView
   control: ControlView
   consumption: ConsumptionView
+  /** AI mode's state; absent in other modes. */
+  ai?: AIPlanView
+}
+
+/** AI mode on the Overview: whether an AI plan applies, and if not, why. */
+export interface AIPlanView {
+  inUse: boolean
+  running: boolean
+  /** A model (or the demo's stand-in) is set up. */
+  canRun: boolean
+  note?: string
+  runId?: number
+  runAt?: string
+  summary?: string
 }
 
 export type Recommendation = 'none' | 'charge_extra' | 'defer'
@@ -397,6 +414,8 @@ export interface DayAdvice {
   solarFrom?: string
   solarUntil?: string
   adjustment?: Adjustment
+  /** Decided by the AI model (AI mode), not the automatic rules. */
+  ai?: boolean
 }
 
 export interface AdviceSource {
@@ -584,6 +603,103 @@ export interface Occurrence {
 
 export interface TemplateView extends Template {
   occurrences: Occurrence[]
+}
+
+/** Settings → AI: when the AI plan runs, the model, and the prompt. */
+export interface AISettings {
+  maxRunsPerDay: number
+  onPrices: boolean
+  onPlugIn: boolean
+  /** Empty: the OpenRouter model under Connections. */
+  model: string
+  prompt: string
+  /** Create plans from the AI's advice automatically, at this confidence or more; postpone only when asked. */
+  autoApply: boolean
+  autoMinConfidence: 2 | 3
+  autoPostpone: boolean
+}
+
+/** A placeholder such as {{trips}}, filled with the planner's data. */
+export interface AIMacro {
+  name: string
+  description: string
+}
+
+export interface AISettingsView {
+  settings: AISettings
+  defaultPrompt: string
+  macros: AIMacro[]
+  defaultModel: string
+  /** How decisions are made; empty without a model. */
+  decider: string
+  note?: string
+}
+
+export type AITrigger = 'prices' | 'plug_in' | 'manual'
+
+export interface AIDayResult {
+  date: string
+  recommendation: 'charge_extra' | 'solar' | 'defer' | 'none'
+  targetSoc?: number
+  from?: string
+  until?: string
+  deferUntil?: string
+  postpone?: boolean
+  confidence: number
+  summary: string
+  rationale: string[]
+}
+
+/** A checked AI decision. */
+export interface AIResult {
+  summary: string
+  important: string[]
+  ahead?: { targetSoc: number; tripIds: string[]; reason: string }
+  days: AIDayResult[]
+  /** What the planner corrected or left out. */
+  warnings: string[]
+}
+
+export interface AIRunView {
+  id: number
+  startedAt: string
+  finishedAt: string
+  trigger: AITrigger
+  status: 'ok' | 'failed'
+  error?: string
+  decider: string
+  model: string
+  promptTokens: number
+  completionTokens: number
+  result: AIResult | null
+}
+
+/** A run with what was sent and what came back. */
+export interface AIRun extends Omit<AIRunView, 'result'> {
+  prompt?: string
+  response?: string
+  trips?: Record<string, string>
+}
+
+export interface AIView {
+  active: boolean
+  running: boolean
+  decider: string
+  note?: string
+  runsToday: number
+  maxRuns: number
+  inUse: boolean
+  status: string
+  latest: AIRunView | null
+  current: AIRunView | null
+}
+
+/** A prompt filled with today's data, as it would be sent. */
+export interface AIPreview {
+  system: string
+  text: string
+  chars: number
+  tokens: number
 }
 
 export interface Connection {

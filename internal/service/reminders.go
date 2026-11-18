@@ -386,19 +386,22 @@ func (r *reminders) solar() {
 		!r.allowed(false) || r.arrivedRecently() {
 		return
 	}
-	than := "tomorrow's lowest price"
+	than := "no more than tomorrow's lowest price"
 	if ref := a.Reference; ref != nil {
 		switch ref.Basis {
 		case advice.RefOutlook:
-			than = ref.Day + "'s expected lowest price"
+			than = "no more than " + ref.Day + "'s expected lowest price"
 		case advice.RefHistory:
-			than = "this week's lowest prices"
+			than = "no more than this week's lowest prices"
 		}
+	}
+	if a.AI {
+		than = "which the AI plan advises to use"
 	}
 	r.send(model.Notification{
 		Key: "solar:" + a.Date, Kind: model.NotifySolar, Subject: "solar:" + a.Date, Latest: a.SolarUntil,
 		Title: "Plug in for the sun",
-		Message: fmt.Sprintf("Sunshine until about %s charges the car at about €%.2f/kWh (€%.2f without the tax on own solar), no more than %s. Plug in to use it.",
+		Message: fmt.Sprintf("Sunshine until about %s charges the car at about €%.2f/kWh (€%.2f without the tax on own solar), %s. Plug in to use it.",
 			r.s.clockText(*a.SolarUntil), solarGridPrice(a), *a.SolarPrice, than),
 		Verbs: []string{model.VerbSnooze, model.VerbView},
 	}, false)
@@ -464,9 +467,9 @@ func (r *reminders) extra() {
 // autoExtra reports whether advice auto-apply will create the day's extra
 // plan once the day is today.
 func (r *reminders) autoExtra(a *DayAdviceView) bool {
-	settings, err := r.s.AdviceSettings()
+	policy, err := r.s.autoPolicy()
 	r.fail(err)
-	return err == nil && settings.Enabled && settings.AutoApply && a.Confidence >= settings.AutoMinConfidence
+	return err == nil && policy.acts(a)
 }
 
 // solarGridPrice is the grid price in the sun's slots (the solar price when

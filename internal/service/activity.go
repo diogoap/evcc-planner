@@ -36,7 +36,10 @@ func (s *Service) change(ctx context.Context, ev model.AuditEvent, fn func(tx *s
 		if err := fn(tx, &ev); err != nil {
 			return err
 		}
-		ev.Outcome = model.OutcomeSuccess
+		// fn may record an attempt that failed elsewhere, e.g. a failed AI run.
+		if ev.Outcome == "" {
+			ev.Outcome = model.OutcomeSuccess
+		}
 		_, err := tx.AddAuditEvent(s.Audit.Prepare(ctx, ev))
 		return err
 	})
@@ -264,6 +267,9 @@ var settingLabels = map[string]string{
 	"openRouterModel": "OpenRouter model", "openRouterTimeoutSec": "OpenRouter timeout",
 	"knmiDataset": "KNMI dataset", "knmiVersion": "KNMI version", "forecastDailyAt": "daily forecast time",
 	"forecastRetryIntervalMin": "forecast retry interval", "forecastVatPct": "VAT", "retentionDays": "history retention",
+	// AI settings.
+	"maxRunsPerDay": "runs per day", "onPrices": "run after new prices", "onPlugIn": "run on plug-in",
+	"model": "AI model", "prompt": "prompt",
 }
 
 // planText describes an EVCC one-off plan, or "none".
@@ -469,7 +475,8 @@ func (s *Service) APIUsage(month string) (*UsageView, error) {
 		{Service: APIGoogleRoutes, Name: "Google Routes", Live: s.Clients().Routes.Router.Name() != "stub", FreeCalls: s.Conn().RoutesMonthlyFreeCalls},
 		{Service: APICalendar, Name: "Google Calendar feeds", Live: s.Cfg.Calendar.Mode != config.ModeStub && len(s.Calendar.Calendars) > 0},
 		{Service: APITibber, Name: "Tibber outlook page", Live: f.Article.Name() == "live"},
-		{Service: APIOpenRouter, Name: "OpenRouter", Live: f.Extractor.Name() == "openrouter"},
+		{Service: APIOpenRouter, Name: "OpenRouter", Live: f.Extractor.Name() == "openrouter" ||
+			(s.Clients().AI != nil && s.Clients().AI.Name() == "openrouter")},
 		{Service: APIKNMI, Name: "KNMI Open Data", Live: weatherLive},
 	}
 	for i := range services {
@@ -496,6 +503,7 @@ var cleanupLabels = map[string][2]string{
 	"plan_writes": {"plan record", "plan records"}, "dismissals": {"advice dismissal", "advice dismissals"},
 	"adjustments":   {"ended EVCC change", "ended EVCC changes"},
 	"notifications": {"notification", "notifications"},
+	"ai_runs":       {"AI run", "AI runs"},
 }
 
 // Cleanup deletes history older than the retention period (whole local

@@ -352,3 +352,59 @@ func TestChargeAheadInTheAutomaticPlan(t *testing.T) {
 		t.Errorf("target with charging ahead off = %+v", c.Target)
 	}
 }
+
+func TestOnPlugInChargesAheadToo(t *testing.T) {
+	ta := newTestApp(t, "")
+	ta.json("POST", "/api/demo/reset", map[string]any{}, http.StatusNoContent, nil)
+	ta.tripPlans(model.TripPlansPlugIn)
+	night := 0.20
+	ta.app.Service.UseIntegrations(func(i *service.Integrations) { i.EVCC = pricedEVCC{Stub: ta.app.Stub, night: &night} })
+	ctx := context.Background()
+	tue := time.Date(2026, 11, 10, 7, 48, 0, 0, ams)
+	log := &eventLog{ta: ta}
+	log.fresh()
+
+	// As in automatic mode, Tuesday's pickup is cheaper to charge tonight:
+	// plugging in sends 46%, not only the 42% the school run needs.
+	ta.plug(true, 30)
+	if p := ta.evccPlan(); p == nil || p.Soc != 46 || !p.Time.Equal(tue) {
+		t.Fatalf("plan after plugging in = %+v, want 46%% by 07:48", p)
+	}
+	log.summaries("Car plugged in: sent plan 46% by Tue 10 Nov, 07:48 to EVCC")
+
+	// A plan with at least that target is kept; a lower one, even above the
+	// school run's own 42%, is replaced.
+	ta.plug(false, 30)
+	ta.app.Stub.SetSocPlan(ctx, evcc.StubVehicle, 50, tue)
+	ta.plug(true, 30)
+	log.summaries("Car plugged in: kept the EVCC plan (50% by 2026-11-10 07:48); it has at least the 46% for School drop-off, with School pickup charged ahead")
+	ta.plug(false, 30)
+	ta.app.Stub.SetSocPlan(ctx, evcc.StubVehicle, 44, tue)
+	ta.plug(true, 30)
+	if p := ta.evccPlan(); p.Soc != 46 {
+		t.Fatalf("plan between the minimum and the target kept: %+v", p)
+	}
+	log.fresh()
+
+	// Enough charge for both trips: nothing is sent.
+	ta.plug(false, 30)
+	ta.app.Stub.DeleteSocPlan(ctx, evcc.StubVehicle)
+	ta.plug(true, 47)
+	log.summaries("Car plugged in at 47%: enough for School drop-off (42%), so no plan was sent")
+
+	// With charging ahead off, the school run's own target.
+	ta.setting("chargeAhead", false)
+	log.fresh()
+	ta.plug(false, 30)
+	ta.plug(true, 30)
+	if p := ta.evccPlan(); p == nil || p.Soc != 42 {
+		t.Fatalf("plan with charging ahead off = %+v", p)
+	}
+
+	// Manual mode never charges ahead: the target is the minimum.
+	ta.setting("chargeAhead", true)
+	ta.tripPlans(model.TripPlansManual)
+	if c := ta.control(); c.Target == nil || c.Target.SoC != 42 {
+		t.Errorf("manual target = %+v", c.Target)
+	}
+}

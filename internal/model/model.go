@@ -31,12 +31,13 @@ type Settings struct {
 	ChargeBufferMin       int     `json:"chargeBufferMin"`
 	DefaultStayMin        int     `json:"defaultStayMin"`
 	// TripPlans is how trip plans reach EVCC: manual, plug_in (once when
-	// the car is plugged in), or automatic (kept in line with the trips).
-	// See AUTOMATION.md.
+	// the car is plugged in), automatic (kept in line with the trips), or ai
+	// (like automatic, with an AI model deciding charge ahead, charge extra,
+	// and deferring). See AUTOMATION.md.
 	TripPlans string `json:"tripPlans"`
-	// ChargeAhead adds later trips to the automatic target when charging
-	// for them before the next departure is cheaper by at least
-	// ChargeAheadMinSaving (EUR/kWh), up to ChargeAheadMaxSoC.
+	// ChargeAhead adds later trips to the target (all modes but Manual)
+	// when charging for them before the next departure is cheaper by at
+	// least ChargeAheadMinSaving (EUR/kWh), up to ChargeAheadMaxSoC.
 	ChargeAhead          bool    `json:"chargeAhead"`
 	ChargeAheadMinSaving float64 `json:"chargeAheadMinSaving"`
 	ChargeAheadMaxSoC    int     `json:"chargeAheadMaxSoc"`
@@ -93,7 +94,19 @@ const (
 	TripPlansManual    = "manual"
 	TripPlansPlugIn    = "plug_in"
 	TripPlansAutomatic = "automatic"
+	TripPlansAI        = "ai"
 )
+
+// Automates reports whether the planner writes plans on its own: every
+// mode but Manual. Charge ahead and acting on advice automatically apply
+// then.
+func (s Settings) Automates() bool { return s.TripPlans != TripPlansManual }
+
+// KeepsPlan reports whether the planner keeps EVCC's plan in line with the
+// trips (automatic and AI mode), with pauses for chosen plans.
+func (s Settings) KeepsPlan() bool {
+	return s.TripPlans == TripPlansAutomatic || s.TripPlans == TripPlansAI
+}
 
 // Validate reports the first out-of-range field.
 func (s Settings) Validate() error {
@@ -130,9 +143,9 @@ func (s Settings) Validate() error {
 		return fmt.Errorf("the consumption sensor must be an entity ID, e.g. sensor.car_efficiency")
 	}
 	switch s.TripPlans {
-	case TripPlansManual, TripPlansPlugIn, TripPlansAutomatic:
+	case TripPlansManual, TripPlansPlugIn, TripPlansAutomatic, TripPlansAI:
 	default:
-		return fmt.Errorf("trip plans must be %q, %q, or %q", TripPlansManual, TripPlansPlugIn, TripPlansAutomatic)
+		return fmt.Errorf("trip plans must be %q, %q, %q, or %q", TripPlansManual, TripPlansPlugIn, TripPlansAutomatic, TripPlansAI)
 	}
 	return nil
 }
@@ -306,7 +319,9 @@ type CalendarSyncStatus struct {
 }
 
 // AdviceSettings control daily charging advice. Advice is advisory: plans are
-// only created automatically when AutoApply is on. An automatic extra plan
+// only created automatically when AutoApply is on, and never in Manual
+// mode. AI mode always shows advice and acts on it by its own settings
+// (AISettings.AutoApply), so Enabled and the Auto fields don't apply there. An automatic extra plan
 // is ready by the end of charge extra's cheap blocks (or the next
 // departure) and ends then.
 type AdviceSettings struct {
@@ -436,6 +451,87 @@ type PlanControl struct {
 
 // Paused reports whether a chosen plan has paused automatic changes.
 func (c PlanControl) Paused() bool { return c.PausedAt != nil }
+
+// AISettings control AI mode (Settings → AI): when the AI plan runs, the
+// model, and the prompt. An empty Model uses the OpenRouter model of the
+// connection settings; an empty Prompt the default prompt.
+type AISettings struct {
+	// MaxRunsPerDay limits the automatic runs per local day (every run
+	// counts, also those started by hand, which are always allowed).
+	MaxRunsPerDay int    `json:"maxRunsPerDay"`
+	OnPrices      bool   `json:"onPrices"` // run when new prices are published
+	OnPlugIn      bool   `json:"onPlugIn"` // run when the car is plugged in
+	Model         string `json:"model"`
+	Prompt        string `json:"prompt"`
+	// AutoApply creates plans from the AI's advice automatically, like
+	// AdviceSettings.AutoApply does from the rules' advice in the other
+	// modes: at AutoMinConfidence or more, postponing only with AutoPostpone.
+	AutoApply         bool `json:"autoApply"`
+	AutoMinConfidence int  `json:"autoMinConfidence"` // 2 medium or 3 high
+	AutoPostpone      bool `json:"autoPostpone"`
+}
+
+// DefaultAISettings run after new prices and on plug-in, up to three times
+// a day, with the default model and prompt, and never act on the AI's
+// advice by themselves.
+func DefaultAISettings() AISettings {
+	return AISettings{MaxRunsPerDay: 3, OnPrices: true, OnPlugIn: true, AutoMinConfidence: 3}
+}
+
+// MaxPromptChars bounds the prompt (before its data is filled in).
+const MaxPromptChars = 20000
+
+var modelRe = regexp.MustCompile(`^[A-Za-z0-9._:/@+-]{1,200}$`)
+
+// Validate reports the first invalid field; the prompt's placeholders are
+// checked by the service.
+func (a AISettings) Validate() error {
+	switch {
+	case a.MaxRunsPerDay < 0 || a.MaxRunsPerDay > 10:
+		return fmt.Errorf("runs per day must be between 0 and 10")
+	case a.Model != "" && !modelRe.MatchString(a.Model):
+		return fmt.Errorf("the model must be an OpenRouter model ID, e.g. anthropic/claude-sonnet-5.5")
+	case len([]rune(a.Prompt)) > MaxPromptChars:
+		return fmt.Errorf("the prompt must be at most %d characters", MaxPromptChars)
+	case a.AutoMinConfidence != 2 && a.AutoMinConfidence != 3:
+		return fmt.Errorf("minimum confidence must be 2 (medium) or 3 (high)")
+	}
+	return nil
+}
+
+// AI run triggers and outcomes.
+const (
+	AITriggerPrices = "prices"  // new prices published (or the first run)
+	AITriggerPlugIn = "plug_in" // the car was plugged in
+	AITriggerManual = "manual"  // Run now in the UI
+
+	AIRunOK     = "ok"
+	AIRunFailed = "failed"
+)
+
+// AIRun is one AI plan: what was sent, what came back, and the checked
+// decision. Result holds the validated decision (aiplan.Result) and Trips
+// maps the trip IDs in the prompt (T1, T2, …) to trip keys.
+type AIRun struct {
+	ID         int64     `json:"id"`
+	StartedAt  time.Time `json:"startedAt"`
+	FinishedAt time.Time `json:"finishedAt"`
+	Trigger    string    `json:"trigger"`
+	Status     string    `json:"status"`
+	Error      string    `json:"error,omitempty"`
+	// Decider is how the decision was made, e.g. "OpenRouter <model>".
+	Decider          string `json:"decider"`
+	Model            string `json:"model"`
+	PromptTokens     int    `json:"promptTokens"`
+	CompletionTokens int    `json:"completionTokens"`
+	// PricesUntil is the end of the published prices the run saw.
+	PricesUntil *time.Time        `json:"pricesUntil,omitempty"`
+	NextTripKey string            `json:"nextTripKey,omitempty"` // the next departure then
+	Trips       map[string]string `json:"trips,omitempty"`
+	Prompt      string            `json:"prompt,omitempty"`   // the user message, with the data
+	Response    string            `json:"response,omitempty"` // the model's raw answer
+	Result      json.RawMessage   `json:"result,omitempty"`
+}
 
 // NotificationSettings choose which phone notifications are sent and when
 // (AUTOMATION.md). Notifications go through the Home Assistant Companion

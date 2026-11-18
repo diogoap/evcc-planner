@@ -140,15 +140,28 @@ func verbTitle(verb string, settings model.NotificationSettings) string {
 	return verb
 }
 
+// aiTitle starts the title of notifications about charging in AI mode.
+const aiTitle = "AI mode: "
+
+// unlabelled kinds are not about how the car charges, so they don't say
+// which trip plan mode is on.
+var unlabelled = map[string]bool{model.NotifyTest: true, model.NotifyQuestion: true}
+
 // deliver sends a notification to the chosen phones and stores it with
 // the outcome, recorded in the activity log. A new notification (ID 0) is
-// stored first, so its buttons can name it.
+// stored first, so its buttons can name it. In AI mode, new notifications
+// about charging say so in their title.
 func (s *Service) deliver(ctx context.Context, n *model.Notification, settings model.NotificationSettings) error {
 	notifier := s.Clients().Notify
 	if notifier == nil {
 		return invalid("%s", s.Clients().NotifyNote)
 	}
 	now := s.now()
+	if n.ID == 0 && !unlabelled[n.Kind] && !strings.HasPrefix(n.Title, aiTitle) {
+		if p, err := s.Settings(); err == nil && p.TripPlans == model.TripPlansAI {
+			n.Title = aiTitle + n.Title
+		}
+	}
 	if n.ID == 0 {
 		n.CreatedAt, n.State = now, model.NotifySent
 		saved, err := s.Store.SaveNotification(*n)

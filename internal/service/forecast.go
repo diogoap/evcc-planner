@@ -257,5 +257,9 @@ func (s *Service) forecastConnections() ([]ConnectionView, error) {
 		}
 		status(&knmi, wrec, f.Weather.Name() == "stub")
 	}
-	return []ConnectionView{tib, or, knmi}, nil
+	out := []ConnectionView{tib, or}
+	if p, err := s.Settings(); err == nil && p.TripPlans == model.TripPlansAI {
+		out = append(out, s.aiConnection())
+	}
+	return append(out, knmi), nil
 }

@@ -1,12 +1,9 @@
 package forecast
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -14,6 +11,7 @@ import (
 	"time"
 
 	"github.com/diogoap/evcc-planner/internal/localtime"
+	"github.com/diogoap/evcc-planner/internal/openrouter"
 )
 
 // ExtractRequest is an article to structure.
@@ -25,11 +23,7 @@ type ExtractRequest struct {
 }
 
 // Usage reports model tokens for cost tracking.
-type Usage struct {
-	Model            string `json:"model"`
-	PromptTokens     int    `json:"promptTokens"`
-	CompletionTokens int    `json:"completionTokens"`
-}
+type Usage = openrouter.Usage
 
 // Extractor structures article text into an Extraction.
 type Extractor interface {
@@ -114,8 +108,8 @@ func dutchNumber(s string) (float64, error) {
 // maxOutputTokens caps the answer (a full extraction is about 1,000 tokens).
 const maxOutputTokens = 4000
 
-// OpenRouter calls a chat completions model with strict JSON Schema output
-// and only routes to providers that support it.
+// OpenRouter structures the article with a chat completions model through
+// OpenRouter, with strict JSON Schema output.
 type OpenRouter struct {
 	BaseURL string
 	APIKey  string
@@ -135,84 +129,14 @@ func (o *OpenRouter) Label() string { return "OpenRouter " + o.Model }
 func (o *OpenRouter) Extract(ctx context.Context, req ExtractRequest) (Extraction, Usage, error) {
 	user := fmt.Sprintf("Fetch date: %s (Europe/Amsterdam).\n\nArticle:\n<<<\n%s\n>>>",
 		localtime.Date(req.FetchedAt, req.Location), req.Text)
-	body := map[string]any{
-		"model": o.Model,
-		"messages": []map[string]string{
-			{"role": "system", "content": ExtractionPrompt},
-			{"role": "user", "content": user},
-		},
-		"response_format": map[string]any{
-			"type":        "json_schema",
-			"json_schema": map[string]any{"name": "tibber_outlook", "strict": true, "schema": ExtractionSchema()},
-		},
-		// Only providers that honour every parameter: strict structured
-		// output plus a token cap. Optional tuning such as temperature is left
-		// out, because many models (e.g. recent Claude ones) reject it and
-		// would then match no provider; the server validates the output anyway.
-		"provider":   map[string]any{"require_parameters": true},
-		"max_tokens": maxOutputTokens,
-	}
-	payload, err := json.Marshal(body)
+	c := &openrouter.Client{BaseURL: o.BaseURL, APIKey: o.APIKey, HTTP: o.HTTP}
+	content, usage, err := c.Complete(ctx, openrouter.Request{
+		Model: o.Model, System: ExtractionPrompt, User: user, SchemaName: "tibber_outlook", Schema: ExtractionSchema(),
+		MaxTokens: maxOutputTokens, Where: "Settings → Connections",
+	})
 	if err != nil {
-		return Extraction{}, Usage{}, err
+		return Extraction{}, usage, err
 	}
-	hreq, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(o.BaseURL, "/")+"/chat/completions", bytes.NewReader(payload))
-	if err != nil {
-		return Extraction{}, Usage{}, err
-	}
-	hreq.Header.Set("Content-Type", "application/json")
-	hreq.Header.Set("Authorization", "Bearer "+o.APIKey)
-	hreq.Header.Set("HTTP-Referer", "https://github.com/diogoap/evcc-planner")
-	hreq.Header.Set("X-Title", "EVCC Trip Planner")
-	resp, err := o.HTTP.Do(hreq)
-	if err != nil {
-		return Extraction{}, Usage{}, errors.New("openrouter unreachable")
-	}
-	defer resp.Body.Close()
-	data, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
-	if err != nil {
-		return Extraction{}, Usage{}, err
-	}
-	var out struct {
-		Model   string `json:"model"`
-		Choices []struct {
-			FinishReason string `json:"finish_reason"`
-			Message      struct {
-				Content string `json:"content"`
-			} `json:"message"`
-		} `json:"choices"`
-		Usage struct {
-			PromptTokens     int `json:"prompt_tokens"`
-			CompletionTokens int `json:"completion_tokens"`
-		} `json:"usage"`
-		Error *struct {
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-	jsonErr := json.Unmarshal(data, &out)
-	if resp.StatusCode/100 != 2 || out.Error != nil {
-		msg := resp.Status
-		if jsonErr == nil && out.Error != nil && out.Error.Message != "" {
-			msg = out.Error.Message
-		}
-		msg = clip(msg, 300)
-		if strings.Contains(strings.ToLower(msg), "no endpoints found") {
-			msg += " (" + o.Model + " has no provider with strict structured outputs: choose another OpenRouter model under Settings → Connections)"
-		}
-		return Extraction{}, Usage{}, fmt.Errorf("openrouter: %s", msg)
-	}
-	if jsonErr != nil {
-		return Extraction{}, Usage{}, fmt.Errorf("decode openrouter response: %w", jsonErr)
-	}
-	usage := Usage{Model: out.Model, PromptTokens: out.Usage.PromptTokens, CompletionTokens: out.Usage.CompletionTokens}
-	if len(out.Choices) == 0 {
-		return Extraction{}, usage, errors.New("openrouter returned no choices")
-	}
-	if out.Choices[0].FinishReason == "length" {
-		return Extraction{}, usage, fmt.Errorf("model output cut off at %d tokens", maxOutputTokens)
-	}
-	content := strings.TrimSpace(out.Choices[0].Message.Content)
-	content = strings.TrimSuffix(strings.TrimPrefix(strings.TrimPrefix(content, "```json"), "```"), "```")
 	var ex Extraction
 	dec := json.NewDecoder(strings.NewReader(content))
 	dec.DisallowUnknownFields()

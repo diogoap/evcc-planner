@@ -220,6 +220,14 @@ var migrations = []string{
 	// The advice's "charge ahead" is now "charge extra" (the name charge
 	// ahead stays with the trip plans).
 	`UPDATE advice_dismissals SET recommendation = 'charge_extra' WHERE recommendation = 'charge_ahead';`,
+	// AI mode: each AI plan with what was sent and what came back.
+	`CREATE TABLE ai_runs (
+		id INTEGER PRIMARY KEY,
+		started_at TEXT NOT NULL,
+		status TEXT NOT NULL,
+		data TEXT NOT NULL
+	);
+	CREATE INDEX ai_runs_started ON ai_runs(started_at);`,
 }
 
 // Open opens (creating if needed) the database at path and migrates it.
@@ -314,6 +322,7 @@ const (
 	adviceKey        = "advice"
 	connectionsKey   = "connections"
 	notificationsKey = "notifications"
+	aiKey            = "ai"
 )
 
 // setting decodes a saved settings row over v, which holds the defaults, and
@@ -1179,8 +1188,9 @@ func (s *Store) adjustments(where string, args ...any) ([]model.Adjustment, erro
 // Cleanup deletes history older than cutoff in one transaction: activity
 // log entries, manual trips that have ended, per-date edits of past dates
 // (and of calendar events that are gone), cached routes, plan records
-// (keeping the latest), advice dismissals, and ended EVCC changes.
-// Schedules, places, and settings are kept. It returns the number of rows
+// (keeping the latest), advice dismissals, ended EVCC changes,
+// notifications, and AI runs (keeping the latest good one). Schedules,
+// places, and settings are kept. It returns the number of rows
 // deleted per kind, omitting kinds with none.
 func (s *Store) Cleanup(cutoff time.Time, loc *time.Location) (map[string]int64, error) {
 	at, date := fmtTime(cutoff), cutoff.In(loc).Format("2006-01-02")
@@ -1199,6 +1209,9 @@ func (s *Store) Cleanup(cutoff time.Time, loc *time.Location) (map[string]int64,
 		{"dismissals", `DELETE FROM advice_dismissals WHERE date < ?`, []any{date}},
 		{"adjustments", `DELETE FROM evcc_adjustments WHERE status != ? AND advice_date < ?`, []any{model.AdjustActive, date}},
 		{"notifications", `DELETE FROM notifications WHERE created_at < ?`, []any{at}},
+		{"ai_runs", `DELETE FROM ai_runs WHERE started_at < ?
+			AND id != COALESCE((SELECT MAX(id) FROM ai_runs WHERE status = ?), 0)`,
+			[]any{at, model.AIRunOK}},
 	}
 	out := map[string]int64{}
 	err := s.InTx(func(tx *Store) error {
@@ -1222,7 +1235,7 @@ func (s *Store) Cleanup(cutoff time.Time, loc *time.Location) (map[string]int64,
 func (s *Store) Reset() error {
 	for _, table := range []string{"settings", "places", "recurring_templates", "manual_trips", "trip_overrides",
 		"calendar_events", "calendar_sync", "soc_readings", "plan_writes", "forecast_sources", "advice_dismissals",
-		"evcc_adjustments", "audit_events", "notifications", "day_stats", "sensor_readings"} {
+		"evcc_adjustments", "audit_events", "notifications", "day_stats", "sensor_readings", "ai_runs"} {
 		if _, err := s.q.Exec("DELETE FROM " + table); err != nil {
 			return err
 		}
@@ -1352,6 +1365,87 @@ func (s *Store) notifications(where string, args ...any) ([]model.Notification, 
 		}
 		n.ID = id
 		out = append(out, n)
+	}
+	return out, rows.Err()
+}
+
+// ---- AI mode ----
+
+// AISettings returns the saved AI mode settings merged onto defaults.
+func (s *Store) AISettings(defaults model.AISettings) (model.AISettings, error) {
+	v := defaults
+	if _, err := s.setting(aiKey, &v); err != nil {
+		return defaults, err
+	}
+	return v, nil
+}
+
+// SaveAISettings stores the AI mode settings.
+func (s *Store) SaveAISettings(v model.AISettings) error { return s.putSetting(aiKey, v) }
+
+// AddAIRun stores a finished AI run.
+func (s *Store) AddAIRun(r model.AIRun) (model.AIRun, error) {
+	data, err := json.Marshal(r)
+	if err != nil {
+		return r, err
+	}
+	res, err := s.q.Exec(`INSERT INTO ai_runs (started_at, status, data) VALUES (?, ?, ?)`,
+		fmtTime(r.StartedAt), r.Status, string(data))
+	if err != nil {
+		return r, err
+	}
+	r.ID, err = res.LastInsertId()
+	return r, err
+}
+
+// AIRun returns one run.
+func (s *Store) AIRun(id int64) (model.AIRun, error) {
+	list, err := s.aiRuns(`WHERE id = ?`, id)
+	if err != nil {
+		return model.AIRun{}, err
+	}
+	if len(list) == 0 {
+		return model.AIRun{}, ErrNotFound
+	}
+	return list[0], nil
+}
+
+// LatestAIRun returns the newest run, or the newest with a status; nil if
+// there is none.
+func (s *Store) LatestAIRun(status string) (*model.AIRun, error) {
+	list, err := s.aiRuns(`WHERE ? = '' OR status = ? ORDER BY id DESC LIMIT 1`, status, status)
+	if err != nil || len(list) == 0 {
+		return nil, err
+	}
+	return &list[0], nil
+}
+
+// AIRunsSince counts the runs started at or after t.
+func (s *Store) AIRunsSince(t time.Time) (int, error) {
+	var n int
+	err := s.q.QueryRow(`SELECT COUNT(*) FROM ai_runs WHERE started_at >= ?`, fmtTime(t)).Scan(&n)
+	return n, err
+}
+
+func (s *Store) aiRuns(where string, args ...any) ([]model.AIRun, error) {
+	rows, err := s.q.Query(`SELECT id, data FROM ai_runs `+where, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []model.AIRun
+	for rows.Next() {
+		var id int64
+		var data string
+		if err := rows.Scan(&id, &data); err != nil {
+			return nil, err
+		}
+		var r model.AIRun
+		if err := json.Unmarshal([]byte(data), &r); err != nil {
+			return nil, fmt.Errorf("decode AI run %d: %w", id, err)
+		}
+		r.ID = id
+		out = append(out, r)
 	}
 	return out, rows.Err()
 }

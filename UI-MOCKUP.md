@@ -154,7 +154,8 @@ Materialize the rolling seven-day window and extend it daily. Preserve per-date 
 
 ```text
 Settings
-Home & vehicle | Planning | Places | Advice | Notifications | Connections
+Home & vehicle | Planning | Advice | AI | Places | Notifications | Connections
+(Parts that don't apply to the trip plan mode are greyed out, with the reason.)
 
 HOME & VEHICLE [V1]
 Home address          [Your address / saved location]
@@ -164,22 +165,35 @@ Consumption           [18] kWh/100 km
 Arrival reserve       [15] %
 Charging efficiency   [90] %
 Departure buffer      [15] minutes
+Solar at home: Household use [0.4] kW · Tax not paid on own solar [0.11] €/kWh
 [Save settings]
 
 ADVICE [V2]
 Daily advice                              [On]
-Automatically create plans from advice    [OFF]
-Manual mode: review a proposal and confirm each change.
-Automatic mode requires configured targets and expiry rules.
+(The whole tab is greyed out in AI mode, which has its own switch under AI.)
+Charge extra steps
+Act on the advice automatically (greyed out in Manual):
+  Automatically create plans from advice  [OFF]   Minimum confidence [3]   Also postpone [ ]
 
 PLANNING [V5]                       (rules: AUTOMATION.md)
-Trip plans            [Manual / On plug-in / Automatic]
-Charge ahead for later trips       [On]
-Minimum saving        [0.05] €/kWh
-Highest target when charging ahead [90] %
-Household use during the day       [0.4] kW
-Tax not paid on own solar          [0.11] €/kWh
+Trip plans            [AI mode / Automatic / On plug-in / Manual]
+Charge ahead (greyed out in Manual; AI mode: only while no AI plan applies)
+  Charge ahead for later trips       [On]
+  Minimum saving        [0.05] €/kWh
+  Highest target when charging ahead [90] %
 Automatic plans: Paused — plan chosen in EVCC Tue 20:14 (80% by Wed 07:00)  [Resume]
+
+AI (greyed out outside AI mode; Preview still works)   (rules: AUTOMATION.md#ai-mode)
+AI plan  In use: the AI plan from Mon 9 Nov, 19:00                [Run now]
+         Latest run OK · New prices · model · 2,300 + 600 tokens
+         Summary, next trip's target, each day's advice, what mattered,
+         corrections by the planner, and what was sent and what came back
+Runs     After new prices [On]   When plugged in [On]   Runs per day [3]
+Model    [empty: the model under Connections]
+Act on the AI's advice automatically [Off]   Minimum confidence [3]   Also postpone [ ]
+Prompt   {{now}} {{goals}} {{vehicle}} {{state}} {{trips}} {{daily_needs}} …  (tap to insert)
+         [prompt text with placeholders]
+         [Preview with today's data]  [Default prompt]  [Save AI settings]
 
 NOTIFICATIONS [V5]
 Notifications          [Off]

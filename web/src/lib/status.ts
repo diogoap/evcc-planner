@@ -201,6 +201,17 @@ export const tripPlansText: Record<TripPlans, string> = {
   manual: 'Send manually',
   plug_in: 'Sent when plugged in',
   automatic: 'Automatic',
+  ai: 'AI mode',
+}
+
+/** Automatic and AI mode keep EVCC's plan in line with the trips. */
+export function keepsPlan(mode: TripPlans) {
+  return mode === 'automatic' || mode === 'ai'
+}
+
+/** Every mode but Manual charges later trips ahead (when that is on). */
+export function chargesAhead(mode: TripPlans) {
+  return mode !== 'manual'
 }
 
 /** "80% by Wed 11 Nov, 07:00". */
@@ -226,31 +237,41 @@ export function plannedCost(p: Preview): { kwh: number; avg: number; total: numb
   return kwh > 0 ? { kwh, avg: total / kwh, total } : null
 }
 
-/** The trip plan mode, and what automatic plans do right now. */
+/** The trip plan mode, and what automatic (or AI mode's) plans do right now. */
 export function controlLabel(
   c: ControlView,
   connected: boolean,
 ): { mode: string; detail: string; tone: Tone } {
-  if (c.mode !== 'automatic') return { mode: tripPlansText[c.mode], detail: '', tone: 'muted' }
+  const mode = tripPlansText[c.mode]
+  if (c.mode === 'plug_in') {
+    const t = c.target
+    if (!t) return { mode, detail: 'No upcoming trip needs a plan.', tone: 'muted' }
+    const target = planText({ soc: t.soc, time: t.readyBy })
+    if (t.covered) return { mode, detail: `${target}: the charge already covers it.`, tone: 'ok' }
+    if (!connected) return { mode, detail: `Sends ${target} when plugged in.`, tone: 'info' }
+    return { mode, detail: `Target ${target}, sent once when plugged in.`, tone: 'info' }
+  }
+  if (!keepsPlan(c.mode)) return { mode, detail: '', tone: 'muted' }
   if (c.paused) {
     const chosen = c.pausedPlan ? ` (${planText(c.pausedPlan)})` : ''
     return {
-      mode: 'Automatic · paused',
+      mode: `${mode} · paused`,
       detail: `Paused while the chosen plan${chosen} is in EVCC; resumes when it finishes.`,
       tone: 'warn',
     }
   }
   const t = c.target
-  if (!t) return { mode: 'Automatic', detail: 'No upcoming trip needs a plan.', tone: 'muted' }
+  if (!t) return { mode, detail: 'No upcoming trip needs a plan.', tone: 'muted' }
   const target = planText({ soc: t.soc, time: t.readyBy })
-  if (t.covered) return { mode: 'Automatic', detail: `${target}: the charge already covers it.`, tone: 'ok' }
-  if (!connected) return { mode: 'Automatic', detail: `Sends ${target} when plugged in.`, tone: 'info' }
-  return { mode: 'Automatic', detail: `Target ${target}.`, tone: 'info' }
+  if (t.covered) return { mode, detail: `${target}: the charge already covers it.`, tone: 'ok' }
+  if (!connected) return { mode, detail: `Sends ${target} when plugged in.`, tone: 'info' }
+  return { mode, detail: `Target ${target}.`, tone: 'info' }
 }
 
 /** Why a later trip is in the target: "Includes School pickup (Tue 10 Nov 14:33): …". */
-export function aheadText(a: AheadTrip) {
+export function aheadText(a: AheadTrip, ai = false) {
   const when = `${dayShort(localDate(a.departAt))} ${clock(a.departAt)}`
+  if (ai) return `Includes ${a.title} (${when}).`
   if (a.priceLater == null)
     return `Includes ${a.title} (${when}): too little time at home before it to charge.`
   const saving = a.savingEur >= 0.05 ? `, saves about €${a.savingEur.toFixed(2)}` : ''

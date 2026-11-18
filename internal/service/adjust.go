@@ -139,9 +139,14 @@ func (s *Service) Proposal(ctx context.Context, kind, date string) (*ProposalVie
 		latest = next.DepartAt
 		readyBy = minTime(readyBy, next.DepartAt)
 	}
-	// Charge extra's plan is ready when its cheap blocks end.
+	// Charge extra's plan is ready when its cheap blocks end; the AI's
+	// window may run past midnight.
 	if spans := day.Blocks; len(spans) > 0 && !day.Solar {
-		readyBy = minTime(readyBy, spans[len(spans)-1].Until)
+		if until := spans[len(spans)-1].Until; day.AI {
+			readyBy = minTime(until, latest)
+		} else {
+			readyBy = minTime(readyBy, until)
+		}
 	}
 	readyBy = readyBy.Truncate(time.Minute)
 	if !readyBy.After(now.Add(15 * time.Minute)) {
@@ -187,7 +192,11 @@ func (s *Service) Proposal(ctx context.Context, kind, date string) (*ProposalVie
 	}
 	// Charge extra's target, from its steps and what the cheap blocks can
 	// charge, replaces that default.
-	if day.TargetSoC > 0 && !day.Solar {
+	switch {
+	case day.TargetSoC > 0 && !day.Solar && day.AI:
+		target = max(p.MinSoC, day.TargetSoC)
+		p.Notes = append(p.Notes, fmt.Sprintf("The AI's target: %d%% (AI mode); change it if you like.", day.TargetSoC))
+	case day.TargetSoC > 0 && !day.Solar:
 		target = max(p.MinSoC, day.TargetSoC)
 		p.Notes = append(p.Notes, fmt.Sprintf("Charge extra's target: up to %d%% with blocks at least %.0f%% below %s (Settings → Advice); change it if you like.",
 			day.TargetSoC, day.StepDiscountPct, referenceText(day.Reference)))
@@ -504,7 +513,7 @@ func (s *Service) settle(ctx context.Context, a *model.Adjustment, cancel bool) 
 		if err != nil {
 			return err
 		}
-		automatic := settings.TripPlans == model.TripPlansAutomatic
+		automatic := settings.KeepsPlan()
 		ctl, err := s.Store.PlanControl()
 		if err != nil {
 			return err
@@ -658,13 +667,41 @@ func dateTimeText(t time.Time, loc *time.Location) string {
 	return t.In(loc).Format("Mon 2 Jan, 15:04")
 }
 
-// AutoApply acts on today's advice when automatic plans are enabled and a
-// concrete policy is configured. It skips weak, dismissed, or already
-// handled advice, and an EVCC plan the user set manually.
+// autoPolicy is how plans are created from advice automatically: on Settings
+// → Advice in On plug-in and Automatic mode, on Settings → AI in AI mode
+// (only from the AI's own advice), never in Manual mode.
+type autoPolicy struct {
+	on            bool
+	minConfidence int
+	postpone      bool
+	aiOnly        bool
+}
+
+func (s *Service) autoPolicy() (autoPolicy, error) {
+	planning, err := s.Settings()
+	if err != nil || !planning.Automates() {
+		return autoPolicy{}, err
+	}
+	if planning.TripPlans == model.TripPlansAI {
+		ai, err := s.AISettings()
+		return autoPolicy{on: ai.AutoApply, minConfidence: ai.AutoMinConfidence, postpone: ai.AutoPostpone, aiOnly: true}, err
+	}
+	adv, err := s.AdviceSettings()
+	return autoPolicy{on: adv.Enabled && adv.AutoApply, minConfidence: adv.AutoMinConfidence, postpone: adv.AutoPostpone}, err
+}
+
+// acts reports whether the policy acts on a day's advice by itself.
+func (p autoPolicy) acts(a *DayAdviceView) bool {
+	return p.on && a.Confidence >= p.minConfidence && (!p.aiOnly || a.AI)
+}
+
+// AutoApply acts on today's advice when that is turned on (see autoPolicy).
+// It skips weak, dismissed, or already handled advice, and an EVCC plan the
+// user set manually.
 func (s *Service) AutoApply(ctx context.Context) error {
 	ctx = audit.WithSource(ctx, model.SourceAutomation)
-	settings, err := s.AdviceSettings()
-	if err != nil || !settings.Enabled || !settings.AutoApply {
+	policy, err := s.autoPolicy()
+	if err != nil || !policy.on {
 		return err
 	}
 	today := localtime.Date(s.now(), s.loc())
@@ -676,7 +713,7 @@ func (s *Service) AutoApply(ctx context.Context) error {
 		}
 		return err
 	}
-	if day.Action == "" || day.Confidence < settings.AutoMinConfidence {
+	if day.Action == "" || !policy.acts(day) {
 		return nil
 	}
 	list, err := s.Store.Adjustments(today)
@@ -717,7 +754,7 @@ func (s *Service) AutoApply(ctx context.Context) error {
 		}
 		in.SoC, in.ReadyBy, in.ExpiresAt = max(target, p.MinSoC), p.ReadyBy, *p.ReadyBy
 	case model.AdjustPostpone:
-		if !settings.AutoPostpone {
+		if !policy.postpone {
 			return nil
 		}
 		until, _ := localtime.ParseDate(s.loc(), day.DeferUntil)

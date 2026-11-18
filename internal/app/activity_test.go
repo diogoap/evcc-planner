@@ -307,6 +307,9 @@ func TestAdviceChangesAreRecordedWithTheirSource(t *testing.T) {
 	}
 
 	// Automatic plans are recorded as automation; ending one in the UI as UI.
+	// Manual mode never acts on its own, so this needs another mode.
+	ta.tripPlans(model.TripPlansPlugIn)
+	log.one("settings.update", model.SourceUI)
 	var as map[string]any
 	ta.json("GET", "/api/settings/advice", nil, http.StatusOK, &as)
 	as["autoApply"], as["autoPostpone"], as["autoMinConfidence"] = true, true, 2

@@ -4,7 +4,7 @@ Have enough charge for upcoming trips by departure time, using the cheapest prac
 
 **Decisions.**
 
-- Deterministic service with **native local development** and **Docker production packaging**: calculate trip demand and send SoC/departure targets to EVCC, which controls charging. V2 uses AI to structure external forecast text.
+- Deterministic service with **native local development** and **Docker production packaging**: calculate trip demand and send SoC/departure targets to EVCC, which controls charging. V2 uses AI to structure external forecast text. The optional **AI mode** (2026-11-18) lets a model choose charge ahead, charge extra, and deferring, within rules the planner keeps.
 - Planner targets **always override the 10% minimum and 80% default limit**, without approval. EVCC's planner charges past the limit during planned slots (checked in EVCC source), so plan writes need no limit change; synchronize limits only if live validation shows otherwise. Physical vehicle/charger limits still apply.
 - **Hourly Google Calendar sync** via each calendar's **secret iCal address** (read-only; no OAuth). Manual edits apply immediately; local EVCC status/deadline checks can run more frequently.
 - **No app authentication or user accounts**; use existing network authentication. Calendar iCal URLs and external API keys remain server-side.
@@ -247,6 +247,22 @@ Scope:
 
 </details>
 
+<details>
+<summary><b>AI mode</b> ✅</summary>
+
+✅ **Done** (2026-11-18). Every rule, with a diagram: [AUTOMATION.md](AUTOMATION.md#ai-mode).
+
+- A fourth trip plan mode, **AI mode**: like Automatic, but an AI model (through OpenRouter, strict JSON Schema output) decides charge ahead (the next departure's target, with later trips and a reserve, e.g. when the coming days drive more than usual) and each day's advice: charge extra (target and window), charge extra from solar (window), defer (and today whether to pause cheap-grid charging), or nothing, with confidence, reasons, and the inputs that mattered.
+- Charge extra's target is the AI's: the default prompt gives a rough guide with example values; the steps from Settings → Advice are not sent (decided 2026-11-18). The solar forecast shows each hour's usable surplus and its price (the grid price minus the tax not paid on own solar), computed by the planner.
+- Data: published prices (every slot), the next 7 days' trips (times, km, kWh, SoC; no titles or places), each day's need, Tibber's outlook, KNMI's weather, EVCC's solar forecast, the past 30 days of the price history, the car, the state, and the goals. The prompt is editable under Settings → AI with placeholders (`{{energy_prices}}`, `{{trips}}`, …) filled when it is sent; a default prompt is included; a fixed system message sets the answer's format.
+- Foundational rules stay the planner's: every departure's own target (written at plug-in before the AI is asked), the charge-ahead cap, pauses for chosen plans, windows within the published prices, postponing today only. `internal/aiplan` checks every answer and lists its corrections; prices and energy shown are the planner's own. Extra plans and postponements are created automatically only with the AI tab's own switch (off by default), on the AI's advice; the Advice tab is greyed out in AI mode (decided 2026-11-18).
+- Runs after new prices (or when no AI plan applies), after a plug-in, and by hand (Run now on the Overview and Settings → AI); at most 3 a day (configurable, 0–10; runs by hand always allowed); a failed run retries after an hour. Without a current AI plan (none yet, older than 30 hours, made for an earlier departure, or no key) the automatic rules apply.
+- Notifications as in Automatic; those about charging start with "AI mode:". Each run (`ai.run`) is in the activity log and keeps the prompt as sent and the answer; Settings → Connections has an AI mode row while it is on.
+- Settings reorganized (decided 2026-11-18): Planning, Advice, and AI tabs side by side; parts that don't apply to the saved (or, in Planning, chosen) mode are greyed out with the reason and keep their values; the AI tab is greyed out outside AI mode, with Preview still usable; household use and the solar tax moved to Home & vehicle (Solar at home). On plug-in now sends the charge-ahead target (when on), keeping a plan in EVCC with at least that target and replacing a lower one (an extra plan it replaces ends). Acting on advice automatically never happens in Manual mode.
+- Decisions (2026-11-18): AI mode has its own switch to create plans from the AI's advice (with minimum confidence and also postpone), instead of the advice auto-apply setting; the modes are listed AI mode, Automatic, On plug-in, Manual; the automatic rules are the fallback; the AI may raise charge ahead up to the existing cap; the run limit counts every run but never blocks one by hand; a separate optional model setting (empty uses the forecast's model); demo mode uses a stand-in that repeats the automatic rules.
+
+</details>
+
 <details open>
 <summary><b>V7 — Reliability</b></summary>
 
@@ -263,6 +279,6 @@ Validate EVCC optimizer control for solar/grid scheduling; its regular planner s
 
 </details>
 
-**Costs.** Existing hosting adds little cost. Calendar/Telegram and personal routing should fit free allowances. V2 adds daily OpenRouter extraction usage; model choice determines cost. KNMI open datasets are free.
+**Costs.** Existing hosting adds little cost. Calendar/Telegram and personal routing should fit free allowances. V2 adds daily OpenRouter extraction usage; model choice determines cost. AI mode adds up to three runs a day (about 3,000 prompt and 1,000 answer tokens each). KNMI open datasets are free.
 
 References: [EVCC plans](https://docs.evcc.io/en/features/plans/), [limits](https://docs.evcc.io/en/features/limits/), [plan API](https://docs.evcc.io/integrations/rest-api/operations/setvehiclesocplan/), [preview API](https://docs.evcc.io/integrations/rest-api/operations/previewloadpointsocplan/), [HA notification actions](https://companion.home-assistant.io/docs/notifications/actionable-notifications/), [Maps pricing](https://developers.google.com/maps/billing-and-pricing/pricing), [OpenRouter structured outputs](https://openrouter.ai/docs/guides/features/structured-outputs), [KNMI API](https://developer.dataplatform.knmi.nl/open-data-api), [KNMI access/costs](https://developer.dataplatform.knmi.nl/faq).

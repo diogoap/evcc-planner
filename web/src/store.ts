@@ -130,6 +130,20 @@ export function deleteTrip(t: Trip) {
   return mutate(() => api.deleteTrip(t.key), 'Trip deleted')
 }
 
+/** Makes an AI plan now (AI mode) and reloads the plan; says how it went. */
+export async function runAIPlan() {
+  try {
+    const v = await api.runAI()
+    if (v.latest?.status === 'failed') notify(`AI plan failed: ${v.latest.error ?? ''}`, 'error')
+    else notify('AI plan made and applied')
+    await refresh()
+    return v
+  } catch (e) {
+    notify((e as Error).message, 'error')
+    return null
+  }
+}
+
 /** Asks for confirmation, then hands the plan in EVCC back to automatic plans. */
 export async function resumeAutomaticPlans() {
   const target = state.plan?.control.target

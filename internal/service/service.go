@@ -62,6 +62,11 @@ type Service struct {
 	adjustMu   sync.Mutex
 	autoPlanMu sync.Mutex
 
+	// AI mode: one run at a time, and a plug-in waiting for its run.
+	aiMu      sync.Mutex
+	aiRunning atomic.Bool
+	aiPlugIn  atomic.Bool
+
 	kickOnce sync.Once
 	kick     chan struct{}
 
@@ -274,8 +279,8 @@ func (s *Service) SaveSettings(ctx context.Context, v model.Settings) (model.Set
 		if err := tx.SaveSettings(v); err != nil {
 			return err
 		}
-		// A pause only exists in automatic mode.
-		if v.TripPlans != model.TripPlansAutomatic {
+		// A pause only exists in automatic and AI mode.
+		if !v.KeepsPlan() {
 			ctl, err := tx.PlanControl()
 			if err != nil {
 				return err

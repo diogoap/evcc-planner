@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/diogoap/evcc-planner/internal/aiplan"
 	"github.com/diogoap/evcc-planner/internal/audit"
 	"github.com/diogoap/evcc-planner/internal/calendar"
 	"github.com/diogoap/evcc-planner/internal/clock"
@@ -20,6 +21,7 @@ import (
 	"github.com/diogoap/evcc-planner/internal/forecast"
 	"github.com/diogoap/evcc-planner/internal/homeassistant"
 	"github.com/diogoap/evcc-planner/internal/model"
+	"github.com/diogoap/evcc-planner/internal/openrouter"
 	"github.com/diogoap/evcc-planner/internal/routes"
 	"github.com/diogoap/evcc-planner/internal/server"
 	"github.com/diogoap/evcc-planner/internal/service"
@@ -100,6 +102,7 @@ func New(cfg *config.Config, log *slog.Logger) (*App, error) {
 			TTL: cs.RoutesCacheTTL(), TrafficAware: cs.RoutesTrafficAware,
 		}
 		i.Forecasts = forecasts(cfg, cs, clk, client)
+		i.AI, i.AINote = aiDecider(cfg, cs, client)
 		i.HA, i.HASensors, i.HANote = homeAssistant(cfg, cs, stub, func() time.Time { return svc.Clock.Now() })
 		i.Notify, i.Actions, i.NotifyNote = notifier(cfg, cs, phone)
 		return i
@@ -225,6 +228,24 @@ func forecasts(cfg *config.Config, cs model.ConnectionSettings, clk clock.Clock,
 	return f
 }
 
+// aiDecider builds AI mode's decision maker: a model through OpenRouter, or
+// the labelled stand-in in stub mode. Without a key there is none, and AI
+// mode keeps the automatic rules. A week's plan takes longer than an
+// article, so it gets at least two minutes.
+func aiDecider(cfg *config.Config, cs model.ConnectionSettings,
+	client func(string, time.Duration, ...func(*audit.Transport)) *http.Client) (aiplan.Decider, string) {
+	switch {
+	case cfg.OpenRouter.Mode == config.ModeStub:
+		return aiplan.Stub{}, ""
+	case cfg.OpenRouter.APIKey == "":
+		return nil, "Set " + cfg.OpenRouter.APIKeyEnv + " to an OpenRouter API key to use AI mode; until then the automatic rules apply"
+	}
+	return &aiplan.OpenRouter{Client: &openrouter.Client{
+		BaseURL: cfg.OpenRouter.BaseURL, APIKey: cfg.OpenRouter.APIKey,
+		HTTP: client(service.APIOpenRouter, max(cs.OpenRouterTimeout(), 2*time.Minute)),
+	}}, ""
+}
+
 // homeAssistant builds the always-on SoC source and the sensor list, or
 // explains why there is none. The stub follows the demo car's battery (a
 // fixed one when EVCC is live). Local Home Assistant calls are not in the
@@ -288,8 +309,8 @@ const forecastCheck = 15 * time.Minute
 // historyCheck is how often the day's history checks whether a save is due.
 const historyCheck = time.Minute
 
-// StartJobs runs EVCC polling (restoring temporary EVCC changes and
-// planning when the car is plugged in), Home Assistant SoC polling, calendar
+// StartJobs runs EVCC polling (restoring temporary EVCC changes, planning
+// when the car is plugged in, and AI mode's runs), Home Assistant SoC polling, calendar
 // sync, the daily forecasts and day history, and the daily history cleanup
 // until ctx ends; wait blocks until they have stopped. Intervals follow the
 // connection settings. Each job marks its work with its source for the
@@ -308,6 +329,10 @@ func (a *App) StartJobs(ctx context.Context) (wait func()) {
 		}
 		if err := a.Service.SyncPlan(jobCtx); err != nil && ctx.Err() == nil {
 			a.Log.Warn("automatic plan check failed", "err", err)
+		}
+		// AI mode: a new AI plan after new prices or a plug-in, applied at once.
+		if err := a.Service.CheckAI(jobCtx); err != nil && ctx.Err() == nil {
+			a.Log.Warn("AI plan check failed", "err", err)
 		}
 		if err := a.Service.CheckNotifications(jobCtx); err != nil && ctx.Err() == nil {
 			a.Log.Warn("notification check failed", "err", err)

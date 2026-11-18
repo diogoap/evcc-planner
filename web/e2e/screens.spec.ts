@@ -16,6 +16,15 @@ interface Screen {
   open: (page: Page) => Promise<unknown>
 }
 
+// Turns on AI mode and makes an AI plan (the demo's stand-in model).
+async function aiMode(page: Page) {
+  const settings = await (await page.request.get('/api/settings')).json()
+  expect((await page.request.put('/api/settings', { data: { ...settings, tripPlans: 'ai' } })).status()).toBe(
+    200,
+  )
+  expect((await page.request.post('/api/ai/run', { data: {} })).status()).toBe(200)
+}
+
 const settingsTab = (tab: string) => async (page: Page) => {
   await page.goto('/settings')
   await page.getByRole('link', { name: tab, exact: true }).click()
@@ -44,6 +53,25 @@ const screens: Screen[] = [
   { name: 'settings-planning', open: settingsTab('Planning') },
   { name: 'settings-places', open: settingsTab('Places') },
   { name: 'settings-advice', open: settingsTab('Advice') },
+  // Greyed out: AI mode is off in the demo.
+  { name: 'settings-ai-off', open: settingsTab('AI') },
+  {
+    // AI mode with a plan from the demo's stand-in model.
+    name: 'settings-ai',
+    open: async (page) => {
+      await aiMode(page)
+      await settingsTab('AI')(page)
+      await expect(page.getByTestId('ai-summary')).toBeVisible()
+    },
+  },
+  {
+    name: 'overview-ai',
+    open: async (page) => {
+      await aiMode(page)
+      await page.goto('/')
+      await expect(page.getByTestId('ai-plan')).toBeVisible()
+    },
+  },
   { name: 'settings-notifications', open: settingsTab('Notifications') },
   { name: 'settings-connections', open: settingsTab('Connections') },
   { name: 'activity', open: (page) => page.goto('/activity') },

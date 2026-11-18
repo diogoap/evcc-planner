@@ -38,6 +38,13 @@ through the Home Assistant Companion app: plug-in reminders, charging
 problems, and questions about unclear calendar events, with buttons that act
 on the planner.
 
+**AI mode (optional):** a fourth trip plan mode in which an AI model
+(through OpenRouter) decides charge ahead, charge extra, charging from solar,
+and when to wait for cheaper prices, from the prices, trips, outlook,
+weather, and the past 30 days. The planner still charges every trip's own
+minimum and checks every answer. The prompt, with placeholders for the data,
+is edited under Settings → AI.
+
 **Price history:** each day's lowest, average, and highest published price,
 planned km and their energy, and KNMI's wind and sun, saved as the day starts
 and again at 23:45 (for trips changed during the day), from the day it is
@@ -162,6 +169,11 @@ a key it falls back to labelled stub distances.
   so cost is a fraction of a cent a week.
   Without a key a labelled pattern-based stub reads only the article's summary
   lines (report period, weekly average, dearest and cheapest day).
+- **AI mode** uses the same key. Its model is set under Settings → AI (empty:
+  the one under Connections) and also needs strict structured outputs; a
+  run sends the prompt with a week of data (about 3,000 tokens) and gets
+  about 1,000 back, at most three times a day by default. Without a key AI
+  mode keeps the automatic rules; demo mode has a stand-in that repeats them.
 - **KNMI**: register at the KNMI Developer Portal, request an **Open Data
   API** key in the API Catalogue (KNMI issues a separate key per API; an EDR,
   WMS, or Notification Service key is refused with "Access to this API has
@@ -424,7 +436,7 @@ The **Activity** page lists, newest first, everything the planner did:
   changed (before → after) and is saved in the same database transaction as
   the change. Failed EVCC writes are recorded too; rejected input is not.
 - **Source:** the UI, a scheduled job (e.g. restoring an EVCC setting at
-  expiry), the calendar sync, automation (automatic trip plans, plans created
+  expiry), the calendar sync, automation (automatic trip plans, AI plans, plans created
   from advice, notifications sent), or a notification (a button pressed on
   the phone).
 - **External API calls:** every request to Google Routes (route and time slot;
@@ -443,7 +455,8 @@ Once a day the planner deletes history older than the retention in Settings →
 Connections (90 days by
 default): activity entries, manual trips that have ended, per-date edits of
 past dates, cached routes, plan records (keeping the latest), advice
-dismissals, ended EVCC changes, and notifications. Schedules, places, settings, and
+dismissals, ended EVCC changes, notifications, and AI runs (keeping the last
+good one). Schedules, places, settings, and
 the price history (one row per day) are kept; calendar events only ever cover the
 next eight days.
 
@@ -455,7 +468,9 @@ next eight days.
 - `GET /healthz`, `GET /readyz`, `GET /api/connections` (integration status, no secrets),
   `GET /api/forecasts` (the stored outlook and weather payloads),
   `GET /api/activity` (the activity log, including failed external calls),
-  `GET /api/history?from=YYYY-MM-DD` (the saved days of the price history).
+  `GET /api/history?from=YYYY-MM-DD` (the saved days of the price history),
+  `GET /api/ai` (AI mode's status and latest run) and `GET /api/ai/runs/{id}`
+  (a run with the prompt as sent and the model's answer).
 - Browser test failures: screenshots and traces in `web/test-results/`, HTML
   report in `web/playwright-report/`, server log path printed at the start.
 - On TLS-inspecting networks, `make setup` and `make docker-smoke` retry
@@ -470,6 +485,8 @@ cmd/devrun         `make dev` process manager
 internal/app       wiring shared by the server and API tests
 internal/planner   pure SoC/energy/feasibility planning
 internal/advice    pure daily charging advice
+internal/aiplan    AI mode: prompt placeholders, answer schema, and checks (pure)
+internal/openrouter  OpenRouter client shared by the forecast and AI mode
 internal/audit     activity log support: request source, redaction, auditing HTTP transport
 internal/forecast  Tibber outlook extraction (OpenRouter or pattern stub), validation, KNMI outlook
 internal/trips     merges manual, recurring, and calendar trips with local edits

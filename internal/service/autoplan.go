@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/diogoap/evcc-planner/internal/audit"
@@ -49,6 +50,10 @@ type TargetView struct {
 	// picks the actual slots.
 	Charging   []evcc.Rate `json:"charging"`
 	HorizonEnd *time.Time  `json:"horizonEnd,omitempty"`
+	// Source is "ai" when the AI plan set the target (AI mode), with its
+	// reason; empty for the automatic rules.
+	Source string `json:"source,omitempty"`
+	Reason string `json:"reason,omitempty"`
 }
 
 // AheadView is a later trip charged ahead.
@@ -68,7 +73,7 @@ type AheadView struct {
 func (s *Service) controlView(settings model.Settings, ctl model.PlanControl, res planner.Result, p planner.Params,
 	blocks []BlockView) ControlView {
 	v := ControlView{Mode: settings.TripPlans}
-	if settings.TripPlans == model.TripPlansAutomatic && ctl.Paused() {
+	if settings.KeepsPlan() && ctl.Paused() {
 		v.Paused, v.PausedAt, v.PausedPlan = true, ctl.PausedAt, ctl.PausedPlan
 	}
 	if res.Next < 0 {
@@ -84,7 +89,7 @@ func (s *Service) controlView(settings model.Settings, ctl model.PlanControl, re
 		keep[k] = true
 	}
 	a := planner.ChargeAhead(res, p, s.aheadSlots(), planner.AheadParams{
-		Enabled:   settings.TripPlans == model.TripPlansAutomatic && settings.ChargeAhead,
+		Enabled:   settings.Automates() && settings.ChargeAhead,
 		MinSaving: settings.ChargeAheadMinSaving, MaxSoC: float64(settings.ChargeAheadMaxSoC),
 		HouseholdKW: settings.HouseholdKW, SolarTaxSaving: settings.SolarTaxSaving, Keep: keep,
 	})
@@ -175,8 +180,13 @@ func (s *Service) SyncPlan(ctx context.Context) error {
 	switch {
 	case settings.TripPlans == model.TripPlansPlugIn && pluggedIn:
 		return s.planOnPlugIn(ctx, snap.state, lp)
-	case settings.TripPlans == model.TripPlansAutomatic:
-		return s.reconcile(ctx, snap.state, lp, pluggedIn)
+	case settings.KeepsPlan():
+		// AI mode makes a new AI plan after a plug-in (CheckAI); until then
+		// the current one, or the automatic rules, apply right away.
+		if pluggedIn && settings.TripPlans == model.TripPlansAI {
+			s.aiPlugIn.Store(true)
+		}
+		return s.reconcile(ctx, snap.state, lp, pluggedIn, settings.TripPlans == model.TripPlansAI)
 	}
 	return nil
 }
@@ -198,46 +208,74 @@ func (s *Service) noticePlugIn(connected bool) (bool, error) {
 	return prev == "0" && cur == "1", nil
 }
 
-// planOnPlugIn sends the next departure's plan once when the car is
-// plugged in (mode plug_in). It keeps a plan already in EVCC with an equal
-// or higher SoC, whatever its ready-by time (someone chose it), replaces a
-// lower one, and sends nothing when the car's charge already covers the
-// departure. Each decision is recorded.
+// planOnPlugIn sends the plan for the next departure once when the car is
+// plugged in (mode plug_in): its target, with later trips charged ahead when
+// that is on. It keeps a plan already in EVCC with at least that target,
+// whatever its ready-by time (someone chose it, or it is an extra plan from
+// advice), replaces a lower one (an extra plan it replaces ends), and sends
+// nothing when the car's charge already covers the target. Each decision is
+// recorded.
 func (s *Service) planOnPlugIn(ctx context.Context, st *evcc.State, lp *evcc.Loadpoint) error {
 	view, err := s.Plan(ctx)
 	if err != nil {
 		return err
 	}
 	veh, _ := s.resolveVehicle(st)
-	next := view.Next
+	next, target := view.Next, view.Control.Target
 	ev := model.AuditEvent{Action: "plan.keep", SubjectType: "plan", SubjectID: veh.Name}
-	if next != nil {
+	if next != nil && target != nil {
 		ev.Related = "trip:" + next.TripKeys[0]
 		ev.Detail = audit.Marshal(map[string]any{
-			"tripKey": next.TripKeys[0], "targetSoc": next.TargetSoC, "departAt": s.localText(next.DepartAt),
+			"tripKey": next.TripKeys[0], "targetSoc": target.SoC, "minSoc": target.MinSoC, "departAt": s.localText(next.DepartAt),
 		})
 	}
 	switch {
 	case veh.Name == "":
 		return nil
-	case next == nil:
+	case next == nil || target == nil:
 		ev.Summary = "Car plugged in: no upcoming trip, so no plan was sent"
-	case veh.Plan != nil && int(math.Round(veh.Plan.Soc)) >= next.TargetSoC:
-		ev.Summary = fmt.Sprintf("Car plugged in: kept the EVCC plan (%s); it has at least the %d%% %s needs",
-			s.planText(veh.Plan.Soc, veh.Plan.Time, true), next.TargetSoC, next.FirstTitle)
-	case lp.VehicleSoc > 0 && lp.VehicleSoc >= float64(next.TargetSoC):
+	case veh.Plan != nil && int(math.Round(veh.Plan.Soc)) >= target.SoC:
+		ev.Summary = fmt.Sprintf("Car plugged in: kept the EVCC plan (%s); it has at least the %s",
+			s.planText(veh.Plan.Soc, veh.Plan.Time, true), targetNeeds(target))
+	case lp.VehicleSoc > 0 && lp.VehicleSoc >= float64(target.SoC):
 		ev.Summary = fmt.Sprintf("Car plugged in at %d%%: enough for %s (%d%%), so no plan was sent",
-			int(math.Round(lp.VehicleSoc)), next.FirstTitle, next.TargetSoC)
+			int(math.Round(lp.VehicleSoc)), targetTrips(target), target.SoC)
 	default:
-		s.Log.Info("car plugged in; sending the next departure's plan", "soc", next.TargetSoC, "time", next.DepartAt)
+		s.Log.Info("car plugged in; sending the next departure's plan", "soc", target.SoC, "time", target.ReadyBy)
+		extra := s.activeExtraPlan(s.now()) != nil
 		_, err := s.SendPlan(ctx, SendPlanInput{
-			SoC: next.TargetSoC, Time: next.DepartAt, TripKey: next.TripKeys[0], Confirm: true,
+			SoC: target.SoC, Time: target.ReadyBy, TripKey: target.TripKey, Confirm: true,
 			Reason: "Car plugged in", auto: true,
 		})
+		if err == nil && extra {
+			s.keepAfterPlanWrite(ctx)
+		}
 		return err
 	}
 	s.record(ctx, ev)
 	return nil
+}
+
+// targetNeeds is what a target covers: "42% School drop-off needs", or
+// "46% for School drop-off, with School pickup charged ahead".
+func targetNeeds(t *TargetView) string {
+	if len(t.Ahead) == 0 {
+		return fmt.Sprintf("%d%% %s needs", t.SoC, t.Title)
+	}
+	return fmt.Sprintf("%d%% for %s", t.SoC, targetTrips(t))
+}
+
+// targetTrips names the trips a target covers: "School drop-off", or
+// "School drop-off, with School pickup charged ahead".
+func targetTrips(t *TargetView) string {
+	if len(t.Ahead) == 0 {
+		return t.Title
+	}
+	var later []string
+	for _, a := range t.Ahead {
+		later = append(later, a.Title)
+	}
+	return t.Title + ", with " + strings.Join(later, " and ") + " charged ahead"
 }
 
 // reconcile matches EVCC's plan to the automatic target while the car is
@@ -247,7 +285,7 @@ func (s *Service) planOnPlugIn(ctx context.Context, st *evcc.State, lp *evcc.Loa
 // it while that plan covers the next departure. A chosen plan below the
 // next departure's own target is replaced. While the car is unplugged it
 // only ends a pause whose plan has finished.
-func (s *Service) reconcile(ctx context.Context, st *evcc.State, lp *evcc.Loadpoint, pluggedIn bool) error {
+func (s *Service) reconcile(ctx context.Context, st *evcc.State, lp *evcc.Loadpoint, pluggedIn, ai bool) error {
 	veh, ok := s.resolveVehicle(st)
 	if !ok || veh.Name == "" {
 		return nil
@@ -276,8 +314,13 @@ func (s *Service) reconcile(ctx context.Context, st *evcc.State, lp *evcc.Loadpo
 	target := view.Control.Target
 	extra := s.activeExtraPlan(now)
 	reason := "Automatic plan"
-	if pluggedIn {
+	switch {
+	case pluggedIn && ai:
+		reason = "Car plugged in (AI mode)"
+	case pluggedIn:
 		reason = "Car plugged in"
+	case ai:
+		reason = "AI mode"
 	}
 	// below reports whether a plan has less than the next departure needs.
 	below := func(p *model.PlanValue) bool { return target != nil && int(math.Round(p.SoC)) < target.MinSoC }
@@ -400,8 +443,8 @@ func (s *Service) ResumeControl(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if settings.TripPlans != model.TripPlansAutomatic {
-		return invalid("trip plans are not automatic; choose Automatic under Settings → Planning")
+	if !settings.KeepsPlan() {
+		return invalid("trip plans are not automatic; choose Automatic or AI mode under Settings → Planning")
 	}
 	s.autoPlanMu.Lock()
 	ctl, err := s.Store.PlanControl()

@@ -32,7 +32,10 @@ automatically. It needs no credentials or live services.
   writes the change and its audit event in one transaction (see `internal/service/activity.go`);
   external HTTP clients use `audit.Transport`. Never put secrets in events.
 - Forecast text is structured by a model, but numbers are never computed by it:
-  keep quote verification and conversions in `internal/forecast`.
+  keep quote verification and conversions in `internal/forecast`. AI mode is
+  the one place a model decides (targets and times); `internal/aiplan` checks
+  every answer against the planner's rules, and prices, energy, and solar
+  figures shown with it are always computed by the planner.
 - Add tests with every change: Go `testing` + `httptest` (fixed clocks, temp
   databases), Vitest + Vue Test Utils for components, Playwright for user flows
   (`web/e2e`, run against demo mode with a fixed clock and `/api/demo/reset`).

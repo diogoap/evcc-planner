@@ -1,10 +1,18 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import type { Plan, SendOption, SoCSource, Status } from '../api/types'
 import { historyLink } from '../lib/activity'
 import { ago, clock, dateTime, duration, km, kw, kwh, localDate, pct, price } from '../lib/format'
-import { aheadText, blockLabel, controlLabel, locationLabel, readyHeadline } from '../lib/status'
+import {
+  aheadText,
+  blockLabel,
+  chargesAhead,
+  controlLabel,
+  locationLabel,
+  readyHeadline,
+} from '../lib/status'
+import { runAIPlan } from '../store'
 import AppIcon from './AppIcon.vue'
 import SendPlanButton from './SendPlanButton.vue'
 
@@ -62,12 +70,19 @@ const chargeLine = computed(() => {
 })
 
 const control = computed(() => controlLabel(props.plan.control, !!props.status?.connected))
-// Later trips the automatic target charges ahead.
+// Later trips the target charges ahead (the rules', or the AI's).
 const ahead = computed(() =>
-  props.plan.control.mode === 'automatic' && !props.plan.control.paused
+  chargesAhead(props.plan.control.mode) && !props.plan.control.paused
     ? (props.plan.control.target?.ahead ?? [])
     : [],
 )
+const aiTarget = computed(() => props.plan.control.target?.source === 'ai' && !props.plan.control.paused)
+const aiRunning = ref(false)
+async function runAI() {
+  aiRunning.value = true
+  await runAIPlan()
+  aiRunning.value = false
+}
 const adjustments = computed(() => props.plan.advice.adjustments.filter((a) => a.status === 'active'))
 </script>
 
@@ -145,8 +160,11 @@ const adjustments = computed(() => props.plan.advice.adjustments.filter((a) => a
           {{ control.detail }}
         </div>
         <ul v-if="ahead.length" class="muted list-indent mt-1" data-testid="ahead">
-          <li v-for="a in ahead" :key="a.tripKey">{{ aheadText(a) }}</li>
+          <li v-for="a in ahead" :key="a.tripKey">{{ aheadText(a, aiTarget) }}</li>
         </ul>
+        <div v-if="aiTarget && plan.control.target?.reason" class="muted mt-1" data-testid="ai-reason">
+          AI: {{ plan.control.target.reason }}
+        </div>
         <button
           v-if="plan.control.paused"
           class="btn sm mt-2"
@@ -157,6 +175,25 @@ const adjustments = computed(() => props.plan.advice.adjustments.filter((a) => a
           Resume
         </button>
       </dd>
+      <template v-if="plan.ai">
+        <dt>AI plan</dt>
+        <dd data-testid="ai-plan">
+          <template v-if="plan.ai.inUse && plan.ai.runAt">
+            {{ plan.ai.summary }} <span class="muted">· {{ dateTime(plan.ai.runAt) }}</span>
+          </template>
+          <span v-if="plan.ai.note" class="text-warn block">{{ plan.ai.note }}</span>
+          <button
+            v-if="plan.ai.canRun"
+            class="btn sm mt-1"
+            type="button"
+            :disabled="aiRunning || plan.ai.running"
+            data-testid="ai-run-overview"
+            @click="runAI"
+          >
+            {{ aiRunning || plan.ai.running ? 'Running…' : 'Run AI now' }}
+          </button>
+        </dd>
+      </template>
       <dt>EVCC plan</dt>
       <dd data-testid="evcc-plan">
         <template v-if="status?.plan">

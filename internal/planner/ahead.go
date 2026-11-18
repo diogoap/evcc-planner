@@ -187,6 +187,28 @@ func ChargeAhead(res Result, p Params, slots []Slot, ap AheadParams) Ahead {
 	return out
 }
 
+// ChargeFor is the next departure's charge for a target chosen elsewhere
+// (AI mode): at least the departure's own target, at most 100%, with the
+// planner's estimate of its cheapest slots before the departure, as in
+// ChargeAhead.
+func ChargeFor(res Result, p Params, slots []Slot, ap AheadParams, target float64) Ahead {
+	if res.Next < 0 || res.Next >= len(res.Blocks) {
+		return Ahead{}
+	}
+	next := res.Blocks[res.Next]
+	out := Ahead{TargetSoC: math.Min(math.Max(next.RequiredSoC, target), 100)}
+	if len(slots) == 0 || next.StartSoC == nil || next.ChargeFrom == nil {
+		return out
+	}
+	sorted := append([]Slot(nil), slots...)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Start.Before(sorted[j].Start) })
+	out.HorizonEnd = sorted[len(sorted)-1].End
+	before := newWindow(sorted, *next.ChargeFrom, next.DepartAt.Add(-p.ChargeBuffer), p, ap)
+	before.take(math.Max(0, out.TargetSoC-*next.StartSoC), p)
+	out.Charging = before.charging()
+	return out
+}
+
 // addLater adds later trips to the target while charging them ahead is
 // cheaper, and returns the window before the next departure with their
 // charge taken.

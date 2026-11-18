@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/diogoap/evcc-planner/internal/aiplan"
 	"github.com/diogoap/evcc-planner/internal/evcc"
 	"github.com/diogoap/evcc-planner/internal/homeassistant"
 	"github.com/diogoap/evcc-planner/internal/localtime"
@@ -33,6 +34,10 @@ type Integrations struct {
 	Routes     *routes.Resolver
 	RoutesNote string // explains a stub fallback (e.g. missing API key)
 	Forecasts  Forecasts
+	// AI makes AI mode's decisions; nil without an OpenRouter key (AINote
+	// says why). Demo mode has a stand-in.
+	AI     aiplan.Decider
+	AINote string
 }
 
 // connState is one generation of connection settings and their clients.
@@ -85,6 +90,7 @@ func (s *Service) LoadSettings() error {
 	s.notifyMu.Lock()
 	s.notifyPrev = nil
 	s.notifyMu.Unlock()
+	s.aiPlugIn.Store(false)
 	defaults := model.DefaultConnectionSettings()
 	v, err := s.Store.ConnectionSettings(defaults)
 	if err != nil {
