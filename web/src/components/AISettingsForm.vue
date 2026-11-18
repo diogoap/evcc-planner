@@ -21,6 +21,27 @@ watch(unsaved.dirty, (d) => emit('dirty', d))
 const saving = ref(false)
 const error = ref('')
 const prompt = ref<HTMLTextAreaElement | null>(null)
+
+// The model: one of the models offered, or another typed in after choosing
+// "Other model…" (also shown for a saved model that isn't offered).
+const OTHER = 'other'
+const otherChosen = ref(false)
+const otherInput = ref<HTMLInputElement | null>(null)
+const modelChoice = computed({
+  get: () => {
+    const m = settings.value?.model ?? ''
+    return !otherChosen.value && info.value?.models.includes(m) ? m : OTHER
+  },
+  set: (v: string) => {
+    otherChosen.value = v === OTHER
+    if (v !== OTHER && settings.value) settings.value.model = v
+    else nextTick(() => otherInput.value?.focus())
+  },
+})
+// Discarding goes back to the saved model's own choice.
+watch(unsaved.dirty, (d) => {
+  if (!d) otherChosen.value = false
+})
 const preview = ref<AIPreview | null>(null)
 const previewing = ref(false)
 
@@ -162,16 +183,28 @@ async function save() {
           </label>
           <label class="field">
             Model
+            <select v-model="modelChoice" aria-describedby="hint-ai-model" data-testid="ai-model-choice">
+              <option v-for="m in info.models" :key="m" :value="m">
+                {{ m }}{{ m === info.defaultModel ? ' (default)' : '' }}
+              </option>
+              <option :value="OTHER">Other model…</option>
+            </select>
+            <span id="hint-ai-model" class="field-hint"
+              >An OpenRouter model with strict structured outputs. For another one, choose Other model… and
+              type its ID, e.g. ~openai/gpt-luna-latest.</span
+            >
+          </label>
+          <label v-if="modelChoice === OTHER" class="field">
+            Other model
             <input
+              ref="otherInput"
               v-model="settings.model"
-              :placeholder="info.defaultModel"
-              aria-describedby="hint-ai-model"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="e.g. ~openai/gpt-luna-latest"
+              required
               data-testid="ai-model"
             />
-            <span id="hint-ai-model" class="field-hint"
-              >An OpenRouter model with strict structured outputs, e.g. ~openai/gpt-luna-latest. Default:
-              {{ info.defaultModel }}.</span
-            >
           </label>
         </div>
         <p v-if="info.note" class="small text-warn m-0">{{ info.note }}</p>

@@ -634,6 +634,8 @@ export interface AISettingsView {
   defaultPrompt: string
   /** The planner's rules with your settings and EVCC's charge limit. */
   defaultGoals: string
+  /** Models offered for AI mode, the default first; others can be typed in. */
+  models: string[]
   macros: AIMacro[]
   defaultModel: string
   /** How decisions are made; empty without a model. */

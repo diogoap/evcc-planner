@@ -1,4 +1,5 @@
 import { flushPromises, mount } from '@vue/test-utils'
+import { nextTick } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AISettings, AISettingsView, AIView } from '../api/types'
 
@@ -42,6 +43,7 @@ const view = (over: Partial<AISettings> = {}): AISettingsView => ({
     { name: 'energy_prices', description: 'Published prices.' },
   ],
   defaultModel: '~anthropic/claude-haiku-latest',
+  models: ['~anthropic/claude-haiku-latest', '~openai/gpt-luna-latest', 'qwen/qwen3.8-flash'],
   decider: 'OpenRouter ~anthropic/claude-haiku-latest',
 })
 
@@ -82,13 +84,46 @@ describe('AISettingsForm', () => {
     w.unmount()
   })
 
-  it('shows the default model with an example of another', async () => {
+  it('offers models in a dropdown, and another after "Other model…"', async () => {
+    const w = mount(AISettingsForm, { props: { active: true }, attachTo: document.body })
+    await flushPromises()
+    const choice = w.get('[data-testid="ai-model-choice"]')
+    expect((choice.element as HTMLSelectElement).value).toBe('~anthropic/claude-haiku-latest')
+    expect(choice.findAll('option').map((o) => o.text())).toEqual([
+      '~anthropic/claude-haiku-latest (default)',
+      '~openai/gpt-luna-latest',
+      'qwen/qwen3.8-flash',
+      'Other model…',
+    ])
+    expect(w.find('[data-testid="ai-model"]').exists()).toBe(false)
+    expect(w.get('#hint-ai-model').text()).toContain('e.g. ~openai/gpt-luna-latest')
+
+    // One of the list.
+    await choice.setValue('qwen/qwen3.8-flash')
+    expect(w.emitted('dirty')?.at(-1)).toEqual([true])
+    // Another one, typed in.
+    await choice.setValue('other')
+    await nextTick()
+    const other = w.get('[data-testid="ai-model"]')
+    expect(document.activeElement).toBe(other.element)
+    await other.setValue('~mistral/devstral-latest')
+    expect((choice.element as HTMLSelectElement).value).toBe('other')
+    await w.get('form').trigger('submit')
+    await flushPromises()
+    expect(api.saveAISettings).toHaveBeenCalledWith(
+      expect.objectContaining({ model: '~mistral/devstral-latest' }),
+    )
+    w.unmount()
+  })
+
+  it('shows a saved model that is not offered as another one', async () => {
+    api.aiSettings.mockResolvedValue(view({ model: '~mistral/devstral-latest' }))
     const w = mount(AISettingsForm, { props: { active: true } })
     await flushPromises()
+    expect((w.get('[data-testid="ai-model-choice"]').element as HTMLSelectElement).value).toBe('other')
     expect((w.get('[data-testid="ai-model"]').element as HTMLInputElement).value).toBe(
-      '~anthropic/claude-haiku-latest',
+      '~mistral/devstral-latest',
     )
-    expect(w.get('#hint-ai-model').text()).toContain('e.g. ~openai/gpt-luna-latest')
   })
 
   it('shows the goals, saves your own, and puts the default back', async () => {

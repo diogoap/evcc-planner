@@ -479,6 +479,13 @@ type AISettings struct {
 // DefaultAIModel is the OpenRouter model AI mode uses until another is set.
 const DefaultAIModel = "~anthropic/claude-haiku-latest"
 
+// AIModels are the models offered under Settings → Advice → AI mode, the
+// default first; any other OpenRouter model can be typed in.
+var AIModels = []string{
+	DefaultAIModel, "~anthropic/claude-sonnet-latest", "~openai/gpt-luna-latest", "~openai/gpt-terra-latest",
+	"~z-ai/glm-latest", "~z-ai/glm-flash-latest", "~x-ai/grok-latest", "qwen/qwen3.8-flash",
+}
+
 // DefaultAISettings run after new prices and on plug-in, up to three times
 // a day, with the default model and prompt, and never act on the AI's
 // advice by themselves.

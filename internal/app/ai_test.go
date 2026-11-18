@@ -78,6 +78,9 @@ func TestAISettingsAndPreview(t *testing.T) {
 		v.DefaultModel != "~anthropic/claude-haiku-latest" || !strings.HasPrefix(v.Decider, "Stand-in") {
 		t.Fatalf("defaults = %+v", v)
 	}
+	if len(v.Models) != 8 || v.Models[0] != model.DefaultAIModel || v.Models[7] != "qwen/qwen3.8-flash" {
+		t.Errorf("models = %v", v.Models)
+	}
 	if v.Macros[0].Name != "now" || v.Macros[0].Description == "" {
 		t.Errorf("macros = %+v", v.Macros)
 	}

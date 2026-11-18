@@ -672,7 +672,7 @@ where **Preview with today's data** still works):
 | After new prices | On | Also when no AI plan applies. |
 | When the car is plugged in | On | The trip plan is written first. |
 | Automatic runs per day | 3 | 0–10; runs by hand are always allowed. The last waits for tomorrow's prices until an AI plan has seen them. |
-| Model | ~anthropic/claude-haiku-latest | Any OpenRouter model with strict structured outputs, e.g. ~openai/gpt-luna-latest. Separate from the forecast's model under Connections. |
+| Model | ~anthropic/claude-haiku-latest | Offered: ~anthropic/claude-haiku-latest, ~anthropic/claude-sonnet-latest, ~openai/gpt-luna-latest, ~openai/gpt-terra-latest, ~z-ai/glm-latest, ~z-ai/glm-flash-latest, ~x-ai/grok-latest, qwen/qwen3.8-flash; or choose Other model… to type any other OpenRouter model with strict structured outputs. Separate from the forecast's model under Connections. |
 | Goals | the planner's rules | What `{{goals}}` holds; edit to steer the AI (e.g. battery care against price). **Default goals** puts the generated text back. |
 | Prompt | the default | Placeholders are filled with the data. |
 | Automatically create plans from the AI's advice | as Automatic rules' | Like the Automatic rules' switch, but on today's AI advice (an extra plan with the AI's target, ready when its window ends). Until changed here, this and the next two follow the Automatic rules' settings. |
