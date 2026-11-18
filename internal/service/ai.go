@@ -49,7 +49,7 @@ func (s *Service) AISettings() (model.AISettings, error) {
 	return s.Store.AISettings(model.DefaultAISettings())
 }
 
-// AISettingsView is what Settings → AI edits: the settings with the prompt
+// AISettingsView is what Settings → Advice → AI mode edits: the settings with the prompt
 // in effect, the default prompt, the placeholders, and the model in effect.
 type AISettingsView struct {
 	Settings      model.AISettings `json:"settings"`
@@ -507,12 +507,23 @@ func (s *Service) CheckAI(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if runs >= ai.MaxRunsPerDay {
+	// The last run of the day waits for tomorrow's prices until a plan has
+	// seen them, so plug-ins can't use it up.
+	reserved := trigger == model.AITriggerPlugIn && runs+1 >= ai.MaxRunsPerDay && runs < ai.MaxRunsPerDay
+	if reserved {
+		seen, err := s.aiSawTomorrow(now)
+		if err != nil {
+			return err
+		}
+		reserved = !seen
+	}
+	if runs >= ai.MaxRunsPerDay || reserved {
 		if trigger == model.AITriggerPlugIn {
-			s.record(ctx, model.AuditEvent{
-				Action: "ai.skip", SubjectType: "ai",
-				Summary: fmt.Sprintf("AI plan not made on plug-in: %s today already (Settings → AI); the last plan applies", plural(runs, "run")),
-			})
+			summary := fmt.Sprintf("AI plan not made on plug-in: %s today already (Settings → Advice → AI mode); the last plan applies", plural(runs, "run"))
+			if reserved {
+				summary = fmt.Sprintf("AI plan not made on plug-in: the last of today's %d runs is kept for tomorrow's prices; the current plan applies", ai.MaxRunsPerDay)
+			}
+			s.record(ctx, model.AuditEvent{Action: "ai.skip", SubjectType: "ai", Summary: summary})
 		}
 		return nil
 	}
@@ -534,6 +545,15 @@ func (s *Service) CheckAI(ctx context.Context) error {
 		s.applyNewAIPlan(ctx)
 	}
 	return nil
+}
+
+// aiSawTomorrow reports whether the current AI plan saw tomorrow's prices.
+func (s *Service) aiSawTomorrow(now time.Time) (bool, error) {
+	cur, _, err := s.currentAIRun()
+	if err != nil || cur == nil || cur.PricesUntil == nil {
+		return false, err
+	}
+	return cur.PricesUntil.After(localtime.AddDays(localtime.StartOfDay(now, s.loc()), 1)), nil
 }
 
 // aiPricesDue reports whether EVCC publishes prices beyond the last AI

@@ -90,7 +90,7 @@ func Render(prompt string, in Input) (string, error) {
 	}), nil
 }
 
-// DefaultPrompt is the prompt until you change it under Settings → AI.
+// DefaultPrompt is the prompt until you change it under Settings → Advice → AI mode.
 const DefaultPrompt = `You plan when and how much to charge an electric car at home for the coming week. EVCC charges the car and picks the cheapest slots before each ready-by time; you decide the targets, when to charge extra, and when to wait.
 
 It is {{now}}.

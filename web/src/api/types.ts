@@ -605,7 +605,7 @@ export interface TemplateView extends Template {
   occurrences: Occurrence[]
 }
 
-/** Settings → AI: when the AI plan runs, the model, and the prompt. */
+/** Settings → Advice → AI mode: when the AI plan runs, the model, and the prompt. */
 export interface AISettings {
   maxRunsPerDay: number
   onPrices: boolean
@@ -855,6 +855,8 @@ export interface NotificationSettings {
   extra: boolean
   /** Plug in when the car gets back home from the day's last trip and still needs charging. */
   arrival: boolean
+  /** Automatic and AI mode: new prices changed the plan (or brought charge extra) while unplugged. */
+  prices: boolean
 }
 
 export type NotificationKind =
@@ -872,6 +874,7 @@ export type NotificationKind =
   | 'extra'
   | 'extra_plan'
   | 'arrived'
+  | 'prices'
   | 'info'
 
 export type NotificationVerb = 'snooze' | 'skip' | 'view' | 'count' | 'notrip'

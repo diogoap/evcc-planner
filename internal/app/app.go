@@ -334,6 +334,10 @@ func (a *App) StartJobs(ctx context.Context) (wait func()) {
 		if err := a.Service.CheckAI(jobCtx); err != nil && ctx.Err() == nil {
 			a.Log.Warn("AI plan check failed", "err", err)
 		}
+		// New prices: plans from advice follow the new advice.
+		if err := a.Service.ReviewNewPrices(jobCtx); err != nil && ctx.Err() == nil {
+			a.Log.Warn("reviewing plans after new prices failed", "err", err)
+		}
 		if err := a.Service.CheckNotifications(jobCtx); err != nil && ctx.Err() == nil {
 			a.Log.Warn("notification check failed", "err", err)
 		}

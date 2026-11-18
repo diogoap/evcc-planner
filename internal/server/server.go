@@ -872,6 +872,9 @@ func (s *Server) demoVehicle(w http.ResponseWriter, r *http.Request) {
 	if err := s.Svc.CheckAI(r.Context()); err != nil {
 		s.Log.Warn("AI plan check failed", "err", err)
 	}
+	if err := s.Svc.ReviewNewPrices(r.Context()); err != nil {
+		s.Log.Warn("reviewing plans after new prices failed", "err", err)
+	}
 	if err := s.Svc.CheckNotifications(r.Context()); err != nil {
 		s.Log.Warn("notification check failed", "err", err)
 	}

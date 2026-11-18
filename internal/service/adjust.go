@@ -416,7 +416,7 @@ func (s *Service) CancelAdjustment(ctx context.Context, id int64) (*model.Adjust
 	if err := s.PollEVCC(ctx); err != nil {
 		return nil, fmt.Errorf("EVCC is not reachable: %w", err)
 	}
-	if err := s.settle(ctx, &a, true); err != nil {
+	if err := s.settle(ctx, &a, true, ""); err != nil {
 		return nil, err
 	}
 	if err := s.PollEVCC(ctx); err != nil {
@@ -442,7 +442,7 @@ func (s *Service) CheckAdjustments(ctx context.Context) error {
 	ended := false
 	for i := range list {
 		if list[i].Status == model.AdjustActive {
-			if err := s.settle(ctx, &list[i], false); err != nil {
+			if err := s.settle(ctx, &list[i], false, ""); err != nil {
 				errs = append(errs, err)
 			}
 			ended = ended || list[i].Status != model.AdjustActive
@@ -459,14 +459,16 @@ func (s *Service) CheckAdjustments(ctx context.Context) error {
 
 // settle compares an active adjustment with EVCC: a value changed in EVCC is
 // kept; at expiry (or when cancelling) the previous value is restored. Each
-// ending is recorded with the value it leaves in EVCC.
-func (s *Service) settle(ctx context.Context, a *model.Adjustment, cancel bool) error {
+// ending is recorded with the value it leaves in EVCC; why, if set, starts
+// its note (e.g. why it was cancelled).
+func (s *Service) settle(ctx context.Context, a *model.Adjustment, cancel bool, why string) error {
 	now := s.now()
 	snap := s.snapshot()
 	// end stores the outcome, a restored plan's record (or the automatic
 	// plan state), and the activity entry together. before and after are
 	// the EVCC values.
 	end := func(status, note string, before, after map[string]string, write *model.PlanWrite, ctl *model.PlanControl) error {
+		note = why + note
 		a.Status, a.Note, a.EndedAt = status, note, &now
 		s.Log.Info("evcc adjustment ended", "id", a.ID, "status", status, "note", note)
 		ev := model.AuditEvent{
@@ -668,7 +670,7 @@ func dateTimeText(t time.Time, loc *time.Location) string {
 }
 
 // autoPolicy is how plans are created from advice automatically: on Settings
-// → Advice in On plug-in and Automatic mode, on Settings → AI in AI mode
+// → Advice in On plug-in and Automatic mode, on Settings → Advice → AI mode in AI mode
 // (only from the AI's own advice), never in Manual mode.
 type autoPolicy struct {
 	on            bool
@@ -698,7 +700,11 @@ func (p autoPolicy) acts(a *DayAdviceView) bool {
 // AutoApply acts on today's advice when that is turned on (see autoPolicy).
 // It skips weak, dismissed, or already handled advice, and an EVCC plan the
 // user set manually.
-func (s *Service) AutoApply(ctx context.Context) error {
+func (s *Service) AutoApply(ctx context.Context) error { return s.autoApply(ctx, false) }
+
+// autoApply is AutoApply; again skips its once-a-day rule, to follow new
+// advice after new prices ended the day's earlier plan.
+func (s *Service) autoApply(ctx context.Context, again bool) error {
 	ctx = audit.WithSource(ctx, model.SourceAutomation)
 	policy, err := s.autoPolicy()
 	if err != nil || !policy.on {
@@ -721,7 +727,7 @@ func (s *Service) AutoApply(ctx context.Context) error {
 		return err
 	}
 	for _, a := range list {
-		if a.AdviceDate == today && a.Kind == day.Action {
+		if a.AdviceDate == today && a.Kind == day.Action && (!again || a.Status == model.AdjustActive) {
 			return nil // handled once per day
 		}
 	}

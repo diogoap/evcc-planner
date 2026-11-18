@@ -154,7 +154,8 @@ Materialize the rolling seven-day window and extend it daily. Preserve per-date 
 
 ```text
 Settings
-Home & vehicle | Planning | Advice | AI | Places | Notifications | Connections
+Home & vehicle | Planning | Advice | Places | Notifications | Connections
+                            Advice: Automatic rules | AI mode
 (Parts that don't apply to the trip plan mode are greyed out, with the reason.)
 
 HOME & VEHICLE [V1]

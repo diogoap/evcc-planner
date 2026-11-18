@@ -19,19 +19,25 @@ import { controlLabel, keepsPlan } from '../lib/status'
 import { useUnsaved } from '../lib/unsaved'
 import { mutate, notify, refresh, resumeAutomaticPlans, state, syncCalendar } from '../store'
 
-type Tab = 'home' | 'planning' | 'advice' | 'ai' | 'places' | 'notifications' | 'connections'
-// Planning, Advice, and AI sit together: the trip plan mode decides which
-// of their parts apply.
+type Tab = 'home' | 'planning' | 'advice' | 'places' | 'notifications' | 'connections'
 const tabs: [Tab, string][] = [
   ['home', 'Home & vehicle'],
   ['planning', 'Planning'],
   ['advice', 'Advice'],
-  ['ai', 'AI'],
   ['places', 'Places'],
   ['notifications', 'Notifications'],
   ['connections', 'Connections'],
 ]
+// Advice has two parts: the automatic rules' (Manual, On plug-in,
+// Automatic) and AI mode's. The trip plan mode decides which applies; the
+// other is greyed out, and the saved mode's opens first.
+type AdviceTab = 'rules' | 'ai'
+const adviceTabs: [AdviceTab, string][] = [
+  ['rules', 'Automatic rules'],
+  ['ai', 'AI mode'],
+]
 const tab = ref<Tab>('home')
+const adviceTab = ref<AdviceTab>('rules')
 const settings = ref<Settings | null>(null)
 // Home & vehicle and Planning edit the same settings; the other tabs' forms
 // report their own unsaved changes.
@@ -40,14 +46,23 @@ const childDirty = ref(false)
 const dirty = computed(() => unsaved.dirty.value || childDirty.value)
 const leaveText = 'You have unsaved changes. Leave without saving?'
 
-function go(next: Tab) {
-  if (next === tab.value) return
+function go(next: Tab, sub?: AdviceTab) {
+  const nextSub = next === 'advice' ? (sub ?? (savedMode.value === 'ai' ? 'ai' : 'rules')) : adviceTab.value
+  if (next === tab.value) {
+    // Between Advice's parts: each has its own form.
+    if (next !== 'advice' || nextSub === adviceTab.value) return
+    if (childDirty.value && !confirm(leaveText)) return
+    childDirty.value = false
+    adviceTab.value = nextSub
+    return
+  }
   const shared = (t: Tab) => t === 'home' || t === 'planning'
   const losing = shared(tab.value) && shared(next) ? childDirty.value : dirty.value
   if (losing && !confirm(leaveText)) return
   if (!(shared(tab.value) && shared(next))) unsaved.discard()
   childDirty.value = false
   tab.value = next
+  adviceTab.value = nextSub
 }
 
 onBeforeRouteLeave(() => !dirty.value || confirm(leaveText))
@@ -126,7 +141,7 @@ const modes: { value: TripPlans; label: string; hint: string }[] = [
   {
     value: 'ai',
     label: 'AI mode',
-    hint: 'Like Automatic, but an AI model decides charge ahead, charge extra, charging from solar, and when to wait for cheaper prices, from the prices, trips, outlook, weather, and the past 30 days. It runs after new prices and when you plug in (Settings → AI). Every trip’s own minimum is still charged by itself, also when you plug in, and the automatic rules apply until the first AI plan.',
+    hint: 'Like Automatic, but an AI model decides charge ahead, charge extra, charging from solar, and when to wait for cheaper prices, from the prices, trips, outlook, weather, and the past 30 days. It runs after new prices and when you plug in (Settings → Advice → AI mode). Every trip’s own minimum is still charged by itself, also when you plug in, and the automatic rules apply until the first AI plan.',
   },
   {
     value: 'automatic',
@@ -433,7 +448,7 @@ async function applyDemo() {
           </button>
           <div v-if="state.plan.ai" class="mt-1" data-testid="planning-ai">
             {{ state.plan.ai.inUse ? 'AI plan in use.' : state.plan.ai.note }}
-            <a href="#" @click.prevent="go('ai')">AI settings and the latest run</a>
+            <a href="#" @click.prevent="go('advice', 'ai')">AI settings and the latest run</a>
           </div>
         </div>
         <fieldset
@@ -527,16 +542,33 @@ async function applyDemo() {
       </form>
     </section>
 
-    <AdviceSettingsForm v-if="tab === 'advice'" :mode="savedMode" @dirty="(d) => (childDirty = d)" />
-
-    <div v-if="tab === 'ai'" class="stack">
-      <p v-if="savedMode !== 'ai'" class="banner tone-info m-0" role="status" data-testid="ai-off">
-        AI mode is off, so these settings don't apply. Choose AI mode under
-        <a href="#" @click.prevent="go('planning')">Planning</a> to use them. You can still preview the
-        prompt.
-      </p>
-      <AIRunCard ref="aiRun" :active="savedMode === 'ai'" />
-      <AISettingsForm :active="savedMode === 'ai'" @dirty="(d) => (childDirty = d)" @saved="aiRun?.load()" />
+    <div v-if="tab === 'advice'" class="stack">
+      <nav class="tabs m-0" aria-label="Advice sections" data-testid="advice-tabs">
+        <a
+          v-for="[t, name] in adviceTabs"
+          :key="t"
+          href="#"
+          :class="{ 'router-link-exact-active': adviceTab === t }"
+          :aria-current="adviceTab === t ? 'page' : undefined"
+          :data-testid="`advice-tab-${t}`"
+          @click.prevent="go('advice', t)"
+          >{{ name }}</a
+        >
+      </nav>
+      <AdviceSettingsForm v-if="adviceTab === 'rules'" :mode="savedMode" @dirty="(d) => (childDirty = d)" />
+      <template v-else>
+        <p v-if="savedMode !== 'ai'" class="banner tone-info m-0" role="status" data-testid="ai-off">
+          AI mode is off, so these settings don't apply. Choose AI mode under
+          <a href="#" @click.prevent="go('planning')">Planning</a> to use them. You can still preview the
+          prompt.
+        </p>
+        <AIRunCard ref="aiRun" :active="savedMode === 'ai'" />
+        <AISettingsForm
+          :active="savedMode === 'ai'"
+          @dirty="(d) => (childDirty = d)"
+          @saved="aiRun?.load()"
+        />
+      </template>
     </div>
 
     <NotificationSettingsForm v-if="tab === 'notifications'" @dirty="(d) => (childDirty = d)" />

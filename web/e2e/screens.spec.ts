@@ -54,13 +54,19 @@ const screens: Screen[] = [
   { name: 'settings-places', open: settingsTab('Places') },
   { name: 'settings-advice', open: settingsTab('Advice') },
   // Greyed out: AI mode is off in the demo.
-  { name: 'settings-ai-off', open: settingsTab('AI') },
+  {
+    name: 'settings-ai-off',
+    open: async (page) => {
+      await settingsTab('Advice')(page)
+      await page.getByTestId('advice-tab-ai').click()
+    },
+  },
   {
     // AI mode with a plan from the demo's stand-in model.
     name: 'settings-ai',
     open: async (page) => {
       await aiMode(page)
-      await settingsTab('AI')(page)
+      await settingsTab('Advice')(page)
       await expect(page.getByTestId('ai-summary')).toBeVisible()
     },
   },

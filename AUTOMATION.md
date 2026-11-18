@@ -355,6 +355,33 @@ flowchart TD
   default, so it acts on the outlook or the history only when set to 2).
 - Less than 1% of SoC is not worth advising on.
 
+## When new prices arrive
+
+EVCC publishes tomorrow's prices around 14:00. The automatic check (and in
+AI mode a new AI plan) picks them up within a minute, so the target for the
+next departure follows them: charge ahead may add or drop later trips, and
+EVCC re-picks its cheapest slots by itself. Once per publication, the
+planner also:
+
+- **Plans made automatically from advice follow the new advice.** An extra
+  plan created by auto-apply is replaced when the advice's target or ready-by
+  time changed, and ended (the previous plan comes back) when the advice no
+  longer charges extra. An automatic postponement ends when today's advice
+  is no longer to defer. Auto-apply then runs at once instead of within 15
+  minutes.
+- **Plans you chose are raised, never lowered** (Automatic and AI mode). A
+  plan set in EVCC or sent by hand, which pauses automatic plans, is raised
+  to the planner's target when that is higher now: the higher SoC by the
+  earlier time; it stays the chosen plan. An extra plan you created is
+  raised to the new advice's higher charge extra target, keeping its ready-by
+  time. Outside a publication the usual pause rules apply.
+- **Says so while the car is unplugged** (Automatic and AI mode): when the
+  target for the next departure changed, or the prices bring charge extra, a
+  **New prices: plug in** notification goes out (see
+  [Problems](#charging-problems-questions-and-ready-messages)).
+
+The first check after a start only learns where the prices end.
+
 ## AI mode
 
 AI mode works like Automatic: the same check keeps EVCC's plan in line with
@@ -368,7 +395,7 @@ solar, defer, or nothing), with how much and when.
 flowchart TD
     T1[Tomorrow's prices published,<br/>or no AI plan applies] --> L
     T2[Car plugged in] --> W[Write the next departure's plan now,<br/>from the current AI plan or the rules] --> L
-    T3[Run now on the Overview<br/>or Settings → AI] --> R
+    T3[Run now on the Overview<br/>or Settings → Advice → AI mode] --> R
     L{Runs today below<br/>the limit? Last failure<br/>over an hour ago?} -- no --> S[Keep the current plan]
     L -- yes --> R[Fill the prompt's placeholders<br/>with the planner's data]
     R --> M[Ask the model through OpenRouter:<br/>strict JSON answer]
@@ -397,8 +424,8 @@ flowchart TD
   pauses it as in Automatic; EVCC's limits, mode, and repeating plans are
   never touched.
 - **Acting on the AI's advice:** the AI's daily advice always shows (the
-  Advice tab doesn't apply in AI mode). With **Automatically create plans
-  from the AI's advice** (Settings → AI) off, it offers **Create extra plan**
+  automatic rules' part of Settings → Advice doesn't apply in AI mode). With **Automatically create plans
+  from the AI's advice** (Settings → Advice → AI mode) off, it offers **Create extra plan**
   and **Review postponement**; on, they are made once a day on today's AI
   advice at its minimum confidence (postponing only with **Also postpone**
   and when the AI asks for it). It never acts on the automatic rules' advice
@@ -418,13 +445,15 @@ flowchart TD
   (tomorrow's, around 14:00), when no AI plan applies (such as right after
   choosing AI mode), and after a plug-in, each switchable; at most **Runs
   per day** (3) in a local day. Every run counts, also those by hand, which
-  are always allowed. A failed automatic run is tried again after an hour; a
-  plug-in after the limit is noted in the activity log.
+  are always allowed. The day's last run waits for tomorrow's prices until an
+  AI plan has seen them, so plug-ins can't use it up. A failed automatic run
+  is tried again after an hour; a plug-in without a run is noted in the
+  activity log.
 - **Fallback:** until the first AI plan, when the last one is more than 30
   hours old, after it was made for an earlier departure (for that target),
   or without an OpenRouter key, the automatic rules apply, and the Overview
   says so.
-- **The prompt** is edited under Settings → AI and is sent as the user
+- **The prompt** is edited under Settings → Advice → AI mode and is sent as the user
   message after a fixed system message that sets the answer's format (a
   strict JSON Schema) and states the checks. Placeholders in double braces
   are filled with the data when it is sent; unknown placeholders can't be
@@ -452,7 +481,7 @@ flowchart TD
   but test messages and questions about calendar events).
 - **Activity log:** every run (`ai.run`, with its trigger, model, and tokens;
   failed runs as failures) and a plug-in without a run (`ai.skip`). Each run
-  keeps the prompt as sent and the model's answer (Settings → AI, **What was
+  keeps the prompt as sent and the model's answer (Settings → Advice → AI mode, **What was
   sent and what came back**); runs are deleted with the activity log, keeping
   the last good one.
 - **Model:** any OpenRouter model with strict structured outputs; empty uses
@@ -567,6 +596,7 @@ gantt
 | **Ready** (off by default) | Plugged in and the target reached before the departure. | "Ready for Utrecht: 64%." |
 | **Plug in for the sun** | Today's advice is to [charge extra from solar](#charge-extra-daily-advice), the car is home (no trip in progress; at home by the car location sensor, if set) and unplugged, from 30 minutes before the solar surplus starts until 30 minutes before it ends, outside quiet hours. Any confidence: plugging in changes nothing in EVCC by itself. Buttons: **Remind in 30 min** (never after the sun's end), **View plan**. | "Plug in for the sun: Sunshine until about 14:30 charges the car at about €0.16/kWh (€0.05 without the tax on own solar), no more than tomorrow's lowest price. Plug in to use it." |
 | **Plug in for charge extra** | Today's or tomorrow's advice (the first whose cheap hours are still ahead) is to [charge extra](#charge-extra-daily-advice) with a plan (offered, or created by hand or automatically), the car is home and unplugged, from 30 minutes before its cheap hours start until 30 minutes before they end, outside quiet hours. When that start falls in quiet hours, such as a cheap night, it comes from 15 minutes before quiet hours instead. Once a day; cleared when the car is plugged in or the cheap hours are over. Without the plan yet it also asks to create it, or says that automatic plans create it when the day starts. Buttons: **Remind in 30 min**, **View plan**. | "Plug in for charge extra: Charge extra to 71%: 18:30–00:00 averages €0.28, 30% or more below this week's lowest prices (€0.40). Plug in so the plan can charge." |
+| **New prices: plug in** | Automatic and AI mode: tomorrow's prices (around 14:00) change the target for the next departure, or bring charge extra (today's or tomorrow's), while the car is unplugged. Once per publication, outside quiet hours; cleared when the car is plugged in. Button: **View plan**. | "New prices: plug in: The plan for School drop-off is now 64% by Tue 07:48 (was 42%), also for School pickup. Plug in so it can charge." |
 | **Extra plan created** | Advice auto-apply created an extra plan, outside quiet hours (in them, only the activity log has it). Information only. Button: **View plan**. | "Extra plan created: Charge extra to 71%: 18:30–00:00 … The plan asks EVCC for 71% by Mon 00:00 and ends then." |
 
 Each is sent once per trip (unplugged early: once per unplug; not in Smart
@@ -577,7 +607,9 @@ questions, ready messages, and solar reminders on or off separately.
 
 ## Settings
 
-Planning, Advice, and AI sit side by side under Settings. The trip plan mode
+Settings has Planning, and Advice with two parts: **Automatic rules** (the
+rules' advice, for Manual, On plug-in, and Automatic) and **AI mode**. The
+saved mode's part opens first. The trip plan mode
 decides which of their parts apply; the others are shown greyed out with the
 reason, and keep their values for when you switch back.
 
@@ -586,9 +618,9 @@ reason, and keep their values for when you switch back.
 | Charge ahead, minimum saving | greyed | ✓ | ✓ | ✓ while no AI plan applies |
 | Highest target when charging ahead | greyed | ✓ | ✓ | ✓ (also limits the AI) |
 | Household use, tax not paid on own solar (Home & vehicle) | ✓ | ✓ | ✓ | ✓ |
-| Advice tab: daily advice, charge extra steps | ✓ | ✓ | ✓ | greyed (the AI's advice always shows; the steps still shape the rules' advice until the first AI plan) |
-| Advice tab: act on the advice automatically | greyed | ✓ | ✓ | greyed (the AI tab has its own) |
-| AI tab, with acting on the AI's advice | greyed | greyed | greyed | ✓ |
+| Advice → Automatic rules: daily advice, charge extra steps | ✓ | ✓ | ✓ | greyed (the AI's advice always shows; the steps still shape the rules' advice until the first AI plan) |
+| Advice → Automatic rules: act on the advice automatically | greyed | ✓ | ✓ | greyed (AI mode has its own) |
+| Advice → AI mode, with acting on the AI's advice | greyed | greyed | greyed | ✓ |
 
 Settings → **Home & vehicle**, under Solar at home (every mode uses them:
 the advice, the chart's charging estimate, AI mode's data):
@@ -610,7 +642,7 @@ Settings → **Planning**:
 The Planning tab also shows whether automatic plans are active or paused,
 with **Resume**, and in AI mode whether an AI plan is in use.
 
-Settings → **Advice** (greyed out in AI mode):
+Settings → **Advice → Automatic rules** (greyed out in AI mode):
 
 | Setting | Default | Notes |
 | --- | --- | --- |
@@ -620,17 +652,17 @@ Settings → **Advice** (greyed out in AI mode):
 | Minimum confidence | 3 | 2 also acts against the weekly outlook or a week of price history. |
 | Also postpone | Off | Pauses cheap-grid charging when today's advice is to defer. |
 
-Settings → **AI** (see [AI mode](#ai-mode); greyed out in the other modes,
+Settings → **Advice → AI mode** (see [AI mode](#ai-mode); greyed out in the other modes,
 where **Preview with today's data** still works):
 
 | Setting | Default | Notes |
 | --- | --- | --- |
 | After new prices | On | Also when no AI plan applies. |
 | When the car is plugged in | On | The trip plan is written first. |
-| Automatic runs per day | 3 | 0–10; runs by hand are always allowed. |
+| Automatic runs per day | 3 | 0–10; runs by hand are always allowed. The last waits for tomorrow's prices until an AI plan has seen them. |
 | Model | empty | Empty: the OpenRouter model under Connections. |
 | Prompt | the default | Placeholders are filled with the data. |
-| Automatically create plans from the AI's advice | Off | Like the Advice tab's switch, but on today's AI advice (an extra plan with the AI's target, ready when its window ends). |
+| Automatically create plans from the AI's advice | Off | Like the Automatic rules' switch, but on today's AI advice (an extra plan with the AI's target, ready when its window ends). |
 | Minimum confidence | 3 | 2 also acts on the AI's medium-confidence advice. |
 | Also postpone | Off | Pauses cheap-grid charging when the AI asks for it (today only). |
 
@@ -655,6 +687,7 @@ Settings → **Notifications**:
 | Solar reminders | On |
 | Charge extra reminders | On (plug in for charge extra, and extra plans created automatically) |
 | Back home reminders | On (needs the car location sensor) |
+| Plan changes after new prices | On (Automatic and AI mode) |
 
 ## Activity log entries
 
@@ -668,7 +701,9 @@ Settings → **Notifications**:
 | `notification.send` | Automation | "Sent 'Plug in by 10:20' to 1 phone" (failures are logged too) |
 | `notification.action` | Notification | "Remind in 30 min pressed: reminder snoozed until 10:20" |
 | `ai.run` | Automation or UI | "AI plan (new prices): target 64% by Tue 07:48; Tue charge extra to 75%" |
-| `ai.skip` | Automation | "AI plan not made on plug-in: 3 runs today already (Settings → AI); the last plan applies" |
+| `ai.skip` | Automation | "AI plan not made on plug-in: 3 runs today already (Settings → Advice → AI mode); the last plan applies", or "… the last of today's 3 runs is kept for tomorrow's prices …" |
+| `adjustment.end` / `adjustment.update` | Automation | New prices: "Extra plan ended: New prices: the advice no longer charges extra. …" / "New prices: raised the extra plan to 80% by Mon 9 Nov, 23:00; …" |
+| `plan.send` (new prices) | Automation | "New prices: raised the chosen plan (44% by 2026-11-10 07:48): sent plan 46% by Tue 10 Nov, 07:48 to EVCC" |
 
 ## Tests
 

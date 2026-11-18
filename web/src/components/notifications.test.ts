@@ -34,6 +34,7 @@ const defaults: NotificationSettings = {
   solar: true,
   extra: true,
   arrival: true,
+  prices: true,
 }
 
 const urgent: PhoneNotification = {

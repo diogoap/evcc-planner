@@ -452,7 +452,7 @@ type PlanControl struct {
 // Paused reports whether a chosen plan has paused automatic changes.
 func (c PlanControl) Paused() bool { return c.PausedAt != nil }
 
-// AISettings control AI mode (Settings → AI): when the AI plan runs, the
+// AISettings control AI mode (Settings → Advice → AI mode): when the AI plan runs, the
 // model, and the prompt. An empty Model uses the OpenRouter model of the
 // connection settings; an empty Prompt the default prompt.
 type AISettings struct {
@@ -565,6 +565,9 @@ type NotificationSettings struct {
 	// Arrival asks to plug in when the car gets back home from the day's
 	// last trip (by the location sensor) and still needs charging.
 	Arrival bool `json:"arrival"`
+	// Prices says, in automatic and AI mode, when new prices change the
+	// plan or bring charge extra while the car is unplugged.
+	Prices bool `json:"prices"`
 }
 
 // DefaultNotificationSettings are off, with the reminder rules ready.
@@ -572,6 +575,7 @@ func DefaultNotificationSettings() NotificationSettings {
 	return NotificationSettings{
 		Phones: []string{}, Early: true, EarlyLeadMin: 30, UrgentLeadMin: 30, QuietFrom: "23:00", QuietTo: "07:00",
 		UrgentInQuiet: true, SnoozeMin: 30, Problems: true, Questions: true, Solar: true, Extra: true, Arrival: true,
+		Prices: true,
 	}
 }
 
@@ -651,6 +655,7 @@ const (
 	NotifyExtra     = "extra"      // plug in for charge extra's plan
 	NotifyExtraPlan = "extra_plan" // an extra plan was created automatically
 	NotifyArrived   = "arrived"    // back home from the day's last trip: plug in
+	NotifyPrices    = "prices"     // new prices changed the plan while unplugged
 	NotifyInfo      = "info"       // a follow-up, e.g. after Skip trip
 
 	NotifySent    = "sent"

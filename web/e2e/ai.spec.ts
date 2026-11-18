@@ -8,6 +8,12 @@ test.beforeEach(async ({ request }) => {
   expect(res.status()).toBe(204)
 })
 
+// Advice → AI mode.
+async function openAI(page: Page) {
+  await openSettings(page, 'Advice')
+  await page.getByTestId('advice-tab-ai').click()
+}
+
 async function openSettings(page: Page, tab: string) {
   await page.goto('/settings')
   await page.getByRole('link', { name: tab, exact: true }).click()
@@ -20,8 +26,10 @@ test('choose AI mode, make an AI plan, and see it on the Overview', async ({ pag
   await expect(page.getByText('Settings saved')).toBeVisible()
   await expect(page.getByTestId('planning-status')).toContainText('AI mode')
   await expect(page.getByTestId('planning-ai')).toContainText('No AI plan yet')
-  // The Advice tab doesn't apply in AI mode; the AI tab has its own switch.
+  // The automatic rules' advice doesn't apply in AI mode; AI mode has its own switch.
   await page.getByRole('link', { name: 'Advice', exact: true }).click()
+  await expect(page.getByTestId('advice-tab-ai')).toHaveAttribute('aria-current', 'page')
+  await page.getByTestId('advice-tab-rules').click()
   await expect(page.getByTestId('advice-ai-off')).toContainText('AI mode is on')
   await expect(page.getByTestId('advice-enabled')).toBeDisabled()
   await expect(page.getByTestId('advice-auto')).toBeDisabled()
@@ -57,7 +65,7 @@ test('choose AI mode, make an AI plan, and see it on the Overview', async ({ pag
 })
 
 test('outside AI mode the AI tab is greyed out, but the prompt can be previewed', async ({ page }) => {
-  await openSettings(page, 'AI')
+  await openAI(page)
   await expect(page.getByTestId('ai-off')).toContainText('AI mode is off')
   await expect(page.getByTestId('ai-run-now')).toBeDisabled()
   await expect(page.getByTestId('ai-max-runs')).toBeDisabled()
@@ -78,7 +86,7 @@ test('outside AI mode the AI tab is greyed out, but the prompt can be previewed'
 test('edit the prompt with placeholders, preview it, and go back to the default', async ({ page }) => {
   const settings = await (await page.request.get('/api/settings')).json()
   await page.request.put('/api/settings', { data: { ...settings, tripPlans: 'ai' } })
-  await openSettings(page, 'AI')
+  await openAI(page)
   const prompt = page.getByTestId('ai-prompt')
   await expect(prompt).toHaveValue(/^You plan when and how much to charge/)
   await prompt.fill('Plan the week.\n{{prices}}')
@@ -95,7 +103,7 @@ test('edit the prompt with placeholders, preview it, and go back to the default'
   await expect(page.getByText('AI settings saved')).toBeVisible()
 
   await page.reload()
-  await page.getByRole('link', { name: 'AI', exact: true }).click()
+  await page.getByRole('link', { name: 'Advice', exact: true }).click()
   await expect(prompt).toHaveValue('Plan the week.\n{{trips}}')
   page.once('dialog', (d) => d.accept())
   await page.getByTestId('ai-reset').click()

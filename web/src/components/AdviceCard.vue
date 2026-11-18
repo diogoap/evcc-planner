@@ -109,7 +109,7 @@ const reference = computed(() => referenceText(props.advice))
       <span
         v-if="advice.ai"
         class="badge tone-info"
-        title="Decided by the AI model (AI mode, Settings → AI)"
+        title="Decided by the AI model (AI mode, Settings → Advice → AI mode)"
         data-testid="advice-ai"
         >AI</span
       >
@@ -259,7 +259,8 @@ const reference = computed(() => referenceText(props.advice))
       </ul>
       <p v-if="advice.ai" class="small muted m-0 mt-2">
         Decided by the AI model (AI mode). Charge extra comes on top of the trips' targets, which always stay
-        protected. The prompt and the latest run are under Settings → AI; prices shown are the planner's own.
+        protected. The prompt and the latest run are under Settings → Advice → AI mode; prices shown are the
+        planner's own.
       </p>
       <p v-else class="small muted m-0 mt-2">
         Charge extra comes on top of the trips' targets, which always stay protected. Its steps (how much

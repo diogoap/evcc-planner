@@ -43,7 +43,7 @@ on the planner.
 and when to wait for cheaper prices, from the prices, trips, outlook,
 weather, and the past 30 days. The planner still charges every trip's own
 minimum and checks every answer. The prompt, with placeholders for the data,
-is edited under Settings → AI.
+is edited under Settings → Advice → AI mode.
 
 **Price history:** each day's lowest, average, and highest published price,
 planned km and their energy, and KNMI's wind and sun, saved as the day starts
@@ -169,7 +169,7 @@ a key it falls back to labelled stub distances.
   so cost is a fraction of a cent a week.
   Without a key a labelled pattern-based stub reads only the article's summary
   lines (report period, weekly average, dearest and cheapest day).
-- **AI mode** uses the same key. Its model is set under Settings → AI (empty:
+- **AI mode** uses the same key. Its model is set under Settings → Advice → AI mode (empty:
   the one under Connections) and also needs strict structured outputs; a
   run sends the prompt with a week of data (about 3,000 tokens) and gets
   about 1,000 back, at most three times a day by default. Without a key AI

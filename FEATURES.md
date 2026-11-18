@@ -28,9 +28,10 @@ notifications is in [AUTOMATION.md](AUTOMATION.md).
 
 - Send a plan (target SoC and deadline) to EVCC yourself. A confirmation first shows EVCC's preview, with the planned charging's average price and total cost (also for extra plans).
 - Four modes: Manual (only what you send; the advice only recommends); On plug-in (sends once when you plug in, with charge ahead); Automatic (the default: keeps EVCC's single plan in line with your trips); AI mode (like Automatic, but an AI model decides, see below).
-- Settings → Planning, Advice, and AI sit together; the parts that don't apply to the chosen mode are greyed out and say why (in AI mode the whole Advice tab).
+- Settings → Advice has two parts, **Automatic rules** and **AI mode**; the parts that don't apply to the chosen mode are greyed out and say why (in AI mode all of Automatic rules).
 - A plan you set yourself pauses Automatic until that plan is done, or until you press Resume.
 - Charge ahead (every mode but Manual): the target also covers later trips when charging now is at least €0.05/kWh cheaper (solar counts first), up to 90%. On plug-in keeps a plan in EVCC with at least that target and replaces a lower one.
+- When tomorrow's prices arrive (around 14:00), plans made automatically from advice follow the new advice (replaced, or ended so the previous plan comes back), and in Automatic and AI mode a plan you chose is raised when the planner now wants more, never lowered.
 - The planner never changes EVCC's limits, repeating plans, or charging mode.
 
 ## Prices and daily advice
@@ -50,10 +51,10 @@ notifications is in [AUTOMATION.md](AUTOMATION.md).
 
 - A fourth way to plan (Settings → Planning). Like Automatic, but an AI model decides charge ahead, charge extra, charging from solar, and when to wait for cheaper prices.
 - It gets the published prices (every 15-minute slot), the trips of the next 7 days (times and distances only, no titles or places), the charge each day needs, Tibber's weekly outlook, KNMI's weather, EVCC's solar forecast, the past 30 days (prices, driving, energy, wind, sun), the car and charger, the SoC, and the goals. It may add a reserve when the coming days drive more than usual.
-- It answers with the target for the next trip, each day's advice (how much and when), what mattered, and a short explanation. For how much to charge extra, the prompt gives a rough guide with example values (your Advice steps are not sent; in AI mode they only apply until there is an AI plan). The solar forecast shows, per hour, the surplus the car can use and its price (the grid price minus the tax not paid on own solar). The advice always shows it, with an **AI** badge, the same actions (Create extra plan, Review postponement), and the planner's own prices. Its own switch under Settings → AI creates those plans automatically (off by default); the Advice tab doesn't apply in AI mode.
+- It answers with the target for the next trip, each day's advice (how much and when), what mattered, and a short explanation. For how much to charge extra, the prompt gives a rough guide with example values (your Advice steps are not sent; in AI mode they only apply until there is an AI plan). The solar forecast shows, per hour, the surplus the car can use and its price (the grid price minus the tax not paid on own solar). The advice always shows it, with an **AI** badge, the same actions (Create extra plan, Review postponement), and the planner's own prices. Its own switch under Settings → Advice → AI mode creates those plans automatically (off by default); the Automatic rules part doesn’t apply in AI mode.
 - The rules stay: every trip's own minimum is charged by the planner itself (also right when you plug in), charge ahead stays at or below its cap, a plan you choose pauses it, and windows outside the published prices are ignored. Every answer is checked; corrections are listed with the run.
-- It runs when tomorrow's prices are published and when you plug in, at most 3 times a day (configurable), and with **Run now** on the Overview or under Settings → AI. A failed run is tried again after an hour. Until the first AI plan, or when the last one is more than a day old, the automatic rules apply.
-- Settings → AI edits the prompt, with placeholders such as `{{energy_prices}}` and `{{trips}}` filled with the data; a default prompt is included. **Preview with today's data** shows what would be sent. Each run keeps what was sent and what came back.
+- It runs when tomorrow's prices are published and when you plug in, at most 3 times a day (configurable; the last run waits for tomorrow's prices), and with **Run now** on the Overview or under Settings → Advice → AI mode. A failed run is tried again after an hour. Until the first AI plan, or when the last one is more than a day old, the automatic rules apply.
+- Settings → Advice → AI mode edits the prompt, with placeholders such as `{{energy_prices}}` and `{{trips}}` filled with the data; a default prompt is included. **Preview with today's data** shows what would be sent. Each run keeps what was sent and what came back.
 - Uses OpenRouter (`OPENROUTER_API_KEY`); the model can differ from the forecast's. Demo mode has a stand-in that repeats the automatic rules.
 
 ## Price history
@@ -67,6 +68,7 @@ notifications is in [AUTOMATION.md](AUTOMATION.md).
 
 - Sent through the Home Assistant Companion app; the buttons act on the planner.
 - Plug-in reminders: early (cheapest time), urgent (latest time), and too late. Buttons: Remind in 30 min, Skip trip, View plan.
+- "New prices: plug in" (Automatic and AI mode) when tomorrow's prices change the plan or bring charge extra while the car is unplugged.
 - "Back home: plug in" when the car gets home from the day's last trip (by the car location sensor), unplugged, and still needs charging for the next trip, charge ahead, or charge extra. It comes in quiet hours too, like urgent reminders.
 - Problems: charging stopped, unplugged early, EVCC not in Smart mode, target missed. Questions about unclear calendar events. An optional "ready" message. "Plug in for the sun".
 - Charge extra: "Plug in for charge extra" before its cheap hours when the car is home but unplugged (for a cheap night, just before quiet hours), and a message when an extra plan is created automatically.

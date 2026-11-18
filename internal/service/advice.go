@@ -29,7 +29,7 @@ const (
 type AdviceView struct {
 	Enabled bool `json:"enabled"`
 	// AutoApply: plans are created from the advice automatically (Settings →
-	// Advice, or Settings → AI in AI mode; never in Manual mode).
+	// Advice, or Settings → Advice → AI mode in AI mode; never in Manual mode).
 	AutoApply   bool               `json:"autoApply"`
 	Days        []DayAdviceView    `json:"days"`
 	Sources     []SourceView       `json:"sources"`

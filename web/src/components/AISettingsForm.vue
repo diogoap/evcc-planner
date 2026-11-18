@@ -149,8 +149,8 @@ async function save() {
               <span>runs</span>
             </span>
             <span id="hint-ai-runs" class="field-hint"
-              >Every run counts, also those by hand, which are always allowed. A failed run is tried again
-              after an hour.</span
+              >Every run counts, also those by hand, which are always allowed. The last one waits for
+              tomorrow's prices until a plan has seen them. A failed run is tried again after an hour.</span
             >
           </label>
           <label class="field">

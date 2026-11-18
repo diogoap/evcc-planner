@@ -35,7 +35,7 @@ func (*OpenRouter) Name() string { return "openrouter" }
 func (o *OpenRouter) Decide(ctx context.Context, r Request) (string, openrouter.Usage, error) {
 	return o.Client.Complete(ctx, openrouter.Request{
 		Model: r.Model, System: r.System, User: r.User, SchemaName: "charging_plan", Schema: Schema(),
-		MaxTokens: maxOutputTokens, Where: "Settings → AI",
+		MaxTokens: maxOutputTokens, Where: "Settings → Advice → AI mode",
 	})
 }
 

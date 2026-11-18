@@ -73,8 +73,8 @@ async function save() {
     <div v-if="error" class="banner tone-bad" role="alert">{{ error }}</div>
     <p v-if="props.mode === 'ai'" class="banner tone-info small" role="status" data-testid="advice-ai-off">
       AI mode is on, so these settings don't apply: the AI decides the daily advice and how much to charge
-      extra, and acting on it automatically is set under AI. They apply again in the other modes (and the
-      steps to the automatic rules' advice shown until the first AI plan).
+      extra, and acting on it automatically is set under AI mode (next to Automatic rules). They apply again
+      in the other modes (and the steps to the automatic rules' advice shown until the first AI plan).
     </p>
     <form v-if="settings" class="stack gap-4" @submit.prevent="save">
       <fieldset class="stack fieldset-plain gap-4" :disabled="props.mode === 'ai'" data-testid="advice-form">

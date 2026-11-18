@@ -29,6 +29,17 @@ type notifyState struct {
 	below     map[string]bool
 	// The car location sensor's last known state: away, or home.
 	away, awayKnown bool
+	// Where the published prices ended, and what the plan sent then.
+	pricesUntil time.Time
+	plan        planSig
+}
+
+// planSig is what the plan sends: the target for the next departure while
+// it needs charging, and the charge extra plan of today or tomorrow.
+type planSig struct {
+	soc   int
+	ready time.Time
+	extra string
 }
 
 // Timings of the notification rules (AUTOMATION.md).
@@ -92,6 +103,7 @@ func (s *Service) CheckNotifications(ctx context.Context) error {
 	r.problems(cur)
 	r.ready(cur)
 	r.cleanUp()
+	r.newPrices(prev, cur)
 	r.arrived(prev, cur)
 	r.plugIn()
 	r.solar()
@@ -351,9 +363,70 @@ func (r *reminders) cleanUp() {
 			return r.lp.Connected || a == nil || n.Subject != "extra:"+a.Date || !r.now.Before(a.Blocks[len(a.Blocks)-1].Until)
 		case n.Kind == model.NotifyArrived:
 			return r.lp.Connected || r.carAway() || (n.Latest != nil && !r.now.Before(*n.Latest))
+		case n.Kind == model.NotifyPrices:
+			return r.lp.Connected
 		}
 		return false
 	}, "No longer needed")
+}
+
+// planSig is what the plan sends now.
+func (r *reminders) planSig() planSig {
+	var p planSig
+	if t := r.view.Control.Target; t != nil && !t.Covered {
+		p.soc, p.ready = t.SoC, t.ReadyBy
+	}
+	if a := r.extraAdvice(); a != nil {
+		p.extra = fmt.Sprintf("%s:%d:%d", a.Date, a.TargetSoC, a.Blocks[len(a.Blocks)-1].Until.Unix())
+	}
+	return p
+}
+
+// newPrices tells the phone, in automatic and AI mode, when new prices
+// change what the plan sends, or bring charge extra, while the car is
+// unplugged: once per publication, outside quiet hours. Plugging in clears
+// it.
+func (r *reminders) newPrices(prev, cur *notifyState) {
+	if snap := r.s.snapshot(); snap.state != nil {
+		cur.pricesUntil = pricesEnd(snap.state.PriceSlots)
+	}
+	cur.plan = r.planSig()
+	if prev == nil || prev.pricesUntil.IsZero() || cur.pricesUntil.Sub(prev.pricesUntil) < newPricesGap ||
+		!r.settings.Prices || !r.view.Settings.KeepsPlan() || r.lp.Connected || !r.allowed(false) {
+		return
+	}
+	var parts []string
+	was, now := prev.plan, cur.plan
+	if t := r.view.Control.Target; now.soc > 0 && (now.soc != was.soc || !now.ready.Equal(was.ready)) {
+		text := fmt.Sprintf("The plan for %s is now %d%% by %s", t.Title, t.SoC, r.s.clockText(t.ReadyBy))
+		if was.soc > 0 && was.soc != now.soc {
+			text += fmt.Sprintf(" (was %d%%)", was.soc)
+		}
+		if len(t.Ahead) > 0 {
+			text += ", also for " + t.Ahead[0].Title
+		}
+		parts = append(parts, text+".")
+	}
+	if a := r.extraAdvice(); a != nil && now.extra != was.extra {
+		text := a.Summary
+		switch {
+		case a.Adjustment != nil && a.Adjustment.Source == "auto":
+			text += " The extra plan was created automatically."
+		case a.Adjustment != nil:
+		case a.Date != localtime.Date(r.now, r.s.loc()) && r.autoExtra(a):
+			text += " The plan is created automatically when the day starts."
+		default:
+			text += " Create the plan in the planner."
+		}
+		parts = append(parts, text)
+	}
+	if len(parts) == 0 {
+		return
+	}
+	r.send(model.Notification{
+		Key: fmt.Sprintf("prices:%d", cur.pricesUntil.Unix()), Kind: model.NotifyPrices, Title: "New prices: plug in",
+		Message: strings.Join(parts, " ") + " Plug in so it can charge.", Verbs: []string{model.VerbView},
+	}, false)
 }
 
 // solarAdvice is today's advice when it is to charge extra from the sun and

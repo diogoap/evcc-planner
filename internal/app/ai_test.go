@@ -211,7 +211,7 @@ func TestAIModeRunsAfterNewPricesAndPlugIn(t *testing.T) {
 	plug(false, 38)
 	plug(true, 38)
 	if e := log.one("ai.skip", model.SourceAutomation); e.Summary !=
-		"AI plan not made on plug-in: 3 runs today already (Settings → AI); the last plan applies" {
+		"AI plan not made on plug-in: 3 runs today already (Settings → Advice → AI mode); the last plan applies" {
 		t.Errorf("skip = %+v", e)
 	}
 	ta.json("POST", "/api/ai/run", map[string]any{}, http.StatusOK, &s)
@@ -432,4 +432,47 @@ func TestAIModeCreatesPlansByItsOwnSwitch(t *testing.T) {
 	if plan := ta.evccPlan(); plan == nil || plan.Soc != 75 {
 		t.Errorf("EVCC plan = %+v", plan)
 	}
+}
+
+func TestAIModeKeepsARunForTomorrowsPrices(t *testing.T) {
+	ta := newTestApp(t, "")
+	ta.tripPlans(model.TripPlansAI)
+	ta.json("PUT", "/api/settings/ai", map[string]any{"maxRunsPerDay": 2}, http.StatusOK, nil)
+	p := newPublishing(ta, 0.30, 0.30)
+	ta.plug(false, 38)
+	log := &eventLog{ta: ta}
+	// The first plan, before Tuesday's prices.
+	ta.checkAI()
+	log.fresh()
+	// A plug-in may not take the day's last run while tomorrow's prices
+	// haven't been seen...
+	ta.plug(true, 38)
+	if e := lastAction(log, "ai.skip"); e == nil || e.Summary !=
+		"AI plan not made on plug-in: the last of today's 2 runs is kept for tomorrow's prices; the current plan applies" {
+		t.Errorf("skip = %+v", e)
+	}
+	// ...which then get it.
+	p.published = true
+	ta.poll()
+	ta.checkAI()
+	if s := ta.aiStatus(); s.RunsToday != 2 || s.Latest.Trigger != model.AITriggerPrices {
+		t.Fatalf("after the prices = %+v", s)
+	}
+	log.fresh()
+	ta.plug(false, 38)
+	ta.plug(true, 38)
+	if e := lastAction(log, "ai.skip"); e == nil || !strings.Contains(e.Summary, "2 runs today already") {
+		t.Errorf("skip at the limit = %+v", e)
+	}
+}
+
+// lastAction is the newest event with the action since the last look.
+func lastAction(l *eventLog, action string) *activityEvent {
+	var found *activityEvent
+	for _, e := range l.fresh() {
+		if e.Action == action {
+			found = &e
+		}
+	}
+	return found
 }
