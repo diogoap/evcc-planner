@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -72,13 +73,18 @@ func TestAISettingsAndPreview(t *testing.T) {
 
 	var v service.AISettingsView
 	ta.json("GET", "/api/settings/ai", nil, http.StatusOK, &v)
-	if v.Settings.MaxRunsPerDay != 3 || !v.Settings.OnPrices || !v.Settings.OnPlugIn || v.Settings.Model != "" ||
+	if v.Settings.MaxRunsPerDay != 3 || !v.Settings.OnPrices || !v.Settings.OnPlugIn || v.Settings.Model != model.DefaultAIModel ||
 		v.Settings.Prompt != aiplan.DefaultPrompt || v.DefaultPrompt != aiplan.DefaultPrompt || len(v.Macros) != len(aiplan.Macros) ||
-		v.DefaultModel != "anthropic/claude-haiku-5.5" || !strings.HasPrefix(v.Decider, "Stand-in") {
+		v.DefaultModel != "anthropic/claude-haiku-latest" || !strings.HasPrefix(v.Decider, "Stand-in") {
 		t.Fatalf("defaults = %+v", v)
 	}
 	if v.Macros[0].Name != "now" || v.Macros[0].Description == "" {
 		t.Errorf("macros = %+v", v.Macros)
+	}
+	// The goals shown are the planner's rules with this install's values.
+	if !strings.Contains(v.DefaultGoals, "EVCC's charge limit is 80%") || !strings.Contains(v.DefaultGoals, "at or below 90%") ||
+		v.Settings.Goals != v.DefaultGoals {
+		t.Errorf("goals = %q, default %q", v.Settings.Goals, v.DefaultGoals)
 	}
 
 	for _, bad := range []map[string]any{
@@ -117,6 +123,32 @@ func TestAISettingsAndPreview(t *testing.T) {
 		t.Errorf("default prompt stored as %q", saved.Prompt)
 	}
 	changed(t, log.one("settings.update", model.SourceUI), "prompt", "custom (42 characters)", "default")
+
+	// The default model is stored as the default, so it follows later changes.
+	ta.json("PUT", "/api/settings/ai", map[string]any{"model": " anthropic/claude-haiku-latest "}, http.StatusOK, &v)
+	if saved, _ := ta.app.Store.AISettings(model.DefaultAISettings()); saved.Model != "" || v.Settings.Model != model.DefaultAIModel {
+		t.Errorf("default model stored as %q", saved.Model)
+	}
+	changed(t, log.one("settings.update", model.SourceUI), "model", "anthropic/claude-sonnet-5.5", "default (anthropic/claude-haiku-latest)")
+
+	// Own goals replace {{goals}}; the default text is stored as the default.
+	goals := "- Charge extra up to 100% when prices are negative.\n- Keep the battery above 30%."
+	ta.json("PUT", "/api/settings/ai", map[string]any{"goals": goals}, http.StatusOK, &v)
+	changed(t, log.one("settings.update", model.SourceUI), "goals", "default", fmt.Sprintf("custom (%d characters)", len([]rune(goals))))
+	if v.Settings.Goals != goals {
+		t.Errorf("saved goals = %q", v.Settings.Goals)
+	}
+	var gp service.AIPreview
+	ta.json("POST", "/api/ai/preview", map[string]any{"prompt": "{{goals}}", "goals": goals}, http.StatusOK, &gp)
+	if gp.Text != goals {
+		t.Errorf("goals preview = %q", gp.Text)
+	}
+	ta.json("PUT", "/api/settings/ai", map[string]any{"goals": v.DefaultGoals + "\n"}, http.StatusOK, &v)
+	if saved, _ := ta.app.Store.AISettings(model.DefaultAISettings()); saved.Goals != "" || v.Settings.Goals != v.DefaultGoals {
+		t.Errorf("default goals stored as %q", saved.Goals)
+	}
+	log.one("settings.update", model.SourceUI)
+	ta.json("PUT", "/api/settings/ai", map[string]any{"goals": strings.Repeat("x", model.MaxGoalsChars+1)}, http.StatusBadRequest, nil)
 
 	// The preview fills the placeholders with today's data; trips have no titles.
 	var p service.AIPreview
@@ -237,12 +269,12 @@ func TestAIModeKeepsTheFoundationalRules(t *testing.T) {
 	f := &fakeAI{content: aiDecision}
 	ta.useAI(f)
 	ta.checkAI()
-	if f.calls != 1 || f.last.Model != "anthropic/claude-haiku-5.5" || f.last.System != aiplan.SystemPrompt ||
+	if f.calls != 1 || f.last.Model != "anthropic/claude-haiku-latest" || f.last.System != aiplan.SystemPrompt ||
 		!strings.Contains(f.last.User, `T3 "School pickup": leaves 2026-11-11 14:33`) {
 		t.Fatalf("request = %+v", f.last)
 	}
 	s := ta.aiStatus()
-	if s.Latest.Model != "test/model" || s.Latest.PromptTokens != 2300 || s.Latest.Decider != "OpenRouter anthropic/claude-haiku-5.5" {
+	if s.Latest.Model != "test/model" || s.Latest.PromptTokens != 2300 || s.Latest.Decider != "OpenRouter anthropic/claude-haiku-latest" {
 		t.Errorf("run = %+v", s.Latest)
 	}
 	res := s.Latest.Result

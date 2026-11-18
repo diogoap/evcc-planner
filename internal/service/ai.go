@@ -50,37 +50,59 @@ func (s *Service) AISettings() (model.AISettings, error) {
 }
 
 // AISettingsView is what Settings → Advice → AI mode edits: the settings with the prompt
-// in effect, the default prompt, the placeholders, and the model in effect.
+// and goals in effect, their defaults, the placeholders, and the model in
+// effect.
 type AISettingsView struct {
 	Settings      model.AISettings `json:"settings"`
 	DefaultPrompt string           `json:"defaultPrompt"`
+	DefaultGoals  string           `json:"defaultGoals"`
 	Macros        []aiplan.Macro   `json:"macros"`
-	DefaultModel  string           `json:"defaultModel"` // the OpenRouter model under Connections
+	DefaultModel  string           `json:"defaultModel"` // model.DefaultAIModel
 	Decider       string           `json:"decider"`      // how decisions are made
 	Note          string           `json:"note,omitempty"`
 }
 
-// AISettingsView returns the settings for editing; an empty prompt shows
-// the default one.
+// AISettingsView returns the settings for editing; an empty prompt or goals
+// show the default ones.
 func (s *Service) AISettingsView() (AISettingsView, error) {
 	v, err := s.AISettings()
+	if err != nil {
+		return AISettingsView{}, err
+	}
+	goals, err := s.defaultGoals()
 	if v.Prompt == "" {
 		v.Prompt = aiplan.DefaultPrompt
 	}
+	if v.Goals == "" {
+		v.Goals = goals
+	}
+	if v.Model == "" {
+		v.Model = model.DefaultAIModel
+	}
 	decider, note := s.aiDecider(v)
 	return AISettingsView{
-		Settings: v, DefaultPrompt: aiplan.DefaultPrompt, Macros: aiplan.Macros,
-		DefaultModel: s.Conn().OpenRouterModel, Decider: decider, Note: note,
+		Settings: v, DefaultPrompt: aiplan.DefaultPrompt, DefaultGoals: goals, Macros: aiplan.Macros,
+		DefaultModel: model.DefaultAIModel, Decider: decider, Note: note,
 	}, err
 }
 
-// SaveAISettings validates and stores the AI mode settings. A prompt equal
-// to the default is stored empty, so it follows later default changes.
+// SaveAISettings validates and stores the AI mode settings. A model, prompt,
+// or goals equal to the default are stored empty, so they follow later
+// default (and, for the goals, settings) changes.
 func (s *Service) SaveAISettings(ctx context.Context, v model.AISettings) (AISettingsView, error) {
-	v.Model = strings.TrimSpace(v.Model)
+	if v.Model = strings.TrimSpace(v.Model); v.Model == model.DefaultAIModel {
+		v.Model = ""
+	}
 	v.Prompt = strings.TrimSpace(strings.ReplaceAll(v.Prompt, "\r\n", "\n"))
 	if v.Prompt == strings.TrimSpace(aiplan.DefaultPrompt) {
 		v.Prompt = ""
+	}
+	goals, err := s.defaultGoals()
+	if err != nil {
+		return AISettingsView{}, err
+	}
+	if v.Goals = strings.TrimSpace(strings.ReplaceAll(v.Goals, "\r\n", "\n")); v.Goals == strings.TrimSpace(goals) {
+		v.Goals = ""
 	}
 	if err := v.Validate(); err != nil {
 		return AISettingsView{}, ValidationError{Msg: err.Error()}
@@ -89,7 +111,7 @@ func (s *Service) SaveAISettings(ctx context.Context, v model.AISettings) (AISet
 		return AISettingsView{}, invalid("unknown placeholders in the prompt: {{%s}}", strings.Join(u, "}}, {{"))
 	}
 	ev := model.AuditEvent{Action: "settings.update", SubjectType: "settings", SubjectID: "ai"}
-	err := s.change(ctx, ev, func(tx *store.Store, e *model.AuditEvent) error {
+	err = s.change(ctx, ev, func(tx *store.Store, e *model.AuditEvent) error {
 		before, err := tx.AISettings(model.DefaultAISettings())
 		if err != nil {
 			return err
@@ -116,9 +138,9 @@ type AIPreview struct {
 	Tokens int `json:"tokens"`
 }
 
-// PreviewAIPrompt fills a prompt (empty: the default) with the current
-// data without sending it.
-func (s *Service) PreviewAIPrompt(ctx context.Context, prompt string) (*AIPreview, error) {
+// PreviewAIPrompt fills a prompt and goals (empty: the defaults) with the
+// current data without sending it.
+func (s *Service) PreviewAIPrompt(ctx context.Context, prompt, goals string) (*AIPreview, error) {
 	if strings.TrimSpace(prompt) == "" {
 		prompt = aiplan.DefaultPrompt
 	}
@@ -130,6 +152,7 @@ func (s *Service) PreviewAIPrompt(ctx context.Context, prompt string) (*AIPrevie
 		return nil, err
 	}
 	in, _ := s.aiInput(view)
+	in.Goals = goals
 	text, err := aiplan.Render(prompt, in)
 	if err != nil {
 		return nil, invalid("%s", err.Error())
@@ -141,16 +164,19 @@ func (s *Service) PreviewAIPrompt(ctx context.Context, prompt string) (*AIPrevie
 // aiRecord is the settings as the activity log shows them: a changed
 // prompt by its length, not its text.
 func aiRecord(v model.AISettings) map[string]any {
-	prompt := "default"
+	prompt, goals := "default", "default"
 	if v.Prompt != "" {
 		prompt = fmt.Sprintf("custom (%d characters)", len([]rune(v.Prompt)))
 	}
+	if v.Goals != "" {
+		goals = fmt.Sprintf("custom (%d characters)", len([]rune(v.Goals)))
+	}
 	m := v.Model
 	if m == "" {
-		m = "as under Connections"
+		m = "default (" + model.DefaultAIModel + ")"
 	}
 	return map[string]any{
-		"maxRunsPerDay": v.MaxRunsPerDay, "onPrices": v.OnPrices, "onPlugIn": v.OnPlugIn, "model": m, "prompt": prompt,
+		"maxRunsPerDay": v.MaxRunsPerDay, "onPrices": v.OnPrices, "onPlugIn": v.OnPlugIn, "model": m, "prompt": prompt, "goals": goals,
 		"autoApply": v.AutoApply, "autoMinConfidence": v.AutoMinConfidence, "autoPostpone": v.AutoPostpone,
 	}
 }
@@ -160,7 +186,7 @@ func (s *Service) aiModel(v model.AISettings) string {
 	if v.Model != "" {
 		return v.Model
 	}
-	return s.Conn().OpenRouterModel
+	return model.DefaultAIModel
 }
 
 // aiDecider describes how decisions are made, or why they can't be.
@@ -337,6 +363,7 @@ func (s *Service) RunAI(ctx context.Context, trigger string) (*model.AIRun, erro
 		return nil, err
 	}
 	in, trips := s.aiInput(view)
+	in.Goals = ai.Goals
 	decider, _ := s.aiDecider(ai)
 	run := model.AIRun{StartedAt: s.now(), Trigger: trigger, Decider: decider, Model: s.aiModel(ai), Trips: trips}
 	if cs.AI.Name() == "stub" {
@@ -579,15 +606,7 @@ func (s *Service) aiPricesDue(st *evcc.State) (bool, error) {
 func (s *Service) aiInput(view *PlanView) (aiplan.Input, map[string]string) {
 	loc, now := s.loc(), view.Now
 	set := view.Settings
-	in := aiplan.Input{
-		Now: now, Location: loc,
-		Vehicle: aiplan.Vehicle{
-			CapacityKWh: set.UsableCapacityKWh, ChargeKW: set.ChargePowerKW, EfficiencyPct: set.ChargingEfficiencyPct,
-			ConsumptionKWhPer100Km: set.ConsumptionKWhPer100Km, ReservePct: set.ArrivalReservePct,
-			ChargeBufferMin: set.ChargeBufferMin, HouseholdKW: set.HouseholdKW, SolarTaxSaving: set.SolarTaxSaving,
-			MinSolarKW: planner.MinChargeKW(planParams(set)), MaxAheadSoC: set.ChargeAheadMaxSoC, MinSaving: set.ChargeAheadMinSaving,
-		},
-	}
+	in := aiplan.Input{Now: now, Location: loc, Vehicle: aiVehicle(set)}
 	trips := map[string]string{}
 	ids := map[string]string{} // first trip key → ID
 	for _, b := range view.Blocks {
@@ -753,6 +772,33 @@ func (s *Service) aiInput(view *PlanView) (aiplan.Input, map[string]string) {
 	}
 	in.Baseline = s.aiBaseline(view, ids)
 	return in, trips
+}
+
+// aiVehicle is the car, the charger, and the planner's settings for the
+// prompt; EVCC's charge limit is added from its state.
+func aiVehicle(set model.Settings) aiplan.Vehicle {
+	return aiplan.Vehicle{
+		CapacityKWh: set.UsableCapacityKWh, ChargeKW: set.ChargePowerKW, EfficiencyPct: set.ChargingEfficiencyPct,
+		ConsumptionKWhPer100Km: set.ConsumptionKWhPer100Km, ReservePct: set.ArrivalReservePct,
+		ChargeBufferMin: set.ChargeBufferMin, HouseholdKW: set.HouseholdKW, SolarTaxSaving: set.SolarTaxSaving,
+		MinSolarKW: planner.MinChargeKW(planParams(set)), MaxAheadSoC: set.ChargeAheadMaxSoC, MinSaving: set.ChargeAheadMinSaving,
+	}
+}
+
+// defaultGoals are the goals until you write your own, with the current
+// settings and EVCC's charge limit.
+func (s *Service) defaultGoals() (string, error) {
+	set, err := s.Settings()
+	if err != nil {
+		return "", err
+	}
+	in := aiplan.Input{Vehicle: aiVehicle(set)}
+	if snap := s.snapshot(); snap.state != nil {
+		if veh, ok := s.resolveVehicle(snap.state); ok {
+			in.Vehicle.LimitSoC = veh.LimitSoc
+		}
+	}
+	return aiplan.DefaultGoals(in), nil
 }
 
 // tripName is an away period's name for the prompt: its trips' titles,

@@ -169,8 +169,8 @@ a key it falls back to labelled stub distances.
   so cost is a fraction of a cent a week.
   Without a key a labelled pattern-based stub reads only the article's summary
   lines (report period, weekly average, dearest and cheapest day).
-- **AI mode** uses the same key. Its model is set under Settings → Advice → AI mode (empty:
-  the one under Connections) and also needs strict structured outputs; a
+- **AI mode** uses the same key. Its model is set under Settings → Advice → AI mode (default
+  `anthropic/claude-haiku-latest`) and also needs strict structured outputs; a
   run sends the prompt with a week of data (about 3,000 tokens) and gets
   about 1,000 back, at most three times a day by default. Without a key AI
   mode keeps the automatic rules; demo mode has a stand-in that repeats them.

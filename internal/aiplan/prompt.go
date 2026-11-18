@@ -21,7 +21,7 @@ type Macro struct {
 // prompt uses them.
 var Macros = []Macro{
 	{"now", "The current date and time (Europe/Amsterdam).", renderNow},
-	{"goals", "The goals and the rules the planner always keeps, from your settings.", renderGoals},
+	{"goals", "Your goals (the Goals field above); by default the planner's rules, from your settings.", renderGoals},
 	{"vehicle", "Battery, charger, consumption, efficiency, and the solar settings.", renderVehicle},
 	{"state", "The SoC, plugged in or not, where the car is, and what EVCC has now.", renderState},
 	{"trips", "Trips of the next 7 days: name, times, distance, energy, and the SoC each needs. No places or addresses.", renderTrips},
@@ -197,6 +197,15 @@ func renderNow(in Input) string {
 }
 
 func renderGoals(in Input) string {
+	if g := strings.TrimSpace(in.Goals); g != "" {
+		return g
+	}
+	return DefaultGoals(in)
+}
+
+// DefaultGoals are the goals until you write your own: the planner's rules
+// with the values of your settings and EVCC's charge limit.
+func DefaultGoals(in Input) string {
 	v := in.Vehicle
 	var b strings.Builder
 	b.WriteString("- Every trip has enough charge: never below a departure's minimum SoC (\"needs\" in the trips). The planner charges that by itself, whatever you decide.\n")

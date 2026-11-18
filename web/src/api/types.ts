@@ -613,6 +613,8 @@ export interface AISettings {
   /** Empty: the OpenRouter model under Connections. */
   model: string
   prompt: string
+  /** What {{goals}} holds; the planner's rules from your settings by default. */
+  goals: string
   /** Create plans from the AI's advice automatically, at this confidence or more; postpone only when asked. */
   autoApply: boolean
   autoMinConfidence: 2 | 3
@@ -628,6 +630,8 @@ export interface AIMacro {
 export interface AISettingsView {
   settings: AISettings
   defaultPrompt: string
+  /** The planner's rules with your settings and EVCC's charge limit. */
+  defaultGoals: string
   macros: AIMacro[]
   defaultModel: string
   /** How decisions are made; empty without a model. */

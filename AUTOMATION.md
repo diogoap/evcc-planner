@@ -469,7 +469,7 @@ flowchart TD
 | Placeholder | Holds |
 | --- | --- |
 | `{{now}}` | The date and time (Europe/Amsterdam). |
-| `{{goals}}` | The goals and the rules the planner keeps, from your settings (reserve, cap, EVCC's charge limit, the rules' minimum saving). |
+| `{{goals}}` | The **Goals** field (Settings → Advice → AI mode). By default the planner's rules with your settings (reserve, charge-ahead cap, EVCC's charge limit as a battery-care preference, the rules' minimum saving), following them when they change; once edited, your text. |
 | `{{vehicle}}` | Usable battery, charging power and efficiency, consumption, charging buffer, household use, the charger's least solar surplus, the tax not paid on own solar. |
 | `{{state}}` | The SoC (source and time), plugged in or charging, the car's location, EVCC's mode, plan, and cheap-grid limit, active extra plans and postponements, the next trip and its minimum. |
 | `{{trips}}` | Away periods of the next 7 days as T1, T2, … with their names (the trips' titles, e.g. T1 "BSO pick-up"): when the car leaves, arrives, and is back home; km, kWh, and SoC used; the minimum SoC to leave with. No places or addresses. The AI uses the IDs in its answer and the names in its text. |
@@ -489,8 +489,9 @@ flowchart TD
   keeps the prompt as sent and the model's answer (Settings → Advice → AI mode, **What was
   sent and what came back**); runs are deleted with the activity log, keeping
   the last good one.
-- **Model:** any OpenRouter model with strict structured outputs; empty uses
-  the one under Settings → Connections. Without `OPENROUTER_API_KEY` there are
+- **Model:** any OpenRouter model with strict structured outputs (default
+  `anthropic/claude-haiku-latest`; e.g. `openai/gpt-luna-latest`), separate
+  from the forecast's model under Settings → Connections. Without `OPENROUTER_API_KEY` there are
   no runs; demo mode has a labelled stand-in that repeats the automatic
   rules.
 - **Cost:** the default prompt with a week of data is about 3,000 tokens, the
@@ -665,7 +666,8 @@ where **Preview with today's data** still works):
 | After new prices | On | Also when no AI plan applies. |
 | When the car is plugged in | On | The trip plan is written first. |
 | Automatic runs per day | 3 | 0–10; runs by hand are always allowed. The last waits for tomorrow's prices until an AI plan has seen them. |
-| Model | empty | Empty: the OpenRouter model under Connections. |
+| Model | anthropic/claude-haiku-latest | Any OpenRouter model with strict structured outputs, e.g. openai/gpt-luna-latest. Separate from the forecast's model under Connections. |
+| Goals | the planner's rules | What `{{goals}}` holds; edit to steer the AI (e.g. battery care against price). **Default goals** puts the generated text back. |
 | Prompt | the default | Placeholders are filled with the data. |
 | Automatically create plans from the AI's advice | Off | Like the Automatic rules' switch, but on today's AI advice (an extra plan with the AI's target, ready when its window ends). |
 | Minimum confidence | 3 | 2 also acts on the AI's medium-confidence advice. |

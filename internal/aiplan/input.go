@@ -35,6 +35,8 @@ type Input struct {
 	History []HistoryDay
 	// Baseline is what the automatic rules decide.
 	Baseline Baseline
+	// Goals are your own goals for {{goals}}; empty: DefaultGoals.
+	Goals string
 }
 
 // Vehicle is the car, the charger, and the planner's settings.

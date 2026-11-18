@@ -147,7 +147,8 @@ export const api = {
   /** Makes an AI plan now; waits for the model's answer. */
   runAI: () => request<AIView>('POST', '/api/ai/run', {}),
   aiRun: (id: number) => request<AIRun>('GET', `/api/ai/runs/${id}`),
-  previewAI: (prompt: string) => request<AIPreview>('POST', '/api/ai/preview', { prompt }),
+  previewAI: (prompt: string, goals: string) =>
+    request<AIPreview>('POST', '/api/ai/preview', { prompt, goals }),
 
   notificationSettings: () => request<NotificationSettings>('GET', '/api/settings/notifications'),
   saveNotificationSettings: (s: NotificationSettings) =>

@@ -453,8 +453,8 @@ type PlanControl struct {
 func (c PlanControl) Paused() bool { return c.PausedAt != nil }
 
 // AISettings control AI mode (Settings → Advice → AI mode): when the AI plan runs, the
-// model, and the prompt. An empty Model uses the OpenRouter model of the
-// connection settings; an empty Prompt the default prompt.
+// model, and the prompt. An empty Model uses DefaultAIModel; an empty Prompt
+// the default prompt.
 type AISettings struct {
 	// MaxRunsPerDay limits the automatic runs per local day (every run
 	// counts, also those started by hand, which are always allowed).
@@ -463,6 +463,8 @@ type AISettings struct {
 	OnPlugIn      bool   `json:"onPlugIn"` // run when the car is plugged in
 	Model         string `json:"model"`
 	Prompt        string `json:"prompt"`
+	// Goals fill {{goals}}; empty: the planner's rules from the settings.
+	Goals string `json:"goals"`
 	// AutoApply creates plans from the AI's advice automatically, like
 	// AdviceSettings.AutoApply does from the rules' advice in the other
 	// modes: at AutoMinConfidence or more, postponing only with AutoPostpone.
@@ -471,6 +473,9 @@ type AISettings struct {
 	AutoPostpone      bool `json:"autoPostpone"`
 }
 
+// DefaultAIModel is the OpenRouter model AI mode uses until another is set.
+const DefaultAIModel = "anthropic/claude-haiku-latest"
+
 // DefaultAISettings run after new prices and on plug-in, up to three times
 // a day, with the default model and prompt, and never act on the AI's
 // advice by themselves.
@@ -478,8 +483,12 @@ func DefaultAISettings() AISettings {
 	return AISettings{MaxRunsPerDay: 3, OnPrices: true, OnPlugIn: true, AutoMinConfidence: 3}
 }
 
-// MaxPromptChars bounds the prompt (before its data is filled in).
-const MaxPromptChars = 20000
+// MaxPromptChars bounds the prompt (before its data is filled in), and
+// MaxGoalsChars the goals.
+const (
+	MaxPromptChars = 20000
+	MaxGoalsChars  = 4000
+)
 
 var modelRe = regexp.MustCompile(`^[A-Za-z0-9._:/@+-]{1,200}$`)
 
@@ -493,6 +502,8 @@ func (a AISettings) Validate() error {
 		return fmt.Errorf("the model must be an OpenRouter model ID, e.g. anthropic/claude-sonnet-5.5")
 	case len([]rune(a.Prompt)) > MaxPromptChars:
 		return fmt.Errorf("the prompt must be at most %d characters", MaxPromptChars)
+	case len([]rune(a.Goals)) > MaxGoalsChars:
+		return fmt.Errorf("the goals must be at most %d characters", MaxGoalsChars)
 	case a.AutoMinConfidence != 2 && a.AutoMinConfidence != 3:
 		return fmt.Errorf("minimum confidence must be 2 (medium) or 3 (high)")
 	}

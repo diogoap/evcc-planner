@@ -269,7 +269,7 @@ var settingLabels = map[string]string{
 	"forecastRetryIntervalMin": "forecast retry interval", "forecastVatPct": "VAT", "retentionDays": "history retention",
 	// AI settings.
 	"maxRunsPerDay": "runs per day", "onPrices": "run after new prices", "onPlugIn": "run on plug-in",
-	"model": "AI model", "prompt": "prompt",
+	"model": "AI model", "prompt": "prompt", "goals": "goals",
 }
 
 // planText describes an EVCC one-off plan, or "none".

@@ -17,27 +17,31 @@ vi.mock('../store', () => store)
 const { default: AISettingsForm } = await import('./AISettingsForm.vue')
 const { default: AIRunCard } = await import('./AIRunCard.vue')
 
-const defaultPrompt = 'It is {{now}}.\n{{trips}}'
+const defaultPrompt = 'It is {{now}}.\n{{goals}}\n{{trips}}'
+const defaultGoals = "- Every trip has enough charge.\n- Battery care: EVCC's charge limit is 80%."
 const view = (over: Partial<AISettings> = {}): AISettingsView => ({
   settings: {
     maxRunsPerDay: 3,
     onPrices: true,
     onPlugIn: true,
-    model: '',
+    model: 'anthropic/claude-haiku-latest',
     prompt: defaultPrompt,
+    goals: defaultGoals,
     autoApply: false,
     autoMinConfidence: 3,
     autoPostpone: false,
     ...over,
   },
   defaultPrompt,
+  defaultGoals,
   macros: [
     { name: 'now', description: 'The current date and time.' },
+    { name: 'goals', description: 'Your goals.' },
     { name: 'trips', description: 'Trips of the next 7 days.' },
     { name: 'energy_prices', description: 'Published prices.' },
   ],
-  defaultModel: 'anthropic/claude-haiku-5.5',
-  decider: 'OpenRouter anthropic/claude-haiku-5.5',
+  defaultModel: 'anthropic/claude-haiku-latest',
+  decider: 'OpenRouter anthropic/claude-haiku-latest',
 })
 
 describe('AISettingsForm', () => {
@@ -77,6 +81,33 @@ describe('AISettingsForm', () => {
     w.unmount()
   })
 
+  it('shows the default model with an example of another', async () => {
+    const w = mount(AISettingsForm, { props: { active: true } })
+    await flushPromises()
+    expect((w.get('[data-testid="ai-model"]').element as HTMLInputElement).value).toBe(
+      'anthropic/claude-haiku-latest',
+    )
+    expect(w.get('#hint-ai-model').text()).toContain('e.g. openai/gpt-luna-latest')
+  })
+
+  it('shows the goals, saves your own, and puts the default back', async () => {
+    const w = mount(AISettingsForm, { props: { active: true } })
+    await flushPromises()
+    const goals = w.get('[data-testid="ai-goals"]')
+    expect((goals.element as HTMLTextAreaElement).value).toBe(defaultGoals)
+    expect(w.get('[data-testid="ai-goals-reset"]').attributes('disabled')).toBeDefined()
+    await goals.setValue('- Charge to 100% when prices are negative.')
+    expect(w.get('[data-testid="ai-goals-reset"]').attributes('disabled')).toBeUndefined()
+    await w.get('form').trigger('submit')
+    await flushPromises()
+    expect(api.saveAISettings).toHaveBeenCalledWith(
+      expect.objectContaining({ goals: '- Charge to 100% when prices are negative.' }),
+    )
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    await w.get('[data-testid="ai-goals-reset"]').trigger('click')
+    expect((goals.element as HTMLTextAreaElement).value).toBe(defaultGoals)
+  })
+
   it('warns about unknown placeholders and blocks saving', async () => {
     api.aiSettings.mockResolvedValue(view({ prompt: 'Plan {{prices}}' }))
     const w = mount(AISettingsForm, { props: { active: true } })
@@ -108,7 +139,7 @@ describe('AISettingsForm', () => {
       .find((b) => b.text().startsWith('Preview'))!
       .trigger('click')
     await flushPromises()
-    expect(api.previewAI).toHaveBeenCalledWith(defaultPrompt)
+    expect(api.previewAI).toHaveBeenCalledWith(defaultPrompt, defaultGoals)
     expect(w.get('[data-testid="ai-preview"]').text()).toContain('It is Monday.')
   })
 })

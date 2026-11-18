@@ -587,12 +587,13 @@ func (s *Server) aiRun(w http.ResponseWriter, r *http.Request) {
 func (s *Server) previewAI(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Prompt string `json:"prompt"`
+		Goals  string `json:"goals"`
 	}
 	if err := decode(r, &in); err != nil {
 		s.fail(w, err)
 		return
 	}
-	v, err := s.Svc.PreviewAIPrompt(r.Context(), in.Prompt)
+	v, err := s.Svc.PreviewAIPrompt(r.Context(), in.Prompt, in.Goals)
 	if err != nil {
 		s.fail(w, err)
 		return

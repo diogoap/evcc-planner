@@ -134,6 +134,17 @@ func TestDefaultPromptFillsEveryPlaceholder(t *testing.T) {
 	}
 }
 
+func TestYourOwnGoals(t *testing.T) {
+	in := sample()
+	if out, _ := Render("{{goals}}", in); out != strings.TrimRight(DefaultGoals(in), "\n") {
+		t.Errorf("default goals = %q", out)
+	}
+	in.Goals = "  - Prefer 100% when prices are negative.\n"
+	if out, _ := Render("Goals:\n{{goals}}", in); out != "Goals:\n- Prefer 100% when prices are negative." {
+		t.Errorf("own goals = %q", out)
+	}
+}
+
 func TestUnknownPlaceholders(t *testing.T) {
 	p := "Prices {{energy_prices}} and {{ Trips }}, {{wether}} {{wether}} {{foo_bar}}"
 	if got := Unknown(p); strings.Join(got, ",") != "wether,foo_bar" {

@@ -38,6 +38,7 @@ const macros = computed(() => info.value?.macros ?? [])
 const unknown = computed(() => (settings.value ? unknownMacros(settings.value.prompt, macros.value) : []))
 const unused = computed(() => (settings.value ? unusedMacros(settings.value.prompt, macros.value) : []))
 const isDefault = computed(() => settings.value?.prompt.trim() === info.value?.defaultPrompt.trim())
+const goalsDefault = computed(() => settings.value?.goals.trim() === info.value?.defaultGoals.trim())
 
 async function insert(name: string) {
   const s = settings.value
@@ -50,6 +51,12 @@ async function insert(name: string) {
   el.setSelectionRange(cursor, cursor)
 }
 
+function resetGoals() {
+  if (!settings.value || !info.value) return
+  if (!confirm('Put back the default goals? Your changes to the goals are lost once you save.')) return
+  settings.value.goals = info.value.defaultGoals
+}
+
 function resetPrompt() {
   if (!settings.value || !info.value) return
   if (!confirm('Put back the default prompt? Your changes to the prompt are lost once you save.')) return
@@ -60,7 +67,7 @@ async function showPreview() {
   if (!settings.value) return
   previewing.value = true
   try {
-    preview.value = await api.previewAI(settings.value.prompt)
+    preview.value = await api.previewAI(settings.value.prompt, settings.value.goals)
   } catch (e) {
     notify((e as Error).message, 'error')
   } finally {
@@ -162,9 +169,8 @@ async function save() {
               data-testid="ai-model"
             />
             <span id="hint-ai-model" class="field-hint"
-              >An OpenRouter model with strict structured outputs. Empty: the model under Connections ({{
-                info.defaultModel
-              }}).</span
+              >An OpenRouter model with strict structured outputs, e.g. openai/gpt-luna-latest. Default:
+              {{ info.defaultModel }}.</span
             >
           </label>
         </div>
@@ -206,6 +212,39 @@ async function save() {
           <input v-model="settings.autoPostpone" type="checkbox" data-testid="ai-auto-postpone" />
           Also postpone cheap-grid charging when the AI asks for it (today only, until the cheaper day)
         </label>
+      </fieldset>
+
+      <fieldset class="stack panel gap-3">
+        <legend class="small muted">Goals</legend>
+        <p id="hint-ai-goals" class="field-hint m-0">
+          What <code>{{ macroText('goals') }}</code> holds in the prompt. By default, the planner's rules with
+          your settings (arrival reserve, charge-ahead cap, EVCC's charge limit), which follow them when they
+          change. Edit them to steer the AI, for example how much battery care matters against price. The
+          planner's checks apply whatever you write here.
+        </p>
+        <label class="field">
+          Goals
+          <textarea
+            v-model="settings.goals"
+            class="prompt goals"
+            rows="8"
+            spellcheck="false"
+            :readonly="!props.active"
+            aria-describedby="hint-ai-goals"
+            data-testid="ai-goals"
+          />
+        </label>
+        <div class="row">
+          <button
+            class="btn ghost"
+            type="button"
+            :disabled="!props.active || goalsDefault"
+            data-testid="ai-goals-reset"
+            @click="resetGoals"
+          >
+            Default goals
+          </button>
+        </div>
       </fieldset>
 
       <fieldset class="stack panel gap-3">
@@ -301,6 +340,10 @@ async function save() {
   font-size: var(--text-sm);
   line-height: 1.45;
   resize: vertical;
+}
+
+.prompt.goals {
+  min-height: 9em;
 }
 
 .ai-text {
