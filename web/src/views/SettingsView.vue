@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
 import { api } from '../api/client'
 import type { Connection, HASensor, Place, Settings, TripPlans } from '../api/types'
@@ -209,6 +209,11 @@ const aheadNote = computed(() => {
   return ''
 })
 const savedMode = computed(() => state.plan?.settings.tripPlans)
+// Advice opened before the plan loaded (right after a reload): the saved
+// mode's part once it is known.
+watch(savedMode, (m, old) => {
+  if (!old && m && tab.value === 'advice' && !childDirty.value) adviceTab.value = m === 'ai' ? 'ai' : 'rules'
+})
 
 const control = computed(() =>
   state.plan ? controlLabel(state.plan.control, !!state.status?.connected) : null,

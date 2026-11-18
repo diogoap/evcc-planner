@@ -3,6 +3,7 @@ import type { AIMacro } from '../api/types'
 import {
   insertMacro,
   modelLabel,
+  monthlyText,
   perMillion,
   recommendationText,
   tokensText,
@@ -57,8 +58,8 @@ describe('recommendationText', () => {
     expect(recommendationText({ ...day, recommendation: 'none' })).toBe('Nothing extra')
   })
 
-  it('writes small dollar amounts with two significant digits', () => {
-    expect([0.2336, 0.0584, 0.000631, 0.00295, 40, 8, 0.036, 26.28].map(usd)).toEqual([
+  it('writes dollar amounts in cents, small ones with two significant digits', () => {
+    expect([0.2336, 0.0584, 0.000631, 0.00295, 40, 8, 0.036, 26.28, 0.2037, 2.5].map(usd)).toEqual([
       '$0.23',
       '$0.058',
       '$0.00063',
@@ -67,6 +68,8 @@ describe('recommendationText', () => {
       '$8',
       '$0.036',
       '$26.28',
+      '$0.20',
+      '$2.50',
     ])
     expect([0.1, 2.5, 0.036, 40, 0.47, 1.4].map(perMillion)).toEqual([
       '$0.10',
@@ -79,6 +82,9 @@ describe('recommendationText', () => {
     const m = { id: '~z-ai/glm-latest', inputPerM: 0.07, outputPerM: 1.4, runUsd: 0.00679 }
     expect(modelLabel(m, '~anthropic/claude-haiku-latest')).toBe('~z-ai/glm-latest · ≈ $0.0068/run')
     expect(modelLabel(m, '~z-ai/glm-latest')).toBe('~z-ai/glm-latest · ≈ $0.0068/run (default)')
+    expect(monthlyText(m, 3)).toBe('≈ $0.61 a month at 3 runs a day')
+    expect(monthlyText(m, 1)).toBe('≈ $0.20 a month at 1 run a day')
+    expect(monthlyText(m, 0)).toBe('No automatic runs: only runs by hand cost')
   })
 
   it('rounds token counts', () => {

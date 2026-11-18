@@ -125,6 +125,7 @@ test('choose the AI model from the list, or type another', async ({ page }) => {
   const choice = page.getByTestId('ai-model-choice')
   await expect(choice).toHaveValue('~anthropic/claude-haiku-latest')
   await expect(choice.locator('option')).toHaveCount(20)
+  await expect(page.getByTestId('ai-model-month')).toHaveText('≈ $0.27 a month at 3 runs a day')
   await choice.selectOption('~openai/gpt-luna-latest')
   await page.getByRole('button', { name: 'Save AI settings' }).click()
   await expect(page.getByText('AI settings saved')).toBeVisible()
@@ -133,11 +134,31 @@ test('choose the AI model from the list, or type another', async ({ page }) => {
   await choice.selectOption({ label: 'Other model…' })
   const other = page.getByTestId('ai-model')
   await expect(other).toBeFocused()
+  await expect(page.getByTestId('ai-model-month')).toHaveCount(0)
   await other.fill('~mistral/devstral-latest')
   await page.getByRole('button', { name: 'Save AI settings' }).click()
-  await expect(page.getByText('AI settings saved')).toBeVisible()
+  // The first save's message may still show.
+  await expect(page.getByText('AI settings saved').last()).toBeVisible()
   await page.reload()
   await page.getByRole('link', { name: 'Advice', exact: true }).click()
   await expect(choice).toHaveValue('other')
   await expect(other).toHaveValue('~mistral/devstral-latest')
+})
+
+test('in AI mode, Advice opens on AI mode also before the plan has loaded', async ({ page }) => {
+  const settings = await (await page.request.get('/api/settings')).json()
+  await page.request.put('/api/settings', { data: { ...settings, tripPlans: 'ai' } })
+  // Hold the plan back until Advice is open.
+  let release = () => {}
+  const held = new Promise<void>((r) => (release = r))
+  await page.route('**/api/plan', async (route) => {
+    await held
+    await route.continue()
+  })
+  await page.goto('/settings')
+  await page.getByRole('link', { name: 'Advice', exact: true }).click()
+  await expect(page.getByTestId('advice-tab-rules')).toHaveAttribute('aria-current', 'page')
+  release()
+  await expect(page.getByTestId('advice-tab-ai')).toHaveAttribute('aria-current', 'page')
+  await expect(page.getByTestId('ai-model-choice')).toBeVisible()
 })

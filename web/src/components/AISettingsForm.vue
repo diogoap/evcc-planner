@@ -6,6 +6,7 @@ import {
   insertMacro,
   macroText,
   modelLabel,
+  monthlyText,
   perMillion,
   tokensText,
   unknownMacros,
@@ -203,13 +204,15 @@ async function save() {
               </option>
               <option :value="OTHER">Other model…</option>
             </select>
-            <span v-if="chosenModel" class="field-hint" data-testid="ai-model-price"
-              >{{ perMillion(chosenModel.inputPerM) }} in, {{ perMillion(chosenModel.outputPerM) }} out per
-              million tokens: ≈ {{ usd(chosenModel.runUsd) }} a run<template v-if="settings.maxRunsPerDay"
-                >, ≈ {{ usd(chosenModel.runUsd * settings.maxRunsPerDay * 30) }} a month at
-                {{ settings.maxRunsPerDay }} a day</template
-              >.</span
-            >
+            <template v-if="chosenModel">
+              <span class="small strong" data-testid="ai-model-month">{{
+                monthlyText(chosenModel, settings.maxRunsPerDay)
+              }}</span>
+              <span class="field-hint" data-testid="ai-model-price"
+                >≈ {{ usd(chosenModel.runUsd) }} a run: {{ perMillion(chosenModel.inputPerM) }} in,
+                {{ perMillion(chosenModel.outputPerM) }} out per million tokens.</span
+              >
+            </template>
             <span id="hint-ai-model" class="field-hint"
               >An OpenRouter model with strict structured outputs. Costs are OpenRouter's prices on
               {{ pricesDate }} (they change) for a typical run of about 7,000 tokens in and 4,500 out. For

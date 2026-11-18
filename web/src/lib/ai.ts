@@ -61,9 +61,10 @@ export function recommendationText(d: AIDayResult) {
   }
 }
 
-/** A small US dollar amount with two significant digits: "$0.23", "$0.0029", "$40". */
+/** A US dollar amount in cents, below $0.10 with two significant digits: "$0.20", "$0.0029", "$40". */
 export function usd(v: number) {
-  return `$${v >= 1 ? Number(v.toFixed(2)) : Number(v.toPrecision(2))}`
+  if (Number.isInteger(v)) return `$${v}`
+  return `$${v >= 0.1 ? v.toFixed(2) : Number(v.toPrecision(2))}`
 }
 
 /** A price per million tokens, in cents where it has them: "$0.10", "$2.50", "$0.036", "$40". */
@@ -75,6 +76,12 @@ export function perMillion(v: number) {
 /** A model in the list: "~anthropic/claude-haiku-latest · ≈ $0.0030/run (default)". */
 export function modelLabel(m: AIModelOption, defaultModel: string) {
   return `${m.id} · ≈ ${usd(m.runUsd)}/run${m.id === defaultModel ? ' (default)' : ''}`
+}
+
+/** What a model costs a month at the automatic runs a day: "≈ $0.27 a month at 3 runs a day". */
+export function monthlyText(m: AIModelOption, runsPerDay: number) {
+  if (!(runsPerDay > 0)) return 'No automatic runs: only runs by hand cost'
+  return `≈ ${usd(m.runUsd * runsPerDay * 30)} a month at ${runsPerDay} run${runsPerDay === 1 ? '' : 's'} a day`
 }
 
 /** "about 2,300 tokens" */

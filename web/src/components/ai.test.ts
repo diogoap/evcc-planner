@@ -101,16 +101,19 @@ describe('AISettingsForm', () => {
       'qwen/qwen3.8-flash · ≈ $0.0031/run',
       'Other model…',
     ])
+    expect(w.get('[data-testid="ai-model-month"]').text()).toBe('≈ $0.27 a month at 3 runs a day')
     expect(w.get('[data-testid="ai-model-price"]').text()).toBe(
-      '$0.10 in, $0.50 out per million tokens: ≈ $0.003 a run, ≈ $0.27 a month at 3 a day.',
+      '≈ $0.003 a run: $0.10 in, $0.50 out per million tokens.',
     )
     expect(w.find('[data-testid="ai-model"]').exists()).toBe(false)
     expect(w.get('#hint-ai-model').text()).toContain("OpenRouter's prices on 18 Nov 2026")
     expect(w.get('#hint-ai-model').text()).toContain('e.g. ~openai/gpt-luna-latest')
 
-    // One of the list.
+    // One of the list; the month follows the runs a day.
     await choice.setValue('qwen/qwen3.8-flash')
     expect(w.emitted('dirty')?.at(-1)).toEqual([true])
+    await w.get('[data-testid="ai-max-runs"]').setValue('1')
+    expect(w.get('[data-testid="ai-model-month"]').text()).toBe('≈ $0.093 a month at 1 run a day')
     // Another one, typed in.
     await choice.setValue('other')
     await nextTick()
@@ -120,6 +123,7 @@ describe('AISettingsForm', () => {
     expect((choice.element as HTMLSelectElement).value).toBe('other')
     // A model typed in has only its ID, no price.
     expect(w.find('[data-testid="ai-model-price"]').exists()).toBe(false)
+    expect(w.find('[data-testid="ai-model-month"]').exists()).toBe(false)
     await w.get('form').trigger('submit')
     await flushPromises()
     expect(api.saveAISettings).toHaveBeenCalledWith(
