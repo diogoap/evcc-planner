@@ -48,12 +48,14 @@ test('choose AI mode, make an AI plan, and see it on the Overview', async ({ pag
   await expect(page.getByTestId('ai-days')).toContainText('Mon 09: Defer until Tue 10 Nov')
   // What was sent: the data, trips without titles.
   await page.getByText('What was sent and what came back').click()
-  await expect(page.getByTestId('ai-sent')).toContainText('T1: leaves 2026-11-10 07:48')
-  await expect(page.getByTestId('ai-sent')).not.toContainText('School')
+  await expect(page.getByTestId('ai-sent')).toContainText(
+    'T1 "School drop-off + Office visit": leaves 2026-11-10 07:48',
+  )
+  await expect(page.getByTestId('ai-sent')).not.toContainText('Schoolstraat')
 
   await page.goto('/')
   await expect(page.getByTestId('trip-plans')).toHaveText('AI mode')
-  await expect(page.getByTestId('ai-plan')).toContainText('Stand-in decision')
+  await expect(page.getByTestId('ai-plan')).toHaveText(/^Made Mon 9 Nov, 19:00\s*Run AI now$/)
   await expect(page.getByTestId('advice-ai')).toBeVisible()
   await page.getByTestId('ai-run-overview').click()
   await expect(page.getByText('AI plan made and applied')).toBeVisible()
@@ -71,7 +73,9 @@ test('outside AI mode the AI tab is greyed out, but the prompt can be previewed'
   await expect(page.getByTestId('ai-max-runs')).toBeDisabled()
   await expect(page.getByTestId('ai-prompt')).not.toBeEditable()
   await page.getByRole('button', { name: 'Preview with today’s data' }).click()
-  await expect(page.getByTestId('ai-preview')).toContainText('T1: leaves 2026-11-10 07:48')
+  await expect(page.getByTestId('ai-preview')).toContainText(
+    'T1 "School drop-off + Office visit": leaves 2026-11-10 07:48',
+  )
   // Manual mode never acts on the advice by itself.
   await page.getByTestId('ai-off').getByRole('link', { name: 'Planning' }).click()
   await page.getByTestId('trip-plans-manual').check()
@@ -98,7 +102,9 @@ test('edit the prompt with placeholders, preview it, and go back to the default'
     .click()
   await expect(prompt).toHaveValue('Plan the week.\n{{trips}}')
   await page.getByRole('button', { name: 'Preview with today’s data' }).click()
-  await expect(page.getByTestId('ai-preview')).toContainText('T1: leaves 2026-11-10 07:48')
+  await expect(page.getByTestId('ai-preview')).toContainText(
+    'T1 "School drop-off + Office visit": leaves 2026-11-10 07:48',
+  )
   await page.getByRole('button', { name: 'Save AI settings' }).click()
   await expect(page.getByText('AI settings saved')).toBeVisible()
 

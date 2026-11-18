@@ -575,7 +575,7 @@ func (s *Service) aiPricesDue(st *evcc.State) (bool, error) {
 // ---- input ----
 
 // aiInput is the data for the prompt's placeholders, and the trip IDs it
-// uses with their trip keys. Trips carry no titles or places.
+// uses with their trip keys. Trips carry their titles, never their places.
 func (s *Service) aiInput(view *PlanView) (aiplan.Input, map[string]string) {
 	loc, now := s.loc(), view.Now
 	set := view.Settings
@@ -597,7 +597,7 @@ func (s *Service) aiInput(view *PlanView) (aiplan.Input, map[string]string) {
 		id := fmt.Sprintf("T%d", len(in.Trips)+1)
 		trips[id], ids[b.TripKeys[0]] = b.TripKeys[0], id
 		t := aiplan.Trip{
-			ID: id, Count: len(b.TripKeys), DepartAt: b.DepartAt, ArriveBy: b.FirstArriveAt, ReturnAt: b.ReturnAt,
+			ID: id, Name: tripName(b.Titles), Count: len(b.TripKeys), DepartAt: b.DepartAt, ArriveBy: b.FirstArriveAt, ReturnAt: b.ReturnAt,
 			DistanceKm: b.DistanceKm, EnergyKWh: b.EnergyKWh, EnergyPct: b.EnergyPct, RequiredSoC: b.RequiredSoC, Status: b.Status,
 		}
 		for _, tv := range view.Trips {
@@ -753,6 +753,18 @@ func (s *Service) aiInput(view *PlanView) (aiplan.Input, map[string]string) {
 	}
 	in.Baseline = s.aiBaseline(view, ids)
 	return in, trips
+}
+
+// tripName is an away period's name for the prompt: its trips' titles,
+// on one line and short. Places and addresses are never sent.
+func tripName(titles []string) string {
+	var parts []string
+	for _, t := range titles {
+		if t = strings.Join(strings.Fields(t), " "); t != "" {
+			parts = append(parts, openrouter.Clip(t, 60))
+		}
+	}
+	return strings.Join(parts, " + ")
 }
 
 // aiBaseline is what the automatic rules decide, for the prompt and the

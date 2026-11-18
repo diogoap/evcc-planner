@@ -121,8 +121,9 @@ func TestAISettingsAndPreview(t *testing.T) {
 	// The preview fills the placeholders with today's data; trips have no titles.
 	var p service.AIPreview
 	ta.json("POST", "/api/ai/preview", map[string]any{"prompt": "{{now}}\n{{trips}}"}, http.StatusOK, &p)
-	if !strings.HasPrefix(p.Text, "Monday 2026-11-09 19:00") || !strings.Contains(p.Text, "T1: leaves 2026-11-10 07:48") ||
-		strings.Contains(p.Text, "School") || p.System != aiplan.SystemPrompt || p.Tokens == 0 {
+	if !strings.HasPrefix(p.Text, "Monday 2026-11-09 19:00") ||
+		!strings.Contains(p.Text, `T1 "School drop-off + Office visit": leaves 2026-11-10 07:48`) ||
+		strings.Contains(p.Text, "Schoolstraat") || strings.Contains(p.Text, "Office Park") || p.System != aiplan.SystemPrompt || p.Tokens == 0 {
 		t.Errorf("preview = %+v", p)
 	}
 	ta.json("POST", "/api/ai/preview", map[string]any{"prompt": ""}, http.StatusOK, &p)
@@ -237,7 +238,7 @@ func TestAIModeKeepsTheFoundationalRules(t *testing.T) {
 	ta.useAI(f)
 	ta.checkAI()
 	if f.calls != 1 || f.last.Model != "anthropic/claude-haiku-5.5" || f.last.System != aiplan.SystemPrompt ||
-		!strings.Contains(f.last.User, "T3: leaves 2026-11-11 14:33") {
+		!strings.Contains(f.last.User, `T3 "School pickup": leaves 2026-11-11 14:33`) {
 		t.Fatalf("request = %+v", f.last)
 	}
 	s := ta.aiStatus()
@@ -310,7 +311,8 @@ func TestAIModeKeepsTheFoundationalRules(t *testing.T) {
 	}
 	var full model.AIRun
 	ta.json("GET", "/api/ai/runs/"+itoa(s.Current.ID), nil, http.StatusOK, &full)
-	if !strings.Contains(full.Prompt, "## Trips") || !strings.Contains(full.Response, `"target_soc": 10`) || full.Trips["T1"] == "" {
+	if !strings.Contains(full.Prompt, "## Trips") || !strings.Contains(full.Response, `"target_soc": 10`) || full.Trips["T1"] == "" ||
+		strings.Contains(full.Prompt, "Demo Town") {
 		t.Errorf("run detail = %+v", full)
 	}
 	ta.json("GET", "/api/ai/runs/999", nil, http.StatusNotFound, nil)

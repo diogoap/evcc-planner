@@ -163,7 +163,7 @@ const adjustments = computed(() => props.plan.advice.adjustments.filter((a) => a
           <li v-for="a in ahead" :key="a.tripKey">{{ aheadText(a, aiTarget) }}</li>
         </ul>
         <div v-if="aiTarget && plan.control.target?.reason" class="muted mt-1" data-testid="ai-reason">
-          AI: {{ plan.control.target.reason }}
+          Why: {{ plan.control.target.reason }}
         </div>
         <button
           v-if="plan.control.paused"
@@ -177,21 +177,25 @@ const adjustments = computed(() => props.plan.advice.adjustments.filter((a) => a
       </dd>
       <template v-if="plan.ai">
         <dt>AI plan</dt>
+        <!-- The target's reason is under Trip plans and each day's under its
+             advice; the week's summary is under Settings → Advice → AI mode. -->
         <dd data-testid="ai-plan">
-          <template v-if="plan.ai.inUse && plan.ai.runAt">
-            {{ plan.ai.summary }} <span class="muted">· {{ dateTime(plan.ai.runAt) }}</span>
-          </template>
           <span v-if="plan.ai.note" class="text-warn block">{{ plan.ai.note }}</span>
-          <button
-            v-if="plan.ai.canRun"
-            class="btn sm mt-1"
-            type="button"
-            :disabled="aiRunning || plan.ai.running"
-            data-testid="ai-run-overview"
-            @click="runAI"
-          >
-            {{ aiRunning || plan.ai.running ? 'Running…' : 'Run AI now' }}
-          </button>
+          <span class="row gap-2">
+            <span v-if="plan.ai.inUse && plan.ai.runAt" class="muted"
+              >Made {{ dateTime(plan.ai.runAt) }}</span
+            >
+            <button
+              v-if="plan.ai.canRun"
+              class="btn sm"
+              type="button"
+              :disabled="aiRunning || plan.ai.running"
+              data-testid="ai-run-overview"
+              @click="runAI"
+            >
+              {{ aiRunning || plan.ai.running ? 'Running…' : 'Run AI now' }}
+            </button>
+          </span>
         </dd>
       </template>
       <dt>EVCC plan</dt>

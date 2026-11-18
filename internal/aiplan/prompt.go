@@ -24,7 +24,7 @@ var Macros = []Macro{
 	{"goals", "The goals and the rules the planner always keeps, from your settings.", renderGoals},
 	{"vehicle", "Battery, charger, consumption, efficiency, and the solar settings.", renderVehicle},
 	{"state", "The SoC, plugged in or not, where the car is, and what EVCC has now.", renderState},
-	{"trips", "Trips of the next 7 days: times, distance, energy, and the SoC each needs. No titles or places.", renderTrips},
+	{"trips", "Trips of the next 7 days: name, times, distance, energy, and the SoC each needs. No places or addresses.", renderTrips},
 	{"daily_needs", "Per day: driving, energy, and the charge its departures need.", renderDailyNeeds},
 	{"energy_prices", "EVCC's published prices, every 15-minute slot, with each day's lowest, average, and highest.", renderPrices},
 	{"solar_forecast", "EVCC's local solar forecast per hour (today and tomorrow), with the surplus the car can use and what its kWh costs (the hour's price minus the tax not paid on own solar).", renderSolar},
@@ -140,6 +140,7 @@ It is {{now}}.
 // what the planner checks. The editable prompt follows as the user message.
 const SystemPrompt = `You are the decision step of a home EV charging planner. Answer only with JSON that follows the given schema.
 - Use the trip IDs (T1, T2, ...) and dates exactly as the data gives them. Write times as "YYYY-MM-DD HH:MM", local time in Europe/Amsterdam.
+- Use trip IDs only in trip_ids. In summaries and reasons, call trips by their names (e.g. "BSO pick-up"), not their IDs.
 - Every price is in EUR/kWh including VAT. SoC values are whole percent of the usable battery.
 - The planner checks your answer: it never plans below a departure's minimum SoC, keeps charge ahead at or below its cap, and ignores windows outside the published prices.
 - Write in English, in short, plain sentences.`
@@ -275,7 +276,7 @@ func renderState(in Input) string {
 	}
 	if in.Next != nil {
 		n := in.Next
-		fmt.Fprintf(&b, "- Next trip: %s leaves %s and needs at least %d%%", n.TripID, in.at(n.DepartAt), n.MinTargetSoC)
+		fmt.Fprintf(&b, "- Next trip: %s leaves %s and needs at least %d%%", in.tripLabel(n.TripID), in.at(n.DepartAt), n.MinTargetSoC)
 		if n.StartSoC != nil {
 			fmt.Fprintf(&b, "; about %s%% when charging can start", num(*n.StartSoC, 0))
 		}
@@ -288,6 +289,16 @@ func renderState(in Input) string {
 	return b.String()
 }
 
+// tripLabel is a trip's ID with its name: T1 "BSO pick-up".
+func (in Input) tripLabel(id string) string {
+	for _, t := range in.Trips {
+		if t.ID == id && t.Name != "" {
+			return fmt.Sprintf("%s %q", id, t.Name)
+		}
+	}
+	return id
+}
+
 func renderTrips(in Input) string {
 	if len(in.Trips) == 0 {
 		return "No trips in the next 7 days."
@@ -295,7 +306,7 @@ func renderTrips(in Input) string {
 	var b strings.Builder
 	for _, t := range in.Trips {
 		fmt.Fprintf(&b, "%s: leaves %s, arrives by %s, back home %s; %s km, %s kWh, %s%% of the battery; needs %s%% at departure",
-			t.ID, in.at(t.DepartAt), in.clock(t.ArriveBy), in.at(t.ReturnAt), num(t.DistanceKm, 1), num(t.EnergyKWh, 1),
+			in.tripLabel(t.ID), in.at(t.DepartAt), in.clock(t.ArriveBy), in.at(t.ReturnAt), num(t.DistanceKm, 1), num(t.EnergyKWh, 1),
 			num(t.EnergyPct, 1), num(math.Ceil(t.RequiredSoC-1e-6), 0))
 		var notes []string
 		if t.Count > 1 {

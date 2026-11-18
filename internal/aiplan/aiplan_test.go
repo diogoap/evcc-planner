@@ -27,9 +27,9 @@ func sample() Input {
 			Mode: "smart", CheapLimit: ptr(0.15)},
 		Next: &Next{TripID: "T1", DepartAt: at(19, 7, 30), MinTargetSoC: 27, StartSoC: ptr(30.0)},
 		Trips: []Trip{
-			{ID: "T1", Count: 1, DepartAt: at(19, 7, 30), ArriveBy: at(19, 8, 15), ReturnAt: at(19, 8, 50), DistanceKm: 40,
+			{ID: "T1", Name: "School run", Count: 1, DepartAt: at(19, 7, 30), ArriveBy: at(19, 8, 15), ReturnAt: at(19, 8, 50), DistanceKm: 40,
 				EnergyKWh: 7.2, EnergyPct: 12.2, RequiredSoC: 27.2, Status: "ready"},
-			{ID: "T2", Count: 2, DepartAt: at(19, 16, 0), ArriveBy: at(19, 17, 0), ReturnAt: at(19, 21, 0), DistanceKm: 120,
+			{ID: "T2", Name: "Visit + Dinner", Count: 2, DepartAt: at(19, 16, 0), ArriveBy: at(19, 17, 0), ReturnAt: at(19, 21, 0), DistanceKm: 120,
 				EnergyKWh: 21.6, EnergyPct: 36.6, RequiredSoC: 51.6, Status: "charge", Unconfirmed: true},
 		},
 		Outlook: &Outlook{ValidFrom: "2026-11-16", ValidTo: "2026-11-22", FetchedAt: at(17, 18, 0), Summary: "Windy weekend.",
@@ -104,7 +104,7 @@ func TestDefaultPromptFillsEveryPlaceholder(t *testing.T) {
 	}
 	for _, want := range []string{
 		"Wednesday 2026-11-18 15:00",
-		"T2: leaves 2026-11-19 16:00, arrives by 17:00, back home 2026-11-19 21:00; 120 km, 21.6 kWh, 36.6% of the battery; needs 52% at departure (2 trips together; calendar event that may not be a car trip)",
+		"T2 \"Visit + Dinner\": leaves 2026-11-19 16:00, arrives by 17:00, back home 2026-11-19 21:00; 120 km, 21.6 kWh, 36.6% of the battery; needs 52% at departure (2 trips together; calendar event that may not be a car trip)",
 		"stays at or below 90%", "EVCC's charge limit is 80%",
 		"published until 2026-11-20 00:00",
 		"Thu 2026-11-19:\n  00:00  0.250 0.250 0.250 0.250\n",
@@ -115,7 +115,7 @@ func TestDefaultPromptFillsEveryPlaceholder(t *testing.T) {
 		"Sat 2026-11-21: about 0.220 average level cheapest wind high",
 		"Wed 2026-11-18: wind 4 Bft SW, sunshine 30% of possible, 3 to 9 °C",
 		"Averages over 2 days: lowest 0.210, average 0.270, highest 0.360 EUR/kWh; 40 km and 7.2 kWh driving a day",
-		"Next trip: T1 leaves 2026-11-19 07:30 and needs at least 27%",
+		"Next trip: T1 \"School run\" leaves 2026-11-19 07:30 and needs at least 27%",
 		"- The car is away\n",
 		"EVCC charges from the grid by itself at or below €0.150/kWh",
 	} {
@@ -123,9 +123,9 @@ func TestDefaultPromptFillsEveryPlaceholder(t *testing.T) {
 			t.Errorf("missing %q in:\n%s", want, out)
 		}
 	}
-	// Trips carry no titles or places, and the car's zone is only "away".
-	if strings.Contains(out, "School") || strings.Contains(out, "Office") {
-		t.Error("titles and places must not be sent")
+	// Trips carry their names but no places; the car's zone is only "away".
+	if strings.Contains(out, "Office") {
+		t.Error("places must not be sent")
 	}
 	base, err := Render("{{automatic_plan}}", sample())
 	if err != nil || !strings.Contains(base, "Charge ahead: 64% by 2026-11-19 07:30, also for T2") ||

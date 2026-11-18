@@ -93,6 +93,7 @@ type Next struct {
 // Trip is an away period: one trip, or overlapping trips driven together.
 type Trip struct {
 	ID          string // T1, T2, …
+	Name        string // the trip's title (several joined with " + "); never its place
 	Count       int    // trips in it
 	DepartAt    time.Time
 	ArriveBy    time.Time // the first trip's arrive-by time

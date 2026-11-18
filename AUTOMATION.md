@@ -472,7 +472,7 @@ flowchart TD
 | `{{goals}}` | The goals and the rules the planner keeps, from your settings (reserve, cap, EVCC's charge limit, the rules' minimum saving). |
 | `{{vehicle}}` | Usable battery, charging power and efficiency, consumption, charging buffer, household use, the charger's least solar surplus, the tax not paid on own solar. |
 | `{{state}}` | The SoC (source and time), plugged in or charging, the car's location, EVCC's mode, plan, and cheap-grid limit, active extra plans and postponements, the next trip and its minimum. |
-| `{{trips}}` | Away periods of the next 7 days as T1, T2, …: when the car leaves, arrives, and is back home; km, kWh, and SoC used; the minimum SoC to leave with. No titles or places. |
+| `{{trips}}` | Away periods of the next 7 days as T1, T2, … with their names (the trips' titles, e.g. T1 "BSO pick-up"): when the car leaves, arrives, and is back home; km, kWh, and SoC used; the minimum SoC to leave with. No places or addresses. The AI uses the IDs in its answer and the names in its text. |
 | `{{daily_needs}}` | Per day: trips, km, kWh, the charge its departures need, the first departure's target, and the hours at home. |
 | `{{energy_prices}}` | EVCC's published prices, every slot, per hour, marking hours the car is away, with each day's lowest, average, and highest. |
 | `{{solar_forecast}}` | EVCC's local solar forecast per hour (today and tomorrow), with each day's kWh in total and while the car is home, and per hour the surplus the car can use and what its kWh costs (the hour's price minus the tax not paid on own solar), or "too little to charge". |

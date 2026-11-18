@@ -212,8 +212,8 @@ async function save() {
         <legend class="small muted">Prompt</legend>
         <p class="field-hint m-0">
           Placeholders in double braces are filled with the planner's data when the prompt is sent. Trips go
-          without titles or places. The answer's format is fixed, so the planner can check it. Tap a
-          placeholder to put it in at the cursor.
+          with their names, never their places. The answer's format is fixed, so the planner can check it. Tap
+          a placeholder to put it in at the cursor.
         </p>
         <div class="row gap-2" data-testid="ai-macros">
           <button
