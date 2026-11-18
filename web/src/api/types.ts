@@ -619,6 +619,8 @@ export interface AISettings {
   autoApply: boolean
   autoMinConfidence: 2 | 3
   autoPostpone: boolean
+  /** The three above were changed here; until then they follow Automatic rules' switch. */
+  autoSet: boolean
 }
 
 /** A placeholder such as {{trips}}, filled with the planner's data. */

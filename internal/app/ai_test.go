@@ -428,13 +428,33 @@ func TestAIModeCreatesPlansByItsOwnSwitch(t *testing.T) {
 		`"target_soc": 95`, `"target_soc": 42`, 1)}
 	ta.useAI(f)
 	ctx := context.Background()
+	var v service.AISettingsView
+	ta.json("GET", "/api/settings/ai", nil, http.StatusOK, &v)
+	if v.Settings.AutoApply || v.Settings.AutoMinConfidence != 3 || v.Settings.AutoPostpone || v.Settings.AutoSet {
+		t.Fatalf("AI auto defaults = %+v", v.Settings)
+	}
 
-	// Daily advice and acting on it under Settings → Advice don't apply:
-	// the AI's advice shows anyway, and the Advice switch creates nothing.
+	// Until set here, acting on the AI's advice follows the automatic rules'
+	// choice; daily advice being off doesn't hide the AI's advice.
 	var adv map[string]any
 	ta.json("GET", "/api/settings/advice", nil, http.StatusOK, &adv)
 	adv["enabled"], adv["autoApply"], adv["autoMinConfidence"] = false, true, 2
 	ta.json("PUT", "/api/settings/advice", adv, http.StatusOK, nil)
+	ta.json("GET", "/api/settings/ai", nil, http.StatusOK, &v)
+	if !v.Settings.AutoApply || v.Settings.AutoMinConfidence != 2 || v.Settings.AutoSet {
+		t.Fatalf("AI auto following the advice settings = %+v", v.Settings)
+	}
+	// Saving other AI settings keeps it following.
+	ta.json("PUT", "/api/settings/ai", map[string]any{"maxRunsPerDay": 4}, http.StatusOK, &v)
+	if v.Settings.AutoSet {
+		t.Fatalf("saving the runs set the switch: %+v", v.Settings)
+	}
+
+	// Turned off here, it no longer follows them.
+	ta.json("PUT", "/api/settings/ai", map[string]any{"autoApply": false}, http.StatusOK, &v)
+	if v.Settings.AutoApply || !v.Settings.AutoSet {
+		t.Fatalf("AI auto off = %+v", v.Settings)
+	}
 	ta.checkAI()
 	mon := ta.advice().day("2026-11-09")
 	if !ta.advice().Advice.Enabled || mon.Recommendation != "charge_extra" || mon.TargetSoC != 75 {
@@ -444,15 +464,13 @@ func TestAIModeCreatesPlansByItsOwnSwitch(t *testing.T) {
 		t.Fatal(err)
 	}
 	if a := ta.advice().Advice; len(a.Adjustments) != 0 || a.AutoApply {
-		t.Fatalf("the Advice switch acted in AI mode: %+v", a.Adjustments)
+		t.Fatalf("acted with AI mode's switch off: %+v", a.Adjustments)
+	}
+	if !strings.Contains(f.last.User, "become plans only when the driver confirms them") {
+		t.Error("the prompt doesn't say charge extra needs confirmation")
 	}
 
-	// The AI's own switch does, from the AI's target and window.
-	var v service.AISettingsView
-	ta.json("GET", "/api/settings/ai", nil, http.StatusOK, &v)
-	if v.Settings.AutoApply || v.Settings.AutoMinConfidence != 3 || v.Settings.AutoPostpone {
-		t.Fatalf("AI auto defaults = %+v", v.Settings)
-	}
+	// On, it acts from the AI's target and window.
 	ta.json("PUT", "/api/settings/ai", map[string]any{"autoApply": true, "autoMinConfidence": 3}, http.StatusOK, nil)
 	ta.json("PUT", "/api/settings/ai", map[string]any{"autoMinConfidence": 1}, http.StatusBadRequest, nil)
 	if err := ta.app.Service.AutoApply(ctx); err != nil {
@@ -465,6 +483,43 @@ func TestAIModeCreatesPlansByItsOwnSwitch(t *testing.T) {
 	}
 	if plan := ta.evccPlan(); plan == nil || plan.Soc != 75 {
 		t.Errorf("EVCC plan = %+v", plan)
+	}
+}
+
+func TestANewAIPlanKeepsEVCCsPlanWhenChargeMovesToChargeExtra(t *testing.T) {
+	ta := newTestApp(t, "")
+	ta.tripPlans(model.TripPlansAI)
+	ta.json("PUT", "/api/settings/ai", map[string]any{"autoApply": true, "autoMinConfidence": 3}, http.StatusOK, nil)
+	// First 80% as charge ahead, written when the car is plugged in.
+	f := &fakeAI{content: strings.Replace(aiDecision, `"target_soc": 95`, `"target_soc": 80`, 1)}
+	ta.useAI(f)
+	ta.checkAI()
+	ta.plug(false, 38)
+	ta.plug(true, 38)
+	tue := time.Date(2026, 11, 10, 7, 48, 0, 0, ams)
+	if p := ta.evccPlan(); p == nil || p.Soc != 80 || !p.Time.Equal(tue) {
+		t.Fatalf("plan = %+v", p)
+	}
+	log := &eventLog{ta: ta}
+	log.fresh()
+
+	// Then the AI moves the 80% to tonight's charge extra, charge ahead back
+	// to the trip's own 42%: the extra plan replaces the planner's plan
+	// directly, without removing it first.
+	f.content = strings.Replace(strings.Replace(aiDecision,
+		`"date": "2026-11-09", "recommendation": "none", "target_soc": null, "from": null, "until": null,`,
+		`"date": "2026-11-09", "recommendation": "charge_extra", "target_soc": 80, "from": "2026-11-09 23:00", "until": "2026-11-10 05:00",`, 1),
+		`"target_soc": 95`, `"target_soc": 42`, 1)
+	ta.json("POST", "/api/ai/run", map[string]any{}, http.StatusOK, nil)
+	var actions []string
+	for _, e := range log.fresh() {
+		actions = append(actions, e.Action)
+	}
+	if strings.Join(actions, ",") != "ai.run,adjustment.create" {
+		t.Errorf("events = %v, want the run and the extra plan only", actions)
+	}
+	if p := ta.evccPlan(); p == nil || p.Soc != 80 || !p.Time.Equal(time.Date(2026, 11, 10, 5, 0, 0, 0, ams)) {
+		t.Errorf("plan = %+v, want 80%% by 05:00", p)
 	}
 }
 

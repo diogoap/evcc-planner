@@ -46,7 +46,15 @@ const maxResponseChars = 64000
 
 // AISettings returns the AI mode settings.
 func (s *Service) AISettings() (model.AISettings, error) {
-	return s.Store.AISettings(model.DefaultAISettings())
+	v, err := s.Store.AISettings(model.DefaultAISettings())
+	if err != nil || v.AutoSet {
+		return v, err
+	}
+	// Acting on the AI's advice follows the automatic rules' choice until
+	// it is changed here.
+	adv, err := s.AdviceSettings()
+	v.AutoApply, v.AutoMinConfidence, v.AutoPostpone = adv.AutoApply, adv.AutoMinConfidence, adv.AutoPostpone
+	return v, err
 }
 
 // AISettingsView is what Settings → Advice → AI mode edits: the settings with the prompt
@@ -101,6 +109,14 @@ func (s *Service) SaveAISettings(ctx context.Context, v model.AISettings) (AISet
 	if err != nil {
 		return AISettingsView{}, err
 	}
+	// Acting on the AI's advice stops following the advice settings once it
+	// differs from them.
+	adv, err := s.AdviceSettings()
+	if err != nil {
+		return AISettingsView{}, err
+	}
+	v.AutoSet = v.AutoSet || v.AutoApply != adv.AutoApply || v.AutoMinConfidence != adv.AutoMinConfidence ||
+		v.AutoPostpone != adv.AutoPostpone
 	if v.Goals = strings.TrimSpace(strings.ReplaceAll(v.Goals, "\r\n", "\n")); v.Goals == strings.TrimSpace(goals) {
 		v.Goals = ""
 	}
@@ -111,11 +127,11 @@ func (s *Service) SaveAISettings(ctx context.Context, v model.AISettings) (AISet
 		return AISettingsView{}, invalid("unknown placeholders in the prompt: {{%s}}", strings.Join(u, "}}, {{"))
 	}
 	ev := model.AuditEvent{Action: "settings.update", SubjectType: "settings", SubjectID: "ai"}
+	before, err := s.AISettings()
+	if err != nil {
+		return AISettingsView{}, err
+	}
 	err = s.change(ctx, ev, func(tx *store.Store, e *model.AuditEvent) error {
-		before, err := tx.AISettings(model.DefaultAISettings())
-		if err != nil {
-			return err
-		}
 		if err := tx.SaveAISettings(v); err != nil {
 			return err
 		}
@@ -153,6 +169,9 @@ func (s *Service) PreviewAIPrompt(ctx context.Context, prompt, goals string) (*A
 	}
 	in, _ := s.aiInput(view)
 	in.Goals = goals
+	if ai, err := s.AISettings(); err == nil {
+		in.State.AutoExtra = ai.AutoApply
+	}
 	text, err := aiplan.Render(prompt, in)
 	if err != nil {
 		return nil, invalid("%s", err.Error())
@@ -363,7 +382,7 @@ func (s *Service) RunAI(ctx context.Context, trigger string) (*model.AIRun, erro
 		return nil, err
 	}
 	in, trips := s.aiInput(view)
-	in.Goals = ai.Goals
+	in.Goals, in.State.AutoExtra = ai.Goals, ai.AutoApply
 	decider, _ := s.aiDecider(ai)
 	run := model.AIRun{StartedAt: s.now(), Trigger: trigger, Decider: decider, Model: s.aiModel(ai), Trips: trips}
 	if cs.AI.Name() == "stub" {
@@ -485,14 +504,16 @@ func (s *Service) RunAINow(ctx context.Context) (*AIView, error) {
 	return s.AIStatus()
 }
 
-// applyNewAIPlan lets the automatic check and advice auto-apply act on a
-// new AI plan right away.
+// applyNewAIPlan lets advice auto-apply and the automatic check act on a
+// new AI plan right away, in that order: when the AI moves charge from
+// charge ahead to charge extra, the extra plan is in EVCC before the check
+// would remove the planner's plan, so EVCC keeps a plan throughout.
 func (s *Service) applyNewAIPlan(ctx context.Context) {
-	if err := s.SyncPlan(ctx); err != nil {
-		s.Log.Warn("automatic plan check after the AI plan failed", "err", err)
-	}
 	if err := s.AutoApply(audit.WithSource(ctx, model.SourceAutomation)); err != nil {
 		s.Log.Warn("advice auto-apply after the AI plan failed", "err", err)
+	}
+	if err := s.SyncPlan(ctx); err != nil {
+		s.Log.Warn("automatic plan check after the AI plan failed", "err", err)
 	}
 }
 

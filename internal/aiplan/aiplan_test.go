@@ -118,6 +118,7 @@ func TestDefaultPromptFillsEveryPlaceholder(t *testing.T) {
 		"Next trip: T1 \"School run\" leaves 2026-11-19 07:30 and needs at least 27%",
 		"- The car is away\n",
 		"EVCC charges from the grid by itself at or below €0.150/kWh",
+		"- Your charge extra (and postponing) become plans only when the driver confirms them\n",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in:\n%s", want, out)

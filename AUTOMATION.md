@@ -435,7 +435,13 @@ flowchart TD
   advice at its minimum confidence (postponing only with **Also postpone**
   and when the AI asks for it). It never acts on the automatic rules' advice
   shown until the first AI plan. The AI's target for the next departure
-  applies either way.
+  applies either way. Until you change it in AI mode, this switch (with its
+  minimum confidence and Also postpone) follows the one under Automatic
+  rules. After each AI plan, auto-apply runs before the plan check, so when
+  the AI moves charge from charge ahead to charge extra, the extra plan
+  replaces the planner's plan in EVCC directly. The AI is told whether its
+  charge extra becomes a plan by itself; if it needs confirmation, it is
+  asked to charge the trips' energy through charge ahead.
 - **Checks** (each correction is listed with the run under "Corrected by the
   planner"): a target below the next departure's own is raised to it, one
   above the cap is lowered to it; later trips it names must exist; charge
@@ -669,7 +675,7 @@ where **Preview with today's data** still works):
 | Model | anthropic/claude-haiku-latest | Any OpenRouter model with strict structured outputs, e.g. openai/gpt-luna-latest. Separate from the forecast's model under Connections. |
 | Goals | the planner's rules | What `{{goals}}` holds; edit to steer the AI (e.g. battery care against price). **Default goals** puts the generated text back. |
 | Prompt | the default | Placeholders are filled with the data. |
-| Automatically create plans from the AI's advice | Off | Like the Automatic rules' switch, but on today's AI advice (an extra plan with the AI's target, ready when its window ends). |
+| Automatically create plans from the AI's advice | as Automatic rules' | Like the Automatic rules' switch, but on today's AI advice (an extra plan with the AI's target, ready when its window ends). Until changed here, this and the next two follow the Automatic rules' settings. |
 | Minimum confidence | 3 | 2 also acts on the AI's medium-confidence advice. |
 | Also postpone | Off | Pauses cheap-grid charging when the AI asks for it (today only). |
 

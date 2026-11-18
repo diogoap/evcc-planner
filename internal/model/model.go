@@ -468,9 +468,12 @@ type AISettings struct {
 	// AutoApply creates plans from the AI's advice automatically, like
 	// AdviceSettings.AutoApply does from the rules' advice in the other
 	// modes: at AutoMinConfidence or more, postponing only with AutoPostpone.
+	// Until AutoSet (they were changed here), the three follow the advice
+	// settings.
 	AutoApply         bool `json:"autoApply"`
 	AutoMinConfidence int  `json:"autoMinConfidence"` // 2 medium or 3 high
 	AutoPostpone      bool `json:"autoPostpone"`
+	AutoSet           bool `json:"autoSet"`
 }
 
 // DefaultAIModel is the OpenRouter model AI mode uses until another is set.

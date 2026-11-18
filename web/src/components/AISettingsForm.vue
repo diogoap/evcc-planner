@@ -189,11 +189,14 @@ async function save() {
           <strong>Automatically create plans from the AI's advice</strong>
         </div>
         <p id="hint-ai-auto" class="field-hint m-0 mt-n2">
-          Off by default: the AI's advice offers Create extra plan and Review postponement for you to confirm.
-          On, it acts once a day on today's AI advice with enough confidence: an extra plan with the AI's
-          target, ready when its window ends, after which the previous plan comes back. It skips plans you set
-          in EVCC, and never acts on the automatic rules' advice shown until the first AI plan. The next
-          trip's plan always follows the AI by itself.
+          Off: the AI's advice offers Create extra plan and Review postponement for you to confirm. On, it
+          acts once a day on today's AI advice with enough confidence: an extra plan with the AI's target,
+          ready when its window ends, after which the previous plan comes back. It skips plans you set in
+          EVCC, and never acts on the automatic rules' advice shown until the first AI plan. The next trip's
+          plan always follows the AI by itself.
+          <template v-if="!settings.autoSet">
+            Until you change these here, they follow the same switch under Automatic rules.</template
+          >
         </p>
         <div class="form-grid">
           <label class="field">

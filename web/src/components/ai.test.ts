@@ -30,6 +30,7 @@ const view = (over: Partial<AISettings> = {}): AISettingsView => ({
     autoApply: false,
     autoMinConfidence: 3,
     autoPostpone: false,
+    autoSet: false,
     ...over,
   },
   defaultPrompt,

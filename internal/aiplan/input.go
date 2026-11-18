@@ -72,6 +72,9 @@ type State struct {
 	ExtraPlan  *Plan // an active extra plan from advice
 	// PostponedUntil is when cheap-grid charging resumes, if paused.
 	PostponedUntil *time.Time
+	// AutoExtra: charge extra (and postponing) from the AI's advice become
+	// plans by themselves; otherwise only when the driver confirms them.
+	AutoExtra bool
 }
 
 // Plan is an EVCC one-off plan.

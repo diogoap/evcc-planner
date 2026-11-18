@@ -143,6 +143,7 @@ const SystemPrompt = `You are the decision step of a home EV charging planner. A
 - Use trip IDs only in trip_ids. In summaries and reasons, call trips by their names (e.g. "BSO pick-up"), not their IDs.
 - Every price is in EUR/kWh including VAT. SoC values are whole percent of the usable battery.
 - The planner checks your answer: it never plans below a departure's minimum SoC, keeps charge ahead at or below its cap, and ignores windows outside the published prices.
+- charge_ahead is sent to EVCC by itself. Whether charge extra becomes a plan by itself or needs the driver's confirmation is in the data under "Right now"; if it needs confirmation, charge the trips' energy through charge_ahead rather than charge_extra.
 - Write in English, in short, plain sentences.`
 
 // ---- rendering ----
@@ -282,6 +283,11 @@ func renderState(in Input) string {
 	}
 	if s.PostponedUntil != nil {
 		fmt.Fprintf(&b, "- Cheap-grid charging paused until %s\n", in.at(*s.PostponedUntil))
+	}
+	if s.AutoExtra {
+		b.WriteString("- Your charge extra (and postponing) become plans by themselves\n")
+	} else {
+		b.WriteString("- Your charge extra (and postponing) become plans only when the driver confirms them\n")
 	}
 	if in.Next != nil {
 		n := in.Next
