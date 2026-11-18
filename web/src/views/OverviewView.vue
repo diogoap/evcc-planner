@@ -51,6 +51,11 @@ const advice = computed(
 )
 // Days whose lowest price the planner charges at: highlighted in the week.
 const good = computed(() => goodPrices(adviceDays.value, plan.value?.control.target ?? null))
+// The trip plan's target, for the days it charges later trips ahead (not
+// while a chosen plan pauses it).
+const aheadTarget = computed(() =>
+  plan.value && !plan.value.control.paused ? plan.value.control.target : null,
+)
 const proposing = ref<{ kind: AdjustmentKind; date: string } | null>(null)
 // The planner's estimate of the charging slots for the automatic target.
 const expected = computed(() => (plan.value ? expectedCharging(plan.value) : []))
@@ -210,6 +215,7 @@ function cancelAdjustment(id: number) {
             :advice="adviceDays"
             :selected="panelDate ?? advice?.date"
             :good="good"
+            :ahead-target="aheadTarget"
             @select="(d) => (selected = d)"
             @open="openDay"
           />
@@ -219,11 +225,12 @@ function cancelAdjustment(id: number) {
             :advice="adviceDays"
             :selected="panelDate ?? advice?.date"
             :good="good"
+            :ahead-target="aheadTarget"
             @select="(d) => (selected = d)"
             @open="openDay"
           />
           <p v-if="weekView === 'columns' && adviceDays.length" class="small muted m-0 mt-2 week-legend">
-            <AppIcon name="bolt" /> charge extra · <AppIcon name="clock" /> defer ·
+            <AppIcon name="bolt" /> charge extra or ahead · <AppIcon name="clock" /> defer ·
             <AppIcon name="check" /> keep or no plan · <AppIcon name="dash" /> no data. A green price is one
             the plan charges at (charge extra or charge ahead). Tap a day for its advice; press and hold to
             open it.
@@ -238,6 +245,7 @@ function cancelAdjustment(id: number) {
           :sources="plan.advice.sources"
           :now="plan.now"
           :dates="adviceDays.map((d) => d.date)"
+          :ahead-target="aheadTarget"
           @select="(d) => (selected = d)"
           @open="openDay"
           @propose="(k) => (proposing = { kind: k, date: advice!.date })"

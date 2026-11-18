@@ -44,6 +44,7 @@ notifications is in [AUTOMATION.md](AUTOMATION.md).
   - **Charge extra** when blocks at home are much cheaper than tomorrow's lowest price. Before tomorrow's prices are published, that's the lowest the weekly outlook expects for tomorrow, or the past week's average lowest price. How much depends on the discount and on how strongly the coming days look cheaper (outlook, wind, sun). Settings → Advice has the steps, such as "30% cheaper → 80%", for each level. The target is only what those cheap blocks can charge.
   - **Charge extra from solar**: keep the car plugged in when the sun is no dearer than the reference.
 - Later days show what the outlook expects ("Looks cheaper").
+- On a day the trip plan charges later trips ahead (without charge extra), the advice says "Charge ahead to 80%" rather than "No plan needed".
 - Hints for a trip that misses very cheap or negative prices, and for negative prices while the sun shines (use the solar or switch the panels off).
 - **Create extra plan** and **Review postponement** ask before changing anything and are undone when they expire. An extra plan is ready when its cheap hours end. Applying advice automatically is optional, off by default, and never happens in Manual mode.
 

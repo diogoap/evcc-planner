@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { Day, DayAdvice } from '../api/types'
+import type { Day, DayAdvice, Target } from '../api/types'
 import { adviceLabel, confidenceNames, priceBadge } from '../lib/advice'
 import { dayShort, km, kwh } from '../lib/format'
 import { dayLabel, dayTile, reviewText } from '../lib/status'
@@ -19,6 +19,8 @@ const props = defineProps<{
   advice: DayAdvice[]
   selected?: string
   good?: Map<string, string>
+  /** The trip plan's target, for days it charges later trips ahead. */
+  aheadTarget?: Target | null
 }>()
 const emit = defineEmits<{ select: [date: string]; open: [date: string] }>()
 
@@ -72,7 +74,7 @@ const tiles = computed(() =>
   props.days.map((d) => {
     const a = byDate.value.get(d.date)
     const label = dayLabel(d)
-    const adv = a ? adviceLabel(a, d) : null
+    const adv = a ? adviceLabel(a, d, props.aheadTarget) : null
     const [weekday, date] = dayShort(d.date).split(' ')
     return {
       day: d,

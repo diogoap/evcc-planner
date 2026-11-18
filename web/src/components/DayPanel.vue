@@ -208,6 +208,7 @@ function onTouchEnd(e: TouchEvent) {
             :sources="plan.advice.sources"
             :now="plan.now"
             :dates="dates"
+            :ahead-target="plan.control.paused ? null : plan.control.target"
             @propose="(k) => emit('propose', k, date)"
             @dismiss="(undo) => emit('dismiss', date, undo)"
             @cancel="(id) => emit('cancel', id)"

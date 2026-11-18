@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { Day, DayAdvice } from '../api/types'
-import type { Target } from '../api/types'
+import type { Day, DayAdvice, Target } from '../api/types'
 import {
   adviceLabel,
   confidenceLabel,
@@ -55,6 +54,42 @@ describe('adviceLabel', () => {
     expect(adviceLabel(advice({ recommendation: 'defer' })).text).toBe('Defer optional charging')
     expect(adviceLabel(advice({ noSuggestion: true, confidence: 0 })).text).toBe('No data / no suggestion')
     expect(adviceLabel(advice({}), day({ status: 'completed' })).text).toBe('Completed')
+    // A day the trip plan charges later trips ahead, without charge extra.
+    const target: Target = {
+      soc: 80,
+      minSoc: 21,
+      readyBy: '2026-11-10T15:33:00Z',
+      tripKey: 'recurring:2:2026-11-10',
+      title: 'Pickup',
+      covered: false,
+      ahead: [
+        {
+          tripKey: 'recurring:1:2026-11-11',
+          title: 'School',
+          departAt: '2026-11-11T06:33:00Z',
+          energyPct: 4,
+          priceAhead: 0,
+          priceLater: null,
+          savingEur: 0,
+        },
+      ],
+      savingEur: 0,
+      charging: [{ start: '2026-11-10T13:00:00Z', end: '2026-11-10T15:00:00Z', value: 0.27 }],
+    }
+    expect(adviceLabel(advice({}), day({ chargePct: 0 }), target)).toMatchObject({
+      text: 'Charge ahead to 80%',
+      short: 'Charge ahead',
+      icon: 'bolt',
+    })
+    expect(adviceLabel(advice({ date: '2026-11-11' }), day({ chargePct: 0 }), target).text).not.toContain(
+      'ahead',
+    )
+    expect(adviceLabel(advice({}), day({ chargePct: 0 }), { ...target, covered: true }).text).not.toContain(
+      'ahead',
+    )
+    expect(
+      adviceLabel(advice({ recommendation: 'charge_extra', targetSoc: 90 }), undefined, target).text,
+    ).toBe('Charge extra to 90%')
     // Advice for the rest of a day whose trips are done still shows.
     expect(adviceLabel(advice({ recommendation: 'defer' }), day({ status: 'completed' })).text).toBe(
       'Defer optional charging',

@@ -32,10 +32,25 @@ interface Label {
 }
 
 /**
- * The day's advice as a label (and a short form for the grid). "None" reads
- * as keep or no plan, depending on whether the day's trips need charging.
+ * The days the trip plan charges later trips ahead: those of its expected
+ * charging, else its ready-by day. Empty when it charges ahead for nothing
+ * (or pass no target, e.g. while a chosen plan pauses it).
  */
-export function adviceLabel(a: DayAdvice, day?: Day): Label {
+export function aheadDays(target?: Target | null): Set<string> {
+  const days = new Set<string>()
+  if (!target || target.covered || !target.ahead.length) return days
+  for (const r of target.charging) days.add(localDate(r.start))
+  if (!days.size) days.add(localDate(target.readyBy))
+  return days
+}
+
+/**
+ * The day's advice as a label (and a short form for the grid). Without
+ * charge extra or defer, a day the trip plan charges later trips ahead reads
+ * "Charge ahead to 80%"; otherwise "none" reads as keep or no plan,
+ * depending on whether the day's trips need charging.
+ */
+export function adviceLabel(a: DayAdvice, day?: Day, target?: Target | null): Label {
   if (!a.noSuggestion) {
     switch (a.recommendation) {
       case 'charge_extra':
@@ -55,6 +70,9 @@ export function adviceLabel(a: DayAdvice, day?: Day): Label {
         }
     }
   }
+  // Charge extra is the advice's; charging ahead is the trip plan's.
+  if (target && aheadDays(target).has(a.date))
+    return { text: `Charge ahead to ${target.soc}%`, short: 'Charge ahead', tone: 'ok', icon: 'bolt' }
   // Today's trips may all be done while its advice still applies.
   if (day?.status === 'completed')
     return { text: 'Completed', short: 'Completed', tone: 'muted', icon: 'check' }

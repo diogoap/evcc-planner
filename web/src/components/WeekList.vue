@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import type { Day, DayAdvice } from '../api/types'
+import type { Day, DayAdvice, Target } from '../api/types'
 import { basisNames, cheapHint, sunny, windy } from '../lib/advice'
 import { dayLong, dayShort, km, kwh } from '../lib/format'
 import { dayLabel, reviewText } from '../lib/status'
@@ -25,6 +25,8 @@ const props = defineProps<{
   advice: DayAdvice[]
   selected?: string
   good?: Map<string, string>
+  /** The trip plan's target, for days it charges later trips ahead. */
+  aheadTarget?: Target | null
 }>()
 const emit = defineEmits<{ select: [date: string]; open: [date: string] }>()
 
@@ -131,7 +133,14 @@ const rows = computed(() => {
           >
         </span>
         <span v-if="r.advice || r.day.reviewCount" class="wl-advice">
-          <AdviceBadges v-if="r.advice" :advice="r.advice" :day="r.day" hide-price hide-weather />
+          <AdviceBadges
+            v-if="r.advice"
+            :advice="r.advice"
+            :day="r.day"
+            :ahead-target="aheadTarget"
+            hide-price
+            hide-weather
+          />
           <span v-if="r.day.reviewCount" class="pill tone-warn" data-testid="review-count">{{
             reviewText(r.day.reviewCount)
           }}</span>

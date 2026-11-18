@@ -54,6 +54,11 @@ time. When tomorrow's published prices are clearly lower, the advice is to
 still), with no charge extra. Charge ahead already leaves out later trips that
 are cheaper to charge for later.
 
+On a day the trip plan charges later trips ahead and the advice has no
+charge extra or defer, the advice reads **Charge ahead to 80%** (not "No
+plan needed"), with a note that charge extra would come on top; in AI mode
+too, where the AI decides both.
+
 ## Words used here
 
 | Word | Meaning |

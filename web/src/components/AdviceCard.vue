@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { AdviceSource, Day, DayAdvice } from '../api/types'
+import type { AdviceSource, Day, DayAdvice, Target } from '../api/types'
 import {
+  aheadDays,
   adviceLabel,
   basisNames,
   confidenceNames,
@@ -24,6 +25,8 @@ const props = defineProps<{
   now: string
   dates: string[]
   bare?: boolean
+  /** The trip plan's target, for a day it charges later trips ahead. */
+  aheadTarget?: Target | null
 }>()
 const emit = defineEmits<{
   select: [date: string]
@@ -34,7 +37,11 @@ const emit = defineEmits<{
   cancel: [id: number]
 }>()
 
-const label = computed(() => adviceLabel(props.advice, props.day))
+const label = computed(() => adviceLabel(props.advice, props.day, props.aheadTarget))
+// The trip plan charges later trips ahead on this day.
+const ahead = computed(() =>
+  props.aheadTarget && aheadDays(props.aheadTarget).has(props.advice.date) ? props.aheadTarget : null,
+)
 const weekday = computed(() => dayLong(props.advice.date).split(' ')[0])
 const index = computed(() => props.dates.indexOf(props.advice.date))
 const canDismiss = computed(
@@ -137,6 +144,10 @@ const reference = computed(() => referenceText(props.advice))
       <span v-if="reference" class="badge num" data-testid="advice-reference">{{ reference }}</span>
     </div>
     <p class="m-0">{{ advice.summary }}</p>
+    <p v-if="ahead" class="banner tone-info small m-0" data-testid="advice-ahead">
+      <AppIcon name="bolt" /> The trip plan charges to {{ ahead.soc }}% by {{ clock(ahead.readyBy) }}, also
+      for {{ ahead.ahead.map((t) => t.title).join(' and ') }}. Charge extra would come on top.
+    </p>
 
     <dl class="facts">
       <div v-if="price && advice.price" class="fact">

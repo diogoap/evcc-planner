@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { Day, DayAdvice } from '../api/types'
+import type { Day, DayAdvice, Target } from '../api/types'
 import {
   adviceLabel,
   cheapHint,
@@ -19,9 +19,16 @@ import AppIcon from './AppIcon.vue'
 // wind.
 // hidePrice and hideWeather leave out the price, or sun and wind, for a list
 // that shows them in their own columns.
-const props = defineProps<{ advice: DayAdvice; day?: Day; hidePrice?: boolean; hideWeather?: boolean }>()
+// aheadTarget: the trip plan's target, for days it charges later trips ahead.
+const props = defineProps<{
+  advice: DayAdvice
+  day?: Day
+  aheadTarget?: Target | null
+  hidePrice?: boolean
+  hideWeather?: boolean
+}>()
 
-const label = computed(() => adviceLabel(props.advice, props.day))
+const label = computed(() => adviceLabel(props.advice, props.day, props.aheadTarget))
 const target = computed(() =>
   props.advice.recommendation === 'charge_extra' && !props.advice.solar && !props.advice.noSuggestion
     ? props.advice.targetSoc

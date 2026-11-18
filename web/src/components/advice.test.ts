@@ -56,6 +56,48 @@ function card(a: DayAdvice) {
 }
 
 describe('AdviceCard', () => {
+  it('names charging ahead by the trip plan on a day without charge extra', () => {
+    const target = {
+      soc: 80,
+      minSoc: 42,
+      readyBy: '2026-11-10T15:33:00Z',
+      tripKey: 'recurring:2:2026-11-10',
+      title: 'Pickup',
+      covered: false,
+      ahead: [
+        {
+          tripKey: 'recurring:1:2026-11-11',
+          title: 'School drop-off',
+          departAt: '2026-11-11T06:33:00Z',
+          energyPct: 4,
+          priceAhead: 0,
+          priceLater: null,
+          savingEur: 0,
+        },
+      ],
+      savingEur: 0,
+      charging: [{ start: '2026-11-10T13:00:00Z', end: '2026-11-10T15:00:00Z', value: 0.27 }],
+    }
+    const w = mount(AdviceCard, {
+      props: {
+        advice: advice({
+          recommendation: 'none',
+          targetSoc: undefined,
+          blocks: undefined,
+          action: undefined,
+        }),
+        sources,
+        now: '2026-11-09T18:00:00Z',
+        dates,
+        aheadTarget: target,
+      },
+    })
+    expect(w.get('[data-testid=advice-label]').text()).toBe('Charge ahead to 80%')
+    expect(w.get('[data-testid=advice-ahead]').text()).toBe(
+      'The trip plan charges to 80% by 16:33, also for School drop-off. Charge extra would come on top.',
+    )
+  })
+
   it("shows the recommendation, confidence, charge extra's target, and plan action", async () => {
     const w = card(advice({}))
     expect(w.text()).toContain("Tuesday's advice")
