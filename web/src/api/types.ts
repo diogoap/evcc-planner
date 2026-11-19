@@ -527,7 +527,7 @@ export interface Status {
 export interface HealthIssue {
   name: string
   detail: string
-  /** What to do about a rejected key, token, or address. */
+  /** What to do about it. */
   fix?: string
   lastSuccessAt?: string
 }
@@ -744,12 +744,19 @@ export interface AIPreview {
 export interface Connection {
   name: string
   mode?: string
-  /** rejected: the service refused its key, token, or address (fix says what to do). */
+  /** rejected: the service refused its key, token, or address. */
   status: 'ok' | 'error' | 'rejected' | 'stub' | 'not_configured' | 'planned'
   detail: string
+  /** What to do about an error or a rejected key. */
   fix?: string
   lastSuccessAt?: string
+  /** What can be done about it now (Settings → Connections). */
+  actions?: ConnectionAction[]
 }
+
+/** check it, sync the calendars, fetch the forecasts, send a test
+ * notification, make an AI plan, or send the plan to EVCC again. */
+export type ConnectionAction = 'check' | 'sync' | 'refresh' | 'test' | 'run' | 'send'
 
 /** Integration settings edited under Settings → Connections (no secrets). */
 export interface ConnectionSettings {

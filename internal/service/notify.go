@@ -525,6 +525,7 @@ func (s *Service) notificationConnection() ConnectionView {
 	case serr != nil:
 		c.Status, c.Detail = "error", fmt.Sprintf("%s; the last message failed at %s: %v",
 			plural(len(settings.Phones), "phone"), s.clockText(serrAt), serr)
+		c.Fix = "Failed messages are tried again for about 20 minutes. Check Home Assistant and the phone's Companion app."
 		if rejected.Is(serr) {
 			renewKey(&c, s.Cfg.HomeAssistant.TokenEnv)
 		}
@@ -533,6 +534,7 @@ func (s *Service) notificationConnection() ConnectionView {
 			". Make the token's user an administrator in Home Assistant."
 	case lerr != nil:
 		c.Status, c.Detail = "error", plural(len(settings.Phones), "phone")+"; button presses: "+lerr.Error()
+		c.Fix = "Button presses reach the planner again once it reconnects; it keeps trying."
 		if rejected.Is(lerr) {
 			renewKey(&c, s.Cfg.HomeAssistant.TokenEnv)
 		}
@@ -542,6 +544,9 @@ func (s *Service) notificationConnection() ConnectionView {
 		c.Status, c.Detail = "ok", plural(len(settings.Phones), "phone")+"; button presses connected"
 	default:
 		c.Status, c.Detail = "ok", plural(len(settings.Phones), "phone")+"; connecting for button presses"
+	}
+	if err == nil && settings.Enabled && len(settings.Phones) > 0 && s.Clients().Notify != nil {
+		c.Actions = []string{ActionTest}
 	}
 	return c
 }

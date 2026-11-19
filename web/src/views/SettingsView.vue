@@ -2,7 +2,15 @@
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute } from 'vue-router'
 import { api } from '../api/client'
-import type { Connection, DemoFault, HASensor, Place, Settings, TripPlans } from '../api/types'
+import type {
+  Connection,
+  ConnectionAction,
+  DemoFault,
+  HASensor,
+  Place,
+  Settings,
+  TripPlans,
+} from '../api/types'
 import AIRunCard from '../components/AIRunCard.vue'
 import AISettingsForm from '../components/AISettingsForm.vue'
 import AdviceSettingsForm from '../components/AdviceSettingsForm.vue'
@@ -17,7 +25,7 @@ import ToggleSwitch from '../components/ToggleSwitch.vue'
 import { ago } from '../lib/format'
 import { controlLabel, keepsPlan } from '../lib/status'
 import { useUnsaved } from '../lib/unsaved'
-import { mutate, notify, refresh, resumeAutomaticPlans, state, syncCalendar } from '../store'
+import { mutate, notify, refresh, resumeAutomaticPlans, state } from '../store'
 
 type Tab = 'home' | 'planning' | 'advice' | 'places' | 'notifications' | 'connections'
 const tabs: [Tab, string][] = [
@@ -84,7 +92,8 @@ const editingPlace = ref<Place | null>(null)
 const saving = ref(false)
 const error = ref('')
 const demo = reactive({ connected: false, soc: 45 })
-const refreshing = ref(false)
+// The connection action running, as "name:action".
+const acting = ref('')
 const forecastDetails = ref<InstanceType<typeof ForecastDetails> | null>(null)
 const aiRun = ref<InstanceType<typeof AIRunCard> | null>(null)
 
@@ -298,27 +307,41 @@ async function removePlace(p: Place) {
   if (await mutate(() => api.deletePlace(p.id), 'Place deleted')) places.value = await api.places()
 }
 
-async function syncCalendarNow() {
-  connections.value = (await syncCalendar()) ?? connections.value
+const actionText: Record<ConnectionAction, string> = {
+  check: 'Check now',
+  sync: 'Sync now',
+  refresh: 'Refresh',
+  test: 'Send test',
+  run: 'Run now',
+  send: 'Send plan again',
+}
+// What a toast says when an action worked.
+const actionDone: Record<ConnectionAction, (name: string) => string> = {
+  check: (name) => `${name} works`,
+  sync: () => 'Calendar synced',
+  refresh: () => 'Forecasts refreshed',
+  test: () => 'Test notification sent',
+  run: () => 'AI plan made',
+  send: () => 'Plan sent to EVCC',
 }
 
-async function refreshForecasts() {
-  refreshing.value = true
+// Does what a connection offers now; the toast says how it went, and the
+// table and the Overview show the outcome.
+async function act(c: Connection, action: ConnectionAction) {
+  acting.value = `${c.name}:${action}`
   try {
-    connections.value = await api.refreshForecasts()
-    notify('Forecasts refreshed')
-    forecastDetails.value?.load()
+    connections.value = await api.connectionAction(c.name, action)
+    const after = connections.value.find((x) => x.name === c.name)
+    if (after?.status === 'error' || after?.status === 'rejected')
+      notify(`${c.name}: ${after.detail}`, 'error')
+    else notify(actionDone[action](c.name))
+    if (action === 'refresh') forecastDetails.value?.load()
     refresh()
   } catch (e) {
     notify((e as Error).message, 'error')
   } finally {
-    refreshing.value = false
+    acting.value = ''
   }
-}
-
-async function checkEVCC() {
-  await mutate(() => api.refreshEVCC(), 'EVCC checked')
-  connections.value = await api.connections()
 }
 
 // Demo outages: a demo service fails until switched back. Opened
@@ -617,16 +640,7 @@ async function applyDemo() {
 
     <div v-if="tab === 'connections'" class="stack">
       <section class="card">
-        <div class="card-title">
-          Connections
-          <span class="row">
-            <button class="btn sm" type="button" @click="checkEVCC">Check EVCC</button>
-            <button class="btn sm" type="button" @click="syncCalendarNow">Sync calendar now</button>
-            <button class="btn sm" type="button" :disabled="refreshing" @click="refreshForecasts">
-              Refresh forecasts
-            </button>
-          </span>
-        </div>
+        <div class="card-title">Connections</div>
         <table class="table">
           <tbody>
             <tr v-for="c in connections" :key="c.name" :data-testid="`connection-${c.name}`">
@@ -641,6 +655,20 @@ async function applyDemo() {
                 <div v-if="c.fix" class="strong" data-testid="connection-fix">{{ c.fix }}</div>
                 <div v-if="c.lastSuccessAt && state.plan" class="muted">
                   Last success {{ ago(c.lastSuccessAt, state.plan.now) }}
+                </div>
+                <div v-if="c.actions?.length" class="row mt-1">
+                  <button
+                    v-for="a in c.actions"
+                    :key="a"
+                    class="btn sm"
+                    type="button"
+                    :disabled="!!acting"
+                    :aria-busy="acting === `${c.name}:${a}`"
+                    :data-testid="`connection-action-${a}`"
+                    @click="act(c, a)"
+                  >
+                    {{ actionText[a] }}
+                  </button>
                 </div>
               </td>
             </tr>

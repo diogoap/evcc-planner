@@ -88,6 +88,21 @@ type Service struct {
 	// The last notification send, while it failed: its error and time.
 	sendErr   error
 	sendErrAt time.Time
+	// The last automatic change of EVCC's plan, while it failed (Settings
+	// → Connections offers Send plan again).
+	planErr   error
+	planErrAt time.Time
+}
+
+// notePlanChange keeps the outcome of an automatic change of EVCC's plan;
+// nil also when there is nothing to change any more.
+func (s *Service) notePlanChange(err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.planErr = err
+	if err != nil {
+		s.planErrAt = s.now()
+	}
 }
 
 func (s *Service) loc() *time.Location { return s.Cfg.Location }

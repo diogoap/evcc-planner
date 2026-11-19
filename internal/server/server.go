@@ -79,6 +79,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/control/resume", s.resumeControl)
 
 	mux.HandleFunc("GET /api/connections", s.connections)
+	mux.HandleFunc("POST /api/connections/action", s.connectionAction)
 	mux.HandleFunc("POST /api/calendar/sync", s.syncCalendar)
 
 	mux.HandleFunc("GET /api/forecasts", s.forecasts)
@@ -701,6 +702,25 @@ func (s *Server) resumeControl(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) connections(w http.ResponseWriter, r *http.Request) {
 	list, err := s.Svc.Connections()
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
+// connectionAction does what a connection offers now (Check now, Sync
+// now, Refresh, ...) and returns the connections afterwards.
+func (s *Server) connectionAction(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Name   string `json:"name"`
+		Action string `json:"action"`
+	}
+	if err := decode(r, &in); err != nil {
+		s.fail(w, err)
+		return
+	}
+	list, err := s.Svc.ConnectionAction(r.Context(), in.Name, in.Action)
 	if err != nil {
 		s.fail(w, err)
 		return

@@ -124,6 +124,13 @@ address, loadpoint, or vehicle waits until an active extra plan or
 postponement has ended, because each one restores EVCC's previous setting
 where it was made.
 
+Each connection in Settings → Connections has what can be done about it
+now: **Check now** (EVCC, Home Assistant, Google Routes), **Sync now**
+(calendars), **Refresh** (forecasts), **Send test** (phone notifications),
+**Run now** (AI mode), and **Send plan again** when the planner's last change
+of EVCC's plan failed. A problem comes with a short line on what to do; checks
+are in the activity log.
+
 Secrets stay in environment variables: the API keys, the calendar
 addresses, and `HA_TOKEN`; the Connections tab shows only whether each is
 set. When a service refuses one (an expired key, a revoked token, a calendar
@@ -146,7 +153,7 @@ a warning in the log.
    secret address keeps local trip edits.
 
 The planner syncs hourly, and at once with **Sync calendar** on the Trips page
-(or **Sync calendar now** in Settings → Connections). Timed events become
+(or **Sync now** on the calendar's row in Settings → Connections). Timed events become
 trips unless they are online meetings or at home (listed as "not counted");
 all-day events are skipped. Events without a location are shown disabled until
 they get one. Unclear locations (no address and not a saved place) count toward
@@ -190,8 +197,8 @@ a key it falls back to labelled stub distances.
   tomorrow), read from EVCC's state; nothing to set up here.
 
 Both are fetched once a day at the daily fetch time (18:00 by default; Settings →
-Connections, which also has **Refresh forecasts**); failures retry hourly and
-keep the last valid forecast.
+Connections, where each forecast's row also has **Refresh**); failures retry
+hourly and keep the last valid forecast.
 
 ### Home Assistant: always-on SoC (optional)
 

@@ -270,6 +270,25 @@ func (r *Resolver) Leg(ctx context.Context, origin, destination string, departAt
 	return legFrom(&cached, false, false), nil
 }
 
+// Check looks one route up with the provider now, without the cache, to
+// see whether lookups work (Settings → Connections: Check now). The
+// outcome counts for Health.
+func (r *Resolver) Check(ctx context.Context, origin, destination string) error {
+	timeout := r.Timeout
+	if timeout == 0 {
+		timeout = 10 * time.Second
+	}
+	cctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	cctx = audit.WithCall(cctx, audit.Call{
+		Summary: fmt.Sprintf("Route %s → %s (check)", origin, destination),
+		Detail:  map[string]any{"from": origin, "to": destination},
+	})
+	_, err := r.Router.Compute(cctx, origin, destination, nil)
+	r.noteLookup(err, r.Clock.Now())
+	return err
+}
+
 func legFrom(c *store.CachedRoute, cached, stale bool) Leg {
 	return Leg{
 		DistanceKm: float64(c.DistanceM) / 1000, Duration: time.Duration(c.DurationS) * time.Second,

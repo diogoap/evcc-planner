@@ -182,7 +182,7 @@ test('connections show the forecast sources and price provenance', async ({ page
   await expect(details).toContainText('Report Mon 09 – Sun 15')
   await expect(details).toContainText('converted')
   await expect(details).toContainText('Goedkoopste dag: Dinsdag')
-  await page.getByRole('button', { name: 'Refresh forecasts' }).click()
+  await page.getByTestId('connection-KNMI').getByRole('button', { name: 'Refresh' }).click()
   await expect(page.getByText('Forecasts refreshed')).toBeVisible()
   await shot(page, 'settings-connections')
 })

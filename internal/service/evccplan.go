@@ -12,6 +12,7 @@ import (
 	"github.com/diogoap/evcc-planner/internal/audit"
 	"github.com/diogoap/evcc-planner/internal/config"
 	"github.com/diogoap/evcc-planner/internal/evcc"
+	"github.com/diogoap/evcc-planner/internal/homeassistant"
 	"github.com/diogoap/evcc-planner/internal/localtime"
 	"github.com/diogoap/evcc-planner/internal/model"
 	"github.com/diogoap/evcc-planner/internal/rejected"
@@ -297,6 +298,9 @@ func (s *Service) SendPlan(ctx context.Context, in SendPlanInput) (*EVCCPlanView
 	ev.Before = audit.Marshal(map[string]string{"evccPlan": prev})
 	ev.After = audit.Marshal(map[string]string{"evccPlan": s.planText(float64(in.SoC), at, true)})
 	resp, err := cs.EVCC.SetSocPlan(ctx, veh.Name, in.SoC, at)
+	if in.auto {
+		s.notePlanChange(err)
+	}
 	if err != nil {
 		ev.Outcome, ev.Error = model.OutcomeFailure, err.Error()
 		s.record(ctx, ev)
@@ -345,10 +349,22 @@ type ConnectionView struct {
 	Mode   string `json:"mode"`
 	Status string `json:"status"` // ok, error, rejected, stub, not_configured, planned
 	Detail string `json:"detail"`
-	// Fix says what to do about a rejected key, token, or address.
+	// Fix says what to do about an error or a rejected key.
 	Fix           string     `json:"fix,omitempty"`
 	LastSuccessAt *time.Time `json:"lastSuccessAt,omitempty"`
+	// Actions are what can be done about it now (Action…).
+	Actions []string `json:"actions,omitempty"`
 }
+
+// Actions on a connection (Settings → Connections), see ConnectionAction.
+const (
+	ActionCheck   = "check"   // check it now
+	ActionSync    = "sync"    // sync the calendars now
+	ActionRefresh = "refresh" // fetch the forecasts now
+	ActionTest    = "test"    // send a test notification
+	ActionRun     = "run"     // make an AI plan now
+	ActionSend    = "send"    // send the plan to EVCC again
+)
 
 // renewKey marks a connection whose key (in the environment variable env)
 // was refused, with what to do about it.
@@ -360,10 +376,11 @@ func renewKey(c *ConnectionView, env string) {
 func (s *Service) Connections() ([]ConnectionView, error) {
 	var out []ConnectionView
 	snap := s.snapshot()
-	ev := ConnectionView{Name: "EVCC", Mode: s.Cfg.EVCC.Mode}
+	ev := ConnectionView{Name: "EVCC", Mode: s.Cfg.EVCC.Mode, Actions: []string{ActionCheck}}
 	switch {
 	case snap.err != nil:
 		ev.Status, ev.Detail = "error", snap.err.Error()
+		ev.Fix = "Check that EVCC runs and that its address under Connection settings is right; the planner keeps trying."
 	case s.Cfg.EVCC.Mode == config.ModeStub:
 		ev.Status, ev.Detail = "stub", "Demo feed"
 	case snap.state == nil:
@@ -373,6 +390,15 @@ func (s *Service) Connections() ([]ConnectionView, error) {
 	}
 	if !snap.okAt.IsZero() {
 		ev.LastSuccessAt = &snap.okAt
+	}
+	s.mu.RLock()
+	perr, perrAt := s.planErr, s.planErrAt
+	s.mu.RUnlock()
+	if perr != nil && snap.err == nil {
+		ev.Status = "error"
+		ev.Detail += fmt.Sprintf("; changing its plan failed at %s: %v", s.clockText(perrAt), perr)
+		ev.Fix = "Send the plan again; the planner also tries at its next check."
+		ev.Actions = append(ev.Actions, ActionSend)
 	}
 	out = append(out, ev)
 
@@ -386,7 +412,7 @@ func (s *Service) Connections() ([]ConnectionView, error) {
 	case len(cals) == 0:
 		cal.Status, cal.Detail = "not_configured", "Set "+s.Cfg.Calendar.URLEnv+" to one or more secret iCal addresses"
 	default:
-		cal.Status = "ok"
+		cal.Status, cal.Actions = "ok", []string{ActionSync}
 		if s.Cfg.Calendar.Mode == config.ModeStub {
 			cal.Status = "stub"
 		}
@@ -418,6 +444,9 @@ func (s *Service) Connections() ([]ConnectionView, error) {
 			detail += part
 		}
 		cal.Detail = detail
+		if cal.Status == "error" {
+			cal.Fix = "The planner tries again at its next sync, or now with Sync now."
+		}
 		if refused {
 			cal.Status = "rejected"
 			cal.Fix = "Set " + s.Cfg.Calendar.URLEnv + " to the calendar's current secret address in the planner's environment and restart it."
@@ -425,7 +454,7 @@ func (s *Service) Connections() ([]ConnectionView, error) {
 	}
 	out = append(out, cal)
 
-	rt := ConnectionView{Name: "Google Routes", Mode: s.Cfg.Routes.Mode}
+	rt := ConnectionView{Name: "Google Routes", Mode: s.Cfg.Routes.Mode, Actions: []string{ActionCheck}}
 	okAt, failedAt, rerr := s.Clients().Routes.Health()
 	if !okAt.IsZero() {
 		rt.LastSuccessAt = &okAt
@@ -434,6 +463,7 @@ func (s *Service) Connections() ([]ConnectionView, error) {
 	case rerr != nil:
 		rt.Status, rt.Detail = "error", fmt.Sprintf("The last lookup failed at %s: %v; trips use a cached route where there is one",
 			s.clockText(failedAt), rerr)
+		rt.Fix = "New places get a distance once a lookup works; Check now tries one."
 		if rejected.Is(rerr) {
 			renewKey(&rt, s.Cfg.Routes.APIKeyEnv)
 		}
@@ -465,13 +495,20 @@ func (s *Service) homeAssistantConnection() ConnectionView {
 	if !okAt.IsZero() {
 		c.LastSuccessAt = &okAt
 	}
+	if s.Clients().HA != nil {
+		c.Actions = []string{ActionCheck}
+	}
 	switch {
 	case s.Clients().HA == nil:
 		c.Status, c.Detail = "not_configured", s.Clients().HANote
 	case err != nil:
 		c.Status, c.Detail = "error", err.Error()
-		if rejected.Is(err) {
+		c.Fix = "The SoC comes from EVCC while plugged in. Check that Home Assistant runs and that its address under Connection settings is right."
+		switch {
+		case rejected.Is(err):
 			renewKey(&c, s.Cfg.HomeAssistant.TokenEnv)
+		case errors.Is(err, homeassistant.ErrNotFound):
+			c.Fix = "Choose the car's sensors again under Connection settings."
 		}
 	case r == nil:
 		c.Status, c.Detail = "error", "Not checked yet"

@@ -319,6 +319,9 @@ func (s *Service) aiConnection() ConnectionView {
 		return c
 	}
 	decider, note := s.aiDecider(ai)
+	if decider != "" {
+		c.Actions = []string{ActionRun}
+	}
 	latest, err := s.Store.LatestAIRun("")
 	cur, _, cerr := s.currentAIRun()
 	switch {
@@ -328,6 +331,7 @@ func (s *Service) aiConnection() ConnectionView {
 		c.Status, c.Detail = "not_configured", note
 	case latest != nil && latest.Status == model.AIRunFailed:
 		c.Status, c.Detail = "error", decider+"; the last run failed: "+latest.Error
+		c.Fix = "The automatic rules apply; the planner tries again in an hour, or now with Run now."
 		if rejected.In(latest.Error) {
 			renewKey(&c, s.Cfg.OpenRouter.APIKeyEnv)
 		}

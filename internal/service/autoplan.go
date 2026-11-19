@@ -177,6 +177,9 @@ func (s *Service) SyncPlan(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if !settings.KeepsPlan() || !lp.Connected {
+		s.notePlanChange(nil) // nothing to keep in line
+	}
 	switch {
 	case settings.TripPlans == model.TripPlansPlugIn && pluggedIn:
 		return s.planOnPlugIn(ctx, snap.state, lp)
@@ -327,6 +330,7 @@ func (s *Service) reconcile(ctx context.Context, st *evcc.State, lp *evcc.Loadpo
 
 	if ctl.Paused() {
 		if !below(cur) {
+			s.notePlanChange(nil) // paused: nothing to change
 			if !samePlan(cur, ctl.PausedPlan) {
 				ctl.PausedPlan = cur
 				return s.Store.SavePlanControl(ctl)
@@ -343,6 +347,7 @@ func (s *Service) reconcile(ctx context.Context, st *evcc.State, lp *evcc.Loadpo
 	chosen := cur != nil && cur.Time.After(now) && !samePlan(cur, ctl.Managed) && !samePlan(cur, extra)
 	if chosen {
 		if !below(cur) {
+			s.notePlanChange(nil) // a chosen plan: nothing to change
 			what := "plan chosen in EVCC"
 			if s.planView(veh).SetByPlanner {
 				what = "plan sent from the planner"
@@ -366,8 +371,10 @@ func (s *Service) reconcile(ctx context.Context, st *evcc.State, lp *evcc.Loadpo
 		if cur != nil && samePlan(cur, ctl.Managed) {
 			return s.removeManaged(ctx, veh.Name, &ctl, target)
 		}
+		s.notePlanChange(nil) // EVCC's plan is in line
 		return nil
 	case samePlan(cur, want):
+		s.notePlanChange(nil) // EVCC's plan is in line
 		if !samePlan(cur, extra) && !samePlan(ctl.Managed, want) {
 			ctl.Managed, ctl.Ahead = want, aheadKeys(target)
 			return s.Store.SavePlanControl(ctl)
@@ -402,7 +409,9 @@ func (s *Service) removeManaged(ctx context.Context, vehicle string, ctl *model.
 	if target != nil {
 		ev.Related = "trip:" + target.TripKey
 	}
-	if err := s.Clients().EVCC.DeleteSocPlan(ctx, vehicle); err != nil {
+	err := s.Clients().EVCC.DeleteSocPlan(ctx, vehicle)
+	s.notePlanChange(err)
+	if err != nil {
 		ev.Outcome, ev.Error = model.OutcomeFailure, err.Error()
 		s.record(ctx, ev)
 		return err

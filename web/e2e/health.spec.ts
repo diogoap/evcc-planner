@@ -23,12 +23,23 @@ test('an outage shows on the Overview until the service works again', async ({ p
   await fault.selectOption({ label: 'Down' })
   await expect(homeAssistant).toContainText('Error')
   await expect(homeAssistant).toContainText('connection refused (demo outage)')
+  await expect(homeAssistant.getByTestId('connection-fix')).toContainText(
+    'The SoC comes from EVCC while plugged in.',
+  )
+  // Check now tries again and says how it went.
+  await homeAssistant.getByRole('button', { name: 'Check now' }).click()
+  await expect(page.getByText('Home Assistant: connection refused (demo outage)')).toBeVisible()
 
-  // The Overview says so, with when it last worked, and links back.
+  // The Overview says so, with when it last worked and what to do, and
+  // links back.
   await page.goto('/')
   const line = page.getByTestId('health-line')
-  await expect(line.getByTestId('health-Home Assistant')).toHaveText(
-    /^Home Assistant: connection refused \(demo outage\) · last worked \d\d:\d\d$/,
+  const issue = line.getByTestId('health-Home Assistant')
+  await expect(issue).toContainText(
+    /^Home Assistant: connection refused \(demo outage\) · last worked \d\d:\d\d/,
+  )
+  await expect(issue.locator('.strong')).toHaveText(
+    'The SoC comes from EVCC while plugged in. Check that Home Assistant runs and that its address under Connection settings is right.',
   )
   await line.getByRole('link', { name: 'Connections' }).click()
   await expect(page).toHaveURL(/\/settings\?tab=connections$/)
@@ -48,9 +59,11 @@ test('an outage shows on the Overview until the service works again', async ({ p
     "Set a new HA_TOKEN in the planner's environment and restart it.",
   )
 
-  // Working again: the line goes.
+  // Working again: Check now says so, and the line goes.
   await page.goto('/settings?tab=connections')
   await fault.selectOption({ label: 'Works' })
+  await homeAssistant.getByRole('button', { name: 'Check now' }).click()
+  await expect(page.getByText('Home Assistant works')).toBeVisible()
   await expect(homeAssistant).toContainText('Stub')
   await page.goto('/')
   await expect(page.getByTestId('ready-headline')).toBeVisible()

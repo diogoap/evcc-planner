@@ -211,12 +211,15 @@ func (s *Service) forecastConnections() ([]ConnectionView, error) {
 	}
 	// env names the source's own key, if it has one (a refusal is its).
 	status := func(c *ConnectionView, rec *store.ForecastRecord, stub bool, env string) {
+		c.Actions = []string{ActionRefresh}
 		switch {
 		case rec != nil && rec.LastError != "":
 			c.Status, c.Detail = "error", rec.LastError
 			if rec.Payload != nil {
 				c.Detail += " (keeping the last valid forecast)"
 			}
+			c.Fix = fmt.Sprintf("The advice keeps the last forecast; the planner tries again in %d minutes, or now with Refresh.",
+				s.Conn().ForecastRetryIntervalMin)
 			if env != "" && rejected.In(rec.LastError) {
 				renewKey(c, env)
 			}
@@ -241,7 +244,7 @@ func (s *Service) forecastConnections() ([]ConnectionView, error) {
 
 	or := ConnectionView{Name: "OpenRouter", Mode: s.Cfg.OpenRouter.Mode, Detail: "Model: " + s.Conn().OpenRouterModel}
 	if f.Extractor.Name() == "openrouter" {
-		or.Status = "ok"
+		or.Status, or.Actions = "ok", []string{ActionRefresh}
 		if trec != nil && trec.Detail != "" {
 			or.Detail = trec.Detail
 		}

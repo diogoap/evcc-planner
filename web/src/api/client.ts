@@ -12,6 +12,7 @@ import type {
   AdjustmentKind,
   AdviceSettings,
   Connection,
+  ConnectionAction,
   ConnectionSettings,
   ConnectionSettingsView,
   DemoFault,
@@ -114,6 +115,9 @@ export const api = {
 
   connections: () => request<Connection[]>('GET', '/api/connections'),
   syncCalendar: () => request<Connection[]>('POST', '/api/calendar/sync', {}),
+  /** Does what a connection offers now; returns the connections afterwards. */
+  connectionAction: (name: string, action: ConnectionAction) =>
+    request<Connection[]>('POST', '/api/connections/action', { name, action }),
   refreshForecasts: () => request<Connection[]>('POST', '/api/forecasts/refresh', {}),
   forecasts: () => request<unknown>('GET', '/api/forecasts'),
 
