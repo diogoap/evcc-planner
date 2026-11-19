@@ -8,10 +8,13 @@ import {
   dailySeries,
   dateTicks,
   dayLine,
+  dayTitle,
+  pointHint,
   summarize,
   summaryText,
   tickLabel,
   type HistorySeries,
+  type PointSeries,
 } from '../lib/history'
 
 // Each day's prices as a band from the lowest to the highest slot, with the
@@ -19,7 +22,7 @@ import {
 // (km, as bars), and the trips' energy (kWh) on their own axes when shown
 // (shorter labels on phones, where the readout gives each day's values). Days not recorded are gaps. A readout above
 // follows the pointer or finger (today, otherwise); a dashed line marks
-// today.
+// today. Pointing at a dot shows a hint with its day, series, and value.
 const props = defineProps<{ days: DayStats[]; today: string; show: Record<HistorySeries, boolean> }>()
 
 const canvas = ref<HTMLCanvasElement | null>(null)
@@ -38,6 +41,10 @@ const summary = computed(() => {
   const s = summarize(props.days)
   return s ? summaryText(s) : 'No prices recorded yet.'
 })
+
+// The series of the datasets drawn with points, in the datasets' order;
+// driving (bars) comes after them and gets no hint.
+const pointSeries: PointSeries[] = ['high', 'low', 'average', 'wind', 'sun', 'energy']
 
 const point = (pick: (d: DayStats) => number | null) =>
   series.value.map((s, i) => ({ x: i, y: s.day ? pick(s.day) : null }))
@@ -100,6 +107,15 @@ function render() {
   const low = values.length ? Math.min(...values) : 0
   const high = values.length ? Math.max(...values) : 0.5
   const pad = Math.max((high - low) * 0.1, 0.01)
+  // Each hint's colour box, at full strength (the band's lines are faint).
+  const hintColor: Record<PointSeries, string> = {
+    high: color,
+    low: color,
+    average: color,
+    wind,
+    sun,
+    energy,
+  }
   chart = new Chart(canvas.value, {
     type: 'line',
     data: {
@@ -109,6 +125,7 @@ function render() {
           data: point((d) => d.priceMax),
           borderColor: alpha(color, 0.45),
           backgroundColor: alpha(color, 0.18),
+          pointBackgroundColor: alpha(color, 0.45),
           fill: '+1',
           borderWidth: 1,
           pointRadius: dot ? 1.5 : 0,
@@ -185,7 +202,35 @@ function render() {
       animation: false,
       parsing: false,
       events: ['mousemove', 'mouseout', 'click', 'touchstart', 'touchmove'],
-      plugins: { legend: { display: false }, tooltip: { enabled: false } },
+      // Dots are easier to point at than they look; without dots, no hints.
+      elements: { point: { hitRadius: dot ? 6 : 0 } },
+      plugins: {
+        legend: { display: false },
+        // The hint inverts the page's colours, like a native tooltip.
+        tooltip: {
+          mode: 'point',
+          intersect: true,
+          filter: (item) => item.datasetIndex < pointSeries.length,
+          backgroundColor: cssVar('--text'),
+          titleColor: cssVar('--surface'),
+          bodyColor: cssVar('--surface'),
+          cornerRadius: 8,
+          padding: 8,
+          boxPadding: 4,
+          callbacks: {
+            title: (items) => {
+              const s = series.value[items[0]?.parsed.x ?? -1]
+              return s ? dayTitle(s.date, props.today) : ''
+            },
+            label: (item) =>
+              item.parsed.y == null ? '' : pointHint(pointSeries[item.datasetIndex]!, item.parsed.y),
+            labelColor: (item) => {
+              const c = hintColor[pointSeries[item.datasetIndex]!]
+              return { borderColor: c, backgroundColor: c }
+            },
+          },
+        },
+      },
       scales: {
         x: {
           type: 'linear',

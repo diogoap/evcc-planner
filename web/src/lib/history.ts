@@ -119,9 +119,35 @@ export function summaryText(s: HistorySummary) {
 
 const euro = (v: number) => `€${v.toFixed(2)}`
 
+/** A day's name in the readout and the chart's hints: Today, or Sun 8 Nov. */
+export function dayTitle(date: string, today: string) {
+  return date === today ? 'Today' : dayMonth(date)
+}
+
+/** The chart's series drawn with points (driving is drawn as bars). */
+export type PointSeries = 'high' | 'low' | 'average' | 'wind' | 'sun' | 'energy'
+
+/** The hint for a point on the chart: Average €0.25/kWh, Wind Bft 3, Energy 4.3 kWh. */
+export function pointHint(series: PointSeries, value: number) {
+  switch (series) {
+    case 'high':
+      return `Highest ${price(value)}`
+    case 'low':
+      return `Lowest ${price(value)}`
+    case 'average':
+      return `Average ${price(value)}`
+    case 'wind':
+      return `Wind Bft ${value}`
+    case 'sun':
+      return `Sun ${value}%`
+    case 'energy':
+      return `Energy ${kwh(value)}`
+  }
+}
+
 /** The readout for one day: Today · average €0.25/kWh · €0.18–€0.39 · wind Bft 3 · sun 20% · 100 km, 18.0 kWh */
 export function dayLine(day: DayStats | null, date: string, today: string) {
-  const when = date === today ? 'Today' : dayMonth(date)
+  const when = dayTitle(date, today)
   if (!day) return `${when} · not recorded`
   const partial = day.priceHours > 0 && day.priceHours < 23
   return [

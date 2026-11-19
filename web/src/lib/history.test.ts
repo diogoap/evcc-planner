@@ -6,7 +6,9 @@ import {
   dailySeries,
   dateTicks,
   dayLine,
+  dayTitle,
   periodFrom,
+  pointHint,
   summarize,
   summaryText,
   tickLabel,
@@ -121,5 +123,16 @@ describe('price history', () => {
       ),
     ).toBe('Fri 6 Nov · no prices · wind Bft 3 · sun 20% · 24 km, 4.3 kWh')
     expect(dayLine(null, '2026-11-05', today)).toBe('Thu 5 Nov · not recorded')
+  })
+
+  it('names the day and the value of a point on the chart', () => {
+    expect(dayTitle('2026-11-09', '2026-11-09')).toBe('Today')
+    expect(dayTitle('2026-11-08', '2026-11-09')).toBe('Sun 8 Nov')
+    expect(pointHint('high', 0.394)).toBe('Highest €0.39/kWh')
+    expect(pointHint('low', 0.18)).toBe('Lowest €0.18/kWh')
+    expect(pointHint('average', 0.25)).toBe('Average €0.25/kWh')
+    expect(pointHint('wind', 3)).toBe('Wind Bft 3')
+    expect(pointHint('sun', 20)).toBe('Sun 20%')
+    expect(pointHint('energy', 4.3)).toBe('Energy 4.3 kWh')
   })
 })
