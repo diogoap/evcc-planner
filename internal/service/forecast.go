@@ -11,6 +11,7 @@ import (
 	"github.com/diogoap/evcc-planner/internal/forecast"
 	"github.com/diogoap/evcc-planner/internal/localtime"
 	"github.com/diogoap/evcc-planner/internal/model"
+	"github.com/diogoap/evcc-planner/internal/rejected"
 	"github.com/diogoap/evcc-planner/internal/store"
 )
 
@@ -208,12 +209,16 @@ func (s *Service) forecastConnections() ([]ConnectionView, error) {
 	if err != nil {
 		return nil, err
 	}
-	status := func(c *ConnectionView, rec *store.ForecastRecord, stub bool) {
+	// env names the source's own key, if it has one (a refusal is its).
+	status := func(c *ConnectionView, rec *store.ForecastRecord, stub bool, env string) {
 		switch {
 		case rec != nil && rec.LastError != "":
 			c.Status, c.Detail = "error", rec.LastError
 			if rec.Payload != nil {
 				c.Detail += " (keeping the last valid forecast)"
+			}
+			if env != "" && rejected.In(rec.LastError) {
+				renewKey(c, env)
 			}
 		case stub:
 			c.Status = "stub"
@@ -232,13 +237,18 @@ func (s *Service) forecastConnections() ([]ConnectionView, error) {
 	if f.Article.Name() == "stub" {
 		tib.Detail = "Demo article"
 	}
-	status(&tib, trec, f.Article.Name() == "stub")
+	status(&tib, trec, f.Article.Name() == "stub", "")
 
 	or := ConnectionView{Name: "OpenRouter", Mode: s.Cfg.OpenRouter.Mode, Detail: "Model: " + s.Conn().OpenRouterModel}
 	if f.Extractor.Name() == "openrouter" {
 		or.Status = "ok"
 		if trec != nil && trec.Detail != "" {
 			or.Detail = trec.Detail
+		}
+		// The outlook fails with OpenRouter's refusal of the key.
+		if trec != nil && rejected.In(trec.LastError) {
+			or.Detail = trec.LastError
+			renewKey(&or, s.Cfg.OpenRouter.APIKeyEnv)
 		}
 	} else {
 		or.Status, or.Detail = "stub", f.Extractor.Label()
@@ -255,7 +265,7 @@ func (s *Service) forecastConnections() ([]ConnectionView, error) {
 		if f.Weather.Name() == "stub" {
 			knmi.Detail = "Demo weather"
 		}
-		status(&knmi, wrec, f.Weather.Name() == "stub")
+		status(&knmi, wrec, f.Weather.Name() == "stub", s.Cfg.KNMI.APIKeyEnv)
 	}
 	out := []ConnectionView{tib, or}
 	if p, err := s.Settings(); err == nil && p.TripPlans == model.TripPlansAI {

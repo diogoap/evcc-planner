@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/diogoap/evcc-planner/internal/clock"
+	"github.com/diogoap/evcc-planner/internal/rejected"
 )
 
 var ams, _ = time.LoadLocation("Europe/Amsterdam")
@@ -278,7 +279,8 @@ func TestOpenRouterErrorsHideTheKey(t *testing.T) {
 	defer srv.Close()
 	o := &OpenRouter{BaseURL: srv.URL, APIKey: "bad", Model: "m", HTTP: srv.Client()}
 	_, _, err := o.Extract(context.Background(), ExtractRequest{FetchedAt: fetched, Location: ams})
-	if err == nil || err.Error() != "openrouter: No auth credentials found" || strings.Contains(err.Error(), "bad") {
+	if !rejected.Is(err) || err.Error() != "openrouter: API key rejected (HTTP 401): No auth credentials found" ||
+		strings.Contains(err.Error(), "bad") {
 		t.Errorf("error = %v", err)
 	}
 	o.APIKey = "good"
@@ -390,8 +392,8 @@ func TestKNMIKeyErrorsExplainTheFix(t *testing.T) {
 		want   string
 	}{
 		"key for another API": {http.StatusForbidden, `{"error": "Access to this API has been disallowed"}`, `request an "Open Data API" key`},
-		"invalid key":         {http.StatusForbidden, `{"error": "Key not authorised"}`, "missing, mistyped, or expired"},
-		"no key":              {http.StatusUnauthorized, `{"error": "Authorization field missing"}`, "missing, mistyped, or expired"},
+		"invalid key":         {http.StatusForbidden, `{"error": "Key not authorised"}`, "API key rejected (HTTP 403)"},
+		"no key":              {http.StatusUnauthorized, `{"error": "Authorization field missing"}`, "API key rejected (HTTP 401)"},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -401,7 +403,7 @@ func TestKNMIKeyErrorsExplainTheFix(t *testing.T) {
 			}))
 			defer srv.Close()
 			k := &KNMI{BaseURL: srv.URL, APIKey: "k", Dataset: "d", Version: "1", HTTP: srv.Client(), Location: ams}
-			if _, err := k.Fetch(context.Background()); err == nil || !strings.Contains(err.Error(), c.want) {
+			if _, err := k.Fetch(context.Background()); !rejected.Is(err) || !strings.Contains(err.Error(), c.want) {
 				t.Errorf("error = %v, want %q", err, c.want)
 			}
 		})

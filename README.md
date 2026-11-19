@@ -66,7 +66,8 @@ restarted when Go or config files change) and the Vite UI on 127.0.0.1:7201 with
 hot reload. Ctrl+C stops both. Demo data lives in `data/demo.db`; `make dev-reset`
 deletes it. To see how an outage looks, take a demo service down under Settings →
 Connections → Demo outages (or `PUT /api/demo/faults` with
-`{"service": "homeassistant", "fault": "down"}`; `"fault": ""` brings it back).
+`{"service": "homeassistant", "fault": "down"}`, or `"key"` to refuse its key;
+`"fault": ""` brings it back).
 
 ## Commands
 
@@ -125,7 +126,10 @@ where it was made.
 
 Secrets stay in environment variables: the API keys, the calendar
 addresses, and `HA_TOKEN`; the Connections tab shows only whether each is
-set. The Google Routes, OpenRouter, and KNMI base URLs, which receive the
+set. When a service refuses one (an expired key, a revoked token, a calendar
+address that was reset), the Connections tab and the Overview mark it
+**Rejected** and name the variable to renew; set the new value and restart
+the planner. The Google Routes, OpenRouter, and KNMI base URLs, which receive the
 keys, stay in `config.yaml`. The Home Assistant address is editable although
 the token is sent to it: the planner has no login, so anyone who can open it
 could point the address elsewhere and receive the token. Keep the planner

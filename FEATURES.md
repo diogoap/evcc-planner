@@ -81,6 +81,7 @@ notifications is in [AUTOMATION.md](AUTOMATION.md).
 
 - **Overview:** a "will the car be ready?" card, the week (tiles or a list, 3–7 days), the day's advice, and the charts (SoC over prices, published prices, price history).
 - A warning line at the top of the Overview while a connection has a problem (EVCC, Home Assistant, a calendar, Google Routes, a forecast, phone notifications): what went wrong, when it last worked, and a link to Settings → Connections. Google Routes reports how its last lookup went. Only in the app, never on the phone.
+- When a service refuses its key, token, or calendar address (Google Routes, OpenRouter, KNMI, Home Assistant, a calendar), its connection is marked **Rejected** and says which environment variable to renew.
 - In the week, a day's lowest price turns green (with a ⚡) when the plan charges at it: charge extra, or the trip plan charging later trips ahead. Its tooltip says which.
 - **Day panel:** one day's trips, charging, prices, weather, and advice, with quick actions. In the week's tiles, a tap shows the day's advice in the advice card; press and hold (or right-click) opens the day, as does the date on the advice card or a tap on the chart.
 - **Trips**, **Recurring trips**, **Activity**, and **Settings** pages (Settings has a tab for AI mode).
@@ -96,4 +97,4 @@ notifications is in [AUTOMATION.md](AUTOMATION.md).
 ## Running it
 
 - No login: the app relies on your home network for access. Secrets live only in environment variables; everything else is set in the app.
-- One Docker container (Go server, web app, SQLite file). A demo mode with sample data and stand-in services needs no accounts; under Settings → Connections it can take EVCC, Home Assistant, the calendar, or Google Routes down, to see how an outage looks.
+- One Docker container (Go server, web app, SQLite file). A demo mode with sample data and stand-in services needs no accounts; under Settings → Connections it can take EVCC, Home Assistant, the calendar, or Google Routes down, or make them refuse their key, to see how that looks.

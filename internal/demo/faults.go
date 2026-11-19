@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/diogoap/evcc-planner/internal/config"
 	"github.com/diogoap/evcc-planner/internal/evcc"
 	"github.com/diogoap/evcc-planner/internal/homeassistant"
+	"github.com/diogoap/evcc-planner/internal/rejected"
 	"github.com/diogoap/evcc-planner/internal/routes"
 )
 
@@ -22,23 +24,39 @@ const (
 	FaultRoutes        = "routes"
 )
 
-// FaultDown makes a service unreachable; "" means it works.
-const FaultDown = "down"
+// How a service fails: unreachable, or refusing its key (or token, or
+// address); "" means it works.
+const (
+	FaultDown = "down"
+	FaultKey  = "key"
+)
 
-// faultNames are the services in order, with their names in the UI.
-var faultNames = []struct{ key, name string }{
-	{FaultEVCC, "EVCC"}, {FaultHomeAssistant, "Home Assistant"},
-	{FaultCalendar, "Google Calendar"}, {FaultRoutes, "Google Routes"},
+// faultService is a service that can fail: its name in the UI, and the
+// refusal it answers with when it rejects the key (none for EVCC, which
+// has no key).
+type faultService struct {
+	key, name string
+	refusal   *rejected.Error
+}
+
+// faultNames are the services, in order.
+var faultNames = []faultService{
+	{FaultEVCC, "EVCC", nil},
+	{FaultHomeAssistant, "Home Assistant", &rejected.Error{What: "access token", Status: 401, Message: "refused by the demo"}},
+	{FaultCalendar, "Google Calendar", &rejected.Error{What: "calendar address", Status: 404, Message: "refused by the demo"}},
+	{FaultRoutes, "Google Routes", &rejected.Error{What: "API key", Status: 403, Message: "refused by the demo"}},
 }
 
 // errDown is what a service that is down answers.
 var errDown = errors.New("connection refused (demo outage)")
 
-// Fault is one demo service and how it fails ("" while it works).
+// Fault is one demo service, how it fails ("" while it works), and the
+// faults it can have.
 type Fault struct {
-	Service string `json:"service"`
-	Name    string `json:"name"`
-	Fault   string `json:"fault"`
+	Service string   `json:"service"`
+	Name    string   `json:"name"`
+	Fault   string   `json:"fault"`
+	Faults  []string `json:"faults"`
 }
 
 // Faults makes demo services fail on request, to see and test how the
@@ -52,15 +70,13 @@ type Faults struct {
 
 // Set makes a service fail, or work again with fault "".
 func (f *Faults) Set(service, fault string) error {
-	known := false
-	for _, s := range faultNames {
-		known = known || s.key == service
-	}
-	if !known {
+	i := slices.IndexFunc(faultNames, func(s faultService) bool { return s.key == service })
+	switch {
+	case i < 0:
 		return fmt.Errorf("unknown service %q", service)
-	}
-	if fault != "" && fault != FaultDown {
-		return fmt.Errorf("unknown fault %q", fault)
+	case fault != "" && fault != FaultDown && fault != FaultKey,
+		fault == FaultKey && faultNames[i].refusal == nil:
+		return fmt.Errorf("%s can't have fault %q", faultNames[i].name, fault)
 	}
 	f.mu.Lock()
 	if f.set == nil {
@@ -87,7 +103,10 @@ func (f *Faults) List() []Fault {
 	defer f.mu.Unlock()
 	out := make([]Fault, len(faultNames))
 	for i, s := range faultNames {
-		out[i] = Fault{Service: s.key, Name: s.name, Fault: f.set[s.key]}
+		out[i] = Fault{Service: s.key, Name: s.name, Fault: f.set[s.key], Faults: []string{FaultDown}}
+		if s.refusal != nil {
+			out[i].Faults = append(out[i].Faults, FaultKey)
+		}
 	}
 	return out
 }
@@ -95,8 +114,11 @@ func (f *Faults) List() []Fault {
 func (f *Faults) err(service string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if f.set[service] == FaultDown {
+	switch f.set[service] {
+	case FaultDown:
 		return errDown
+	case FaultKey:
+		return faultNames[slices.IndexFunc(faultNames, func(s faultService) bool { return s.key == service })].refusal
 	}
 	return nil
 }

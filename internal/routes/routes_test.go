@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/diogoap/evcc-planner/internal/clock"
+	"github.com/diogoap/evcc-planner/internal/rejected"
 	"github.com/diogoap/evcc-planner/internal/store"
 )
 
@@ -59,17 +60,36 @@ func TestGoogleRequestAndResponse(t *testing.T) {
 
 func TestGoogleErrors(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("X-Goog-Api-Key") == "bad" {
+		switch r.Header.Get("X-Goog-Api-Key") {
+		case "bad":
+			// Google's answer to a key that isn't valid.
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte(`{"error":{"code":400,"message":"API key not valid. Please pass a valid API key."}}`))
+			return
+		case "restricted":
 			w.WriteHeader(http.StatusForbidden)
-			w.Write([]byte(`{"error":{"code":403,"message":"API key not valid"}}`))
+			w.Write([]byte(`{"error":{"code":403,"message":"Routes API has not been used in project 1"}}`))
+			return
+		case "busy":
+			w.WriteHeader(http.StatusTooManyRequests)
+			w.Write([]byte(`{"error":{"code":429,"message":"Quota exceeded"}}`))
 			return
 		}
 		w.Write([]byte(`{}`))
 	}))
 	defer srv.Close()
 	g := &Google{BaseURL: srv.URL, APIKey: "bad", HTTP: srv.Client()}
-	if _, err := g.Compute(context.Background(), "a", "b", nil); err == nil || err.Error() != "routes api: API key not valid" {
+	if _, err := g.Compute(context.Background(), "a", "b", nil); !rejected.Is(err) ||
+		err.Error() != "API key rejected (HTTP 400): API key not valid. Please pass a valid API key." {
+		t.Errorf("invalid key error = %v", err)
+	}
+	g.APIKey = "restricted"
+	if _, err := g.Compute(context.Background(), "a", "b", nil); !rejected.Is(err) {
 		t.Errorf("forbidden error = %v", err)
+	}
+	g.APIKey = "busy"
+	if _, err := g.Compute(context.Background(), "a", "b", nil); rejected.Is(err) || err.Error() != "routes api: Quota exceeded" {
+		t.Errorf("quota error = %v", err)
 	}
 	g.APIKey = "ok"
 	if _, err := g.Compute(context.Background(), "a", "b", nil); !errors.Is(err, ErrNoRoute) {

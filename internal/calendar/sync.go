@@ -16,6 +16,7 @@ import (
 	"github.com/diogoap/evcc-planner/internal/config"
 	"github.com/diogoap/evcc-planner/internal/localtime"
 	"github.com/diogoap/evcc-planner/internal/model"
+	"github.com/diogoap/evcc-planner/internal/rejected"
 )
 
 // Source fetches the raw iCal data of one calendar.
@@ -45,6 +46,11 @@ func (s HTTPSource) Fetch(ctx context.Context, cal config.CalendarSource) ([]byt
 		return nil, errors.New("calendar feed unreachable")
 	}
 	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusGone:
+		return nil, &rejected.Error{What: "calendar address", Status: resp.StatusCode,
+			Message: "the secret address no longer works; it may have been reset"}
+	}
 	if resp.StatusCode/100 != 2 {
 		return nil, fmt.Errorf("calendar feed returned %s", resp.Status)
 	}

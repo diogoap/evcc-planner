@@ -19,6 +19,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/diogoap/evcc-planner/internal/rejected"
 )
 
 // Reader is the Home Assistant contract used by the planner.
@@ -369,17 +371,18 @@ func (c *HTTPClient) get(ctx context.Context, path string) ([]byte, error) {
 	return body, nil
 }
 
-// apiError describes a non-2xx response.
-func apiError(status int, body []byte) *APIError {
+// apiError describes a non-2xx response; a refused token is a refusal
+// (package rejected).
+func apiError(status int, body []byte) error {
+	if status == http.StatusUnauthorized {
+		return fmt.Errorf("home assistant: %w", &rejected.Error{What: "access token", Status: status})
+	}
 	msg := strings.TrimSpace(string(body))
 	var e struct {
 		Message string `json:"message"`
 	}
 	if json.Unmarshal(body, &e) == nil && e.Message != "" {
 		msg = e.Message
-	}
-	if status == http.StatusUnauthorized {
-		msg = "access token rejected"
 	}
 	if len(msg) > 300 {
 		msg = msg[:300]

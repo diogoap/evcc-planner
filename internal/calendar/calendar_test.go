@@ -5,6 +5,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/diogoap/evcc-planner/internal/clock"
 	"github.com/diogoap/evcc-planner/internal/config"
 	"github.com/diogoap/evcc-planner/internal/model"
+	"github.com/diogoap/evcc-planner/internal/rejected"
 )
 
 var ams, _ = time.LoadLocation("Europe/Amsterdam")
@@ -180,5 +182,22 @@ func TestHTTPSourceHidesURL(t *testing.T) {
 	}
 	if _, err = (HTTPSource{}).Fetch(context.Background(), config.CalendarSource{ID: "x"}); err == nil {
 		t.Fatal("missing URL should fail")
+	}
+}
+
+func TestResetSecretAddressIsRejected(t *testing.T) {
+	status := http.StatusNotFound
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(status) }))
+	defer srv.Close()
+	src := HTTPSource{HTTP: srv.Client()}
+	cal := config.CalendarSource{ID: "x", URL: srv.URL + "/private-secret/basic.ics"}
+	_, err := src.Fetch(context.Background(), cal)
+	if !rejected.Is(err) || strings.Contains(err.Error(), "secret/") ||
+		err.Error() != "calendar address rejected (HTTP 404): the secret address no longer works; it may have been reset" {
+		t.Errorf("reset address: %v", err)
+	}
+	status = http.StatusInternalServerError
+	if _, err := src.Fetch(context.Background(), cal); rejected.Is(err) || err.Error() != "calendar feed returned 500 Internal Server Error" {
+		t.Errorf("server error: %v", err)
 	}
 }

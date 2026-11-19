@@ -13,6 +13,7 @@ import (
 	"github.com/diogoap/evcc-planner/internal/config"
 	"github.com/diogoap/evcc-planner/internal/homeassistant"
 	"github.com/diogoap/evcc-planner/internal/model"
+	"github.com/diogoap/evcc-planner/internal/rejected"
 	"github.com/diogoap/evcc-planner/internal/store"
 )
 
@@ -524,11 +525,17 @@ func (s *Service) notificationConnection() ConnectionView {
 	case serr != nil:
 		c.Status, c.Detail = "error", fmt.Sprintf("%s; the last message failed at %s: %v",
 			plural(len(settings.Phones), "phone"), s.clockText(serrAt), serr)
+		if rejected.Is(serr) {
+			renewKey(&c, s.Cfg.HomeAssistant.TokenEnv)
+		}
 	case errors.Is(lerr, homeassistant.ErrNotAdmin):
 		c.Status, c.Detail = "error", plural(len(settings.Phones), "phone")+"; sending works, but "+lerr.Error()+
 			". Make the token's user an administrator in Home Assistant."
 	case lerr != nil:
 		c.Status, c.Detail = "error", plural(len(settings.Phones), "phone")+"; button presses: "+lerr.Error()
+		if rejected.Is(lerr) {
+			renewKey(&c, s.Cfg.HomeAssistant.TokenEnv)
+		}
 	case s.Cfg.HomeAssistant.Mode == config.ModeStub:
 		c.Status, c.Detail = "stub", "Demo phone; press its buttons under Settings → Notifications"
 	case ok:

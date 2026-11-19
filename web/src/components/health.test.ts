@@ -16,7 +16,11 @@ describe('HealthLine', () => {
     const w = line([
       { name: 'Home Assistant', detail: 'connection refused', lastSuccessAt: '2026-11-09T17:42:00Z' },
       { name: 'Google Calendar', detail: 'Demo calendar: HTTP 404', lastSuccessAt: '2026-11-08T17:00:00Z' },
-      { name: 'KNMI', detail: 'HTTP 401 (check the KNMI API key)' },
+      {
+        name: 'KNMI',
+        detail: 'knmi: API key rejected (HTTP 401)',
+        fix: "Set a new KNMI_API_KEY in the planner's environment and restart it.",
+      },
     ])
     expect(w.get('[data-testid=health-line]').classes()).toContain('tone-warn')
     expect(w.get('[data-testid="health-Home Assistant"]').text()).toBe(
@@ -25,7 +29,10 @@ describe('HealthLine', () => {
     expect(w.get('[data-testid="health-Google Calendar"]').text()).toBe(
       'Google Calendar: Demo calendar: HTTP 404 · last worked Sun 8 Nov, 18:00',
     )
-    expect(w.get('[data-testid="health-KNMI"]').text()).toBe('KNMI: HTTP 401 (check the KNMI API key)')
+    expect(w.get('[data-testid="health-KNMI"]').text()).toMatch(/^KNMI: knmi: API key rejected \(HTTP 401\)/)
+    expect(w.get('[data-testid="health-KNMI"] .strong').text()).toBe(
+      "Set a new KNMI_API_KEY in the planner's environment and restart it.",
+    )
     expect(w.getComponent(RouterLinkStub).props('to')).toEqual({
       name: 'settings',
       query: { tab: 'connections' },

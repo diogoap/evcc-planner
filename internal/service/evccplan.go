@@ -14,6 +14,7 @@ import (
 	"github.com/diogoap/evcc-planner/internal/evcc"
 	"github.com/diogoap/evcc-planner/internal/localtime"
 	"github.com/diogoap/evcc-planner/internal/model"
+	"github.com/diogoap/evcc-planner/internal/rejected"
 	"github.com/diogoap/evcc-planner/internal/store"
 )
 
@@ -51,11 +52,12 @@ type StatusView struct {
 type HealthIssue struct {
 	Name          string     `json:"name"`
 	Detail        string     `json:"detail"`
+	Fix           string     `json:"fix,omitempty"`
 	LastSuccessAt *time.Time `json:"lastSuccessAt,omitempty"`
 }
 
-// health lists the connections with an error; failing to list them is
-// one too.
+// health lists the connections with an error or a rejected key; failing
+// to list them is one too.
 func (s *Service) health() []HealthIssue {
 	out := []HealthIssue{}
 	list, err := s.Connections()
@@ -63,8 +65,8 @@ func (s *Service) health() []HealthIssue {
 		return append(out, HealthIssue{Name: "Planner", Detail: err.Error()})
 	}
 	for _, c := range list {
-		if c.Status == "error" {
-			out = append(out, HealthIssue{Name: c.Name, Detail: c.Detail, LastSuccessAt: c.LastSuccessAt})
+		if c.Status == "error" || c.Status == "rejected" {
+			out = append(out, HealthIssue{Name: c.Name, Detail: c.Detail, Fix: c.Fix, LastSuccessAt: c.LastSuccessAt})
 		}
 	}
 	return out
@@ -339,11 +341,19 @@ func (s *Service) SendPlan(ctx context.Context, in SendPlanInput) (*EVCCPlanView
 
 // ConnectionView is one integration's status.
 type ConnectionView struct {
-	Name          string     `json:"name"`
-	Mode          string     `json:"mode"`
-	Status        string     `json:"status"` // ok, error, stub, not_configured, planned
-	Detail        string     `json:"detail"`
+	Name   string `json:"name"`
+	Mode   string `json:"mode"`
+	Status string `json:"status"` // ok, error, rejected, stub, not_configured, planned
+	Detail string `json:"detail"`
+	// Fix says what to do about a rejected key, token, or address.
+	Fix           string     `json:"fix,omitempty"`
 	LastSuccessAt *time.Time `json:"lastSuccessAt,omitempty"`
+}
+
+// renewKey marks a connection whose key (in the environment variable env)
+// was refused, with what to do about it.
+func renewKey(c *ConnectionView, env string) {
+	c.Status, c.Fix = "rejected", "Set a new "+env+" in the planner's environment and restart it."
 }
 
 // Connections reports integration status without exposing secrets.
@@ -381,6 +391,7 @@ func (s *Service) Connections() ([]ConnectionView, error) {
 			cal.Status = "stub"
 		}
 		var detail string
+		refused := false
 		for _, c := range cals {
 			st := statuses[c.ID]
 			name := st.Name
@@ -392,6 +403,7 @@ func (s *Service) Connections() ([]ConnectionView, error) {
 			case st.LastError != "":
 				cal.Status = "error"
 				part += st.LastError
+				refused = refused || rejected.In(st.LastError)
 			case st.LastSuccessAt != nil:
 				part += plural(st.EventCount, "event")
 			default:
@@ -406,6 +418,10 @@ func (s *Service) Connections() ([]ConnectionView, error) {
 			detail += part
 		}
 		cal.Detail = detail
+		if refused {
+			cal.Status = "rejected"
+			cal.Fix = "Set " + s.Cfg.Calendar.URLEnv + " to the calendar's current secret address in the planner's environment and restart it."
+		}
 	}
 	out = append(out, cal)
 
@@ -418,6 +434,9 @@ func (s *Service) Connections() ([]ConnectionView, error) {
 	case rerr != nil:
 		rt.Status, rt.Detail = "error", fmt.Sprintf("The last lookup failed at %s: %v; trips use a cached route where there is one",
 			s.clockText(failedAt), rerr)
+		if rejected.Is(rerr) {
+			renewKey(&rt, s.Cfg.Routes.APIKeyEnv)
+		}
 	case s.Clients().Routes.Router.Name() == "stub":
 		rt.Status, rt.Detail = "stub", "Stub distances"
 		if s.Clients().RoutesNote != "" {
@@ -451,6 +470,9 @@ func (s *Service) homeAssistantConnection() ConnectionView {
 		c.Status, c.Detail = "not_configured", s.Clients().HANote
 	case err != nil:
 		c.Status, c.Detail = "error", err.Error()
+		if rejected.Is(err) {
+			renewKey(&c, s.Cfg.HomeAssistant.TokenEnv)
+		}
 	case r == nil:
 		c.Status, c.Detail = "error", "Not checked yet"
 	default:

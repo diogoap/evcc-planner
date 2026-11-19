@@ -15,6 +15,8 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
+
+	"github.com/diogoap/evcc-planner/internal/rejected"
 )
 
 // Notifier sends phone notifications through the Home Assistant Companion
@@ -198,7 +200,7 @@ func (c *HTTPClient) ListenActions(ctx context.Context, ready func(), action fun
 		return fmt.Errorf("home assistant websocket: %w", err)
 	}
 	if msg.Type != "auth_ok" {
-		return errors.New("home assistant websocket: access token rejected")
+		return fmt.Errorf("home assistant websocket: %w", &rejected.Error{What: "access token"})
 	}
 	if err := wsjson.Write(ctx, conn, map[string]any{"id": 1, "type": "subscribe_events", "event_type": ActionEvent}); err != nil {
 		return err

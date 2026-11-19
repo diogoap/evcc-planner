@@ -5,8 +5,9 @@ import { clock, dateTime, localDate } from '../lib/format'
 import AppIcon from './AppIcon.vue'
 
 // The connections that need attention, at the top of the Overview: each
-// with what went wrong and when it last worked, and a link to Settings →
-// Connections. Shown only while there is something; in the app only.
+// with what went wrong and when it last worked (and, for a rejected key,
+// what to do), and a link to Settings → Connections. Shown only while
+// there is something; in the app only.
 const props = defineProps<{ issues: HealthIssue[]; now: string }>()
 
 function lastWorked(at: string) {
@@ -22,6 +23,7 @@ function lastWorked(at: string) {
         <strong>{{ i.name }}</strong
         >: {{ i.detail
         }}<template v-if="i.lastSuccessAt"> · last worked {{ lastWorked(i.lastSuccessAt) }}</template>
+        <div v-if="i.fix" class="strong">{{ i.fix }}</div>
       </li>
     </ul>
     <RouterLink class="btn sm" :to="{ name: 'settings', query: { tab: 'connections' } }"

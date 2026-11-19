@@ -12,6 +12,8 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
+
+	"github.com/diogoap/evcc-planner/internal/rejected"
 )
 
 func TestNotifyCallsTheMobileAppService(t *testing.T) {
@@ -137,7 +139,7 @@ func TestListenActionsOverTheWebsocket(t *testing.T) {
 
 	bad := &HTTPClient{BaseURL: srv.URL, Token: "wrong", HTTP: srv.Client()}
 	err = bad.ListenActions(context.Background(), func() { t.Error("ready with a wrong token") }, func(string) {})
-	if err == nil || !strings.Contains(err.Error(), "access token rejected") {
+	if !rejected.Is(err) || err.Error() != "home assistant websocket: access token rejected" {
 		t.Errorf("wrong token: %v", err)
 	}
 

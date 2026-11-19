@@ -15,6 +15,7 @@ import (
 
 	"github.com/diogoap/evcc-planner/internal/clock"
 	"github.com/diogoap/evcc-planner/internal/localtime"
+	"github.com/diogoap/evcc-planner/internal/rejected"
 )
 
 // WeatherSchemaVersion identifies the stored weather payload contract.
@@ -164,12 +165,14 @@ func (k *KNMI) getJSON(ctx context.Context, u string, out any) error {
 		msg = clip(msg, 200)
 		// KNMI issues a separate key per API; the gateway's messages do not
 		// say which key is needed.
-		switch lower := strings.ToLower(msg); {
-		case strings.Contains(lower, "disallowed"):
+		lower := strings.ToLower(msg)
+		if strings.Contains(lower, "disallowed") {
 			msg += ` (the key is for another KNMI API: request an "Open Data API" key in the KNMI Developer Portal's API Catalogue)`
-		case resp.StatusCode == http.StatusUnauthorized || strings.Contains(lower, "not authori") ||
-			strings.Contains(lower, "authorization field missing"):
-			msg += " (check the KNMI API key: it is missing, mistyped, or expired)"
+		}
+		if strings.Contains(lower, "disallowed") || strings.Contains(lower, "not authori") ||
+			strings.Contains(lower, "authorization field missing") ||
+			resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+			return fmt.Errorf("knmi: %w", &rejected.Error{What: "API key", Status: resp.StatusCode, Message: msg})
 		}
 		return fmt.Errorf("knmi: %s", msg)
 	}

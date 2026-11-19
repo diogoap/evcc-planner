@@ -18,6 +18,7 @@ import (
 	"github.com/diogoap/evcc-planner/internal/model"
 	"github.com/diogoap/evcc-planner/internal/openrouter"
 	"github.com/diogoap/evcc-planner/internal/planner"
+	"github.com/diogoap/evcc-planner/internal/rejected"
 	"github.com/diogoap/evcc-planner/internal/store"
 )
 
@@ -327,6 +328,9 @@ func (s *Service) aiConnection() ConnectionView {
 		c.Status, c.Detail = "not_configured", note
 	case latest != nil && latest.Status == model.AIRunFailed:
 		c.Status, c.Detail = "error", decider+"; the last run failed: "+latest.Error
+		if rejected.In(latest.Error) {
+			renewKey(&c, s.Cfg.OpenRouter.APIKeyEnv)
+		}
 	case s.state().AI.Name() == "stub":
 		c.Status, c.Detail = "stub", decider
 	case latest == nil:

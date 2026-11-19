@@ -12,6 +12,8 @@ import (
 	"net/http"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/diogoap/evcc-planner/internal/rejected"
 )
 
 // Client holds the connection; the base URL receives the API key.
@@ -115,6 +117,9 @@ func (c *Client) Complete(ctx context.Context, r Request) (string, Usage, error)
 				where = "Settings → Connections"
 			}
 			msg += " (" + r.Model + " has no provider with strict structured outputs: choose another OpenRouter model under " + where + ")"
+		}
+		if resp.StatusCode == http.StatusUnauthorized {
+			return "", Usage{}, fmt.Errorf("openrouter: %w", &rejected.Error{What: "API key", Status: resp.StatusCode, Message: msg})
 		}
 		return "", Usage{}, fmt.Errorf("openrouter: %s", msg)
 	}

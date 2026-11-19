@@ -165,7 +165,7 @@ func TestNotificationButtons(t *testing.T) {
 	log.none("foreign and unknown buttons")
 }
 
-type connectionStatus struct{ Name, Status, Detail string }
+type connectionStatus struct{ Name, Status, Detail, Fix string }
 
 func connection(ta *testApp, name string) connectionStatus {
 	ta.t.Helper()

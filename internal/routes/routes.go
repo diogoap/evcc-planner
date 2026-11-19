@@ -18,6 +18,7 @@ import (
 
 	"github.com/diogoap/evcc-planner/internal/audit"
 	"github.com/diogoap/evcc-planner/internal/clock"
+	"github.com/diogoap/evcc-planner/internal/rejected"
 	"github.com/diogoap/evcc-planner/internal/store"
 )
 
@@ -99,6 +100,11 @@ func (g *Google) Compute(ctx context.Context, origin, destination string, depart
 		msg := resp.Status
 		if json.Unmarshal(data, &e) == nil && e.Error.Message != "" {
 			msg = e.Error.Message
+		}
+		// Google answers a key that isn't valid with 400.
+		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden ||
+			(resp.StatusCode == http.StatusBadRequest && strings.Contains(strings.ToLower(msg), "api key not valid")) {
+			return Route{}, &rejected.Error{What: "API key", Status: resp.StatusCode, Message: msg}
 		}
 		return Route{}, fmt.Errorf("routes api: %s", msg)
 	}

@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/diogoap/evcc-planner/internal/rejected"
 )
 
 var amsterdam, _ = time.LoadLocation("Europe/Amsterdam")
@@ -185,8 +187,7 @@ func TestHTTPClient(t *testing.T) {
 	}
 	c.Token = "wrong"
 	_, err = c.SoC(ctx)
-	var apiErr *APIError
-	if !errors.As(err, &apiErr) || apiErr.Status != 401 || !strings.Contains(err.Error(), "access token rejected") {
+	if !rejected.Is(err) || err.Error() != "home assistant: access token rejected (HTTP 401)" {
 		t.Errorf("wrong token: err = %v", err)
 	}
 	if strings.Contains(err.Error(), "wrong") {

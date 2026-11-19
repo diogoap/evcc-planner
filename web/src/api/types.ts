@@ -527,6 +527,8 @@ export interface Status {
 export interface HealthIssue {
   name: string
   detail: string
+  /** What to do about a rejected key, token, or address. */
+  fix?: string
   lastSuccessAt?: string
 }
 
@@ -534,8 +536,10 @@ export interface HealthIssue {
 export interface DemoFault {
   service: 'evcc' | 'homeassistant' | 'calendar' | 'routes'
   name: string
-  /** '' while it works. */
-  fault: '' | 'down'
+  /** '' while it works; key: it rejects its key (token, address). */
+  fault: '' | 'down' | 'key'
+  /** The faults it can have (EVCC has no key). */
+  faults: ('down' | 'key')[]
 }
 
 /** "home", "not_home", or the name of a Home Assistant zone. */
@@ -740,8 +744,10 @@ export interface AIPreview {
 export interface Connection {
   name: string
   mode?: string
-  status: 'ok' | 'error' | 'stub' | 'not_configured' | 'planned'
+  /** rejected: the service refused its key, token, or address (fix says what to do). */
+  status: 'ok' | 'error' | 'rejected' | 'stub' | 'not_configured' | 'planned'
   detail: string
+  fix?: string
   lastSuccessAt?: string
 }
 

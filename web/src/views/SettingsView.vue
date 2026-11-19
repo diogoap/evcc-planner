@@ -225,6 +225,7 @@ const control = computed(() =>
 const statusTone: Record<Connection['status'], string> = {
   ok: 'tone-ok',
   error: 'tone-bad',
+  rejected: 'tone-bad',
   stub: 'tone-warn',
   not_configured: 'tone-warn',
   planned: '',
@@ -232,6 +233,7 @@ const statusTone: Record<Connection['status'], string> = {
 const statusText: Record<Connection['status'], string> = {
   ok: 'Connected',
   error: 'Error',
+  rejected: 'Rejected',
   stub: 'Stub',
   not_configured: 'Not configured',
   planned: 'Later version',
@@ -253,12 +255,6 @@ async function load() {
 }
 onMounted(() => {
   load()
-  if (state.meta?.demo) {
-    api
-      .demoFaults()
-      .then((list) => (faults.value = list))
-      .catch(() => {})
-  }
   api
     .homeAssistantSensors()
     .then((list) => (sensors.value = list))
@@ -325,13 +321,31 @@ async function checkEVCC() {
   connections.value = await api.connections()
 }
 
-// Demo outages: a demo service fails until switched back.
+// Demo outages: a demo service fails until switched back. Opened
+// directly, the page may know it is the demo only after it mounts.
 const faults = ref<DemoFault[]>([])
+watch(
+  () => state.meta?.demo,
+  (demo) => {
+    if (!demo) return
+    api
+      .demoFaults()
+      .then((list) => (faults.value = list))
+      .catch(() => {})
+  },
+  { immediate: true },
+)
 
-async function setFault(f: DemoFault, down: boolean) {
+function faultText(f: DemoFault, fault: DemoFault['fault']) {
+  if (fault === 'down') return 'Down'
+  if (fault === 'key') return f.service === 'calendar' ? 'Address rejected' : 'Key rejected'
+  return 'Works'
+}
+
+async function setFault(f: DemoFault, fault: DemoFault['fault']) {
   try {
-    faults.value = await api.setDemoFault(f.service, down ? 'down' : '')
-    notify(down ? `${f.name} is down (demo)` : `${f.name} works again`)
+    faults.value = await api.setDemoFault(f.service, fault)
+    notify(fault ? `${f.name}: ${faultText(f, fault).toLowerCase()} (demo)` : `${f.name} works again`)
     connections.value = await api.connections()
     refresh()
   } catch (e) {
@@ -624,6 +638,7 @@ async function applyDemo() {
               </td>
               <td class="small">
                 {{ c.detail }}
+                <div v-if="c.fix" class="strong" data-testid="connection-fix">{{ c.fix }}</div>
                 <div v-if="c.lastSuccessAt && state.plan" class="muted">
                   Last success {{ ago(c.lastSuccessAt, state.plan.now) }}
                 </div>
@@ -659,19 +674,21 @@ async function applyDemo() {
         <div v-if="faults.length" class="mt-5" data-testid="demo-faults">
           <div class="card-title">Demo outages</div>
           <div class="stack gap-2">
-            <div v-for="f in faults" :key="f.service" class="row nowrap">
-              <ToggleSwitch
-                :model-value="f.fault === 'down'"
-                :label="`${f.name} down`"
+            <label v-for="f in faults" :key="f.service" class="row nowrap small demo-fault">
+              <span class="grow">{{ f.name }}</span>
+              <select
+                :value="f.fault"
                 :data-testid="`demo-fault-${f.service}`"
-                @update:model-value="(down: boolean) => setFault(f, down)"
-              />
-              <span class="small">{{ f.name }} down</span>
-            </div>
+                @change="setFault(f, ($event.target as HTMLSelectElement).value as DemoFault['fault'])"
+              >
+                <option value="">Works</option>
+                <option v-for="x in f.faults" :key="x" :value="x">{{ faultText(f, x) }}</option>
+              </select>
+            </label>
           </div>
           <p class="small muted m-0 mt-2">
-            Makes a demo service fail, to see how the planner shows it: in the table above and on the
-            Overview. A reset of the demo, or switching it back, ends it.
+            Makes a demo service fail, or refuse its key, to see how the planner shows it: in the table above
+            and on the Overview. A reset of the demo, or choosing Works, ends it.
           </p>
         </div>
       </section>
@@ -721,5 +738,11 @@ async function applyDemo() {
 
 .demo-soc {
   max-width: 160px;
+}
+
+/* One width, so the demo outages line up. */
+.demo-fault select {
+  width: auto;
+  min-width: 11rem;
 }
 </style>
