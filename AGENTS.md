@@ -2,7 +2,7 @@
 
 Instructions for AI coding agents working in this repository. Read
 [FEATURES.md](FEATURES.md) for what the app does in short (it will replace
-the plan), [PLAN.md](PLAN.md) for scope (V1–V4 and V6 are done; V5 is in progress) and [AUTOMATION.md](AUTOMATION.md) for the
+the plan), [PLAN.md](PLAN.md) for scope (V1–V4 and V6 are done; V5 and V7 are in progress) and [AUTOMATION.md](AUTOMATION.md) for the
 rules of automatic plans and notifications, and
 [README.md](README.md) for configuration and deployment. Keep FEATURES.md
 current with every feature change: concise, plain words, no internal jargon.

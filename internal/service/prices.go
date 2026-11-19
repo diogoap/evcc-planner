@@ -45,7 +45,7 @@ func pricesEnd(slots []evcc.Rate) time.Time {
 func (s *Service) ReviewNewPrices(ctx context.Context) error {
 	ctx = audit.WithSource(ctx, model.SourceAutomation)
 	snap := s.snapshot()
-	if snap.state == nil || snap.err != nil || s.now().Sub(snap.okAt) > 3*s.Conn().EVCCPollInterval() {
+	if !s.evccFresh(snap) {
 		return nil
 	}
 	end := pricesEnd(snap.state.PriceSlots)

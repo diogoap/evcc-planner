@@ -334,7 +334,7 @@ func (a *App) StartJobs(ctx context.Context) (wait func()) {
 	var wg sync.WaitGroup
 	jobCtx := audit.WithSource(ctx, model.SourceJob)
 	svc := a.Service
-	every(ctx, &wg, func() time.Duration { return svc.Conn().EVCCPollInterval() }, func() {
+	a.every(ctx, &wg, "the EVCC check", func() time.Duration { return svc.Conn().EVCCPollInterval() }, func() {
 		if err := a.Service.PollEVCC(jobCtx); err != nil && ctx.Err() == nil {
 			a.Log.Warn("evcc poll failed", "err", err)
 			return
@@ -389,12 +389,12 @@ func (a *App) StartJobs(ctx context.Context) (wait func()) {
 		defer wg.Done()
 		svc.ListenNotificationActions(jobCtx)
 	}()
-	every(ctx, &wg, func() time.Duration { return svc.Conn().HAPollInterval() }, func() {
+	a.every(ctx, &wg, "the Home Assistant check", func() time.Duration { return svc.Conn().HAPollInterval() }, func() {
 		if err := a.Service.PollHomeAssistant(jobCtx); err != nil && ctx.Err() == nil {
 			a.Log.Warn("home assistant poll failed", "err", err)
 		}
 	})
-	every(ctx, &wg, fixed(forecastCheck), func() {
+	a.every(ctx, &wg, "the forecast check", fixed(forecastCheck), func() {
 		if err := a.Service.RefreshForecasts(jobCtx, false); err != nil && ctx.Err() == nil {
 			a.Log.Warn("forecast refresh incomplete", "err", err)
 		}
@@ -403,19 +403,19 @@ func (a *App) StartJobs(ctx context.Context) (wait func()) {
 		}
 	})
 	// Saves only as the day starts and late in the evening (RecordHistory).
-	every(ctx, &wg, fixed(historyCheck), func() {
+	a.every(ctx, &wg, "the day's history", fixed(historyCheck), func() {
 		if err := a.Service.RecordHistory(jobCtx); err != nil && ctx.Err() == nil {
 			a.Log.Warn("saving the day's history failed", "err", err)
 		}
 	})
 	calCtx := audit.WithSource(ctx, model.SourceCalendarSync)
-	every(ctx, &wg, func() time.Duration { return svc.Conn().CalendarSyncInterval() }, func() {
+	a.every(ctx, &wg, "the calendar sync", func() time.Duration { return svc.Conn().CalendarSyncInterval() }, func() {
 		if err := a.Syncer.SyncAll(calCtx); err != nil && ctx.Err() == nil {
 			a.Log.Warn("calendar sync incomplete", "err", err)
 		}
 		svc.Kick()
 	})
-	every(ctx, &wg, fixed(24*time.Hour), func() {
+	a.every(ctx, &wg, "the daily cleanup", fixed(24*time.Hour), func() {
 		if err := a.Service.Cleanup(jobCtx); err != nil && ctx.Err() == nil {
 			a.Log.Warn("history cleanup failed", "err", err)
 		}
@@ -435,11 +435,16 @@ var kickDelay = 3 * time.Second
 
 // every runs fn now and then each time interval() has passed since the last
 // run, until ctx ends.
-func every(ctx context.Context, wg *sync.WaitGroup, interval func() time.Duration, fn func()) {
+func (a *App) every(ctx context.Context, wg *sync.WaitGroup, job string, interval func() time.Duration, fn func()) {
+	run := func() {
+		// /readyz and the health line notice a job that stops running.
+		a.Service.JobStarted(job, interval())
+		fn()
+	}
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		fn()
+		run()
 		last := time.Now()
 		t := time.NewTicker(everyCheck)
 		defer t.Stop()
@@ -450,7 +455,7 @@ func every(ctx context.Context, wg *sync.WaitGroup, interval func() time.Duratio
 			case now := <-t.C:
 				if now.Sub(last) >= interval() {
 					last = now
-					fn()
+					run()
 				}
 			}
 		}

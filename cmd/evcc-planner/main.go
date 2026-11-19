@@ -30,8 +30,9 @@ func main() {
 	}
 }
 
-// healthcheck probes /healthz on the configured port; the container image
-// has no curl, so Compose runs `evcc-planner healthcheck`.
+// healthcheck probes /readyz on the configured port: the database answers
+// and the background checks still run. The container image has no curl, so
+// Compose runs `evcc-planner healthcheck`.
 func healthcheck() int {
 	listen := os.Getenv("EVCC_PLANNER_LISTEN")
 	if listen == "" {
@@ -43,7 +44,7 @@ func healthcheck() int {
 		return 1
 	}
 	client := http.Client{Timeout: 3 * time.Second}
-	resp, err := client.Get("http://127.0.0.1:" + port + "/healthz")
+	resp, err := client.Get("http://127.0.0.1:" + port + "/readyz")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "healthcheck:", err)
 		return 1

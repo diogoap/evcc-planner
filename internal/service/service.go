@@ -92,6 +92,7 @@ type Service struct {
 	// → Connections offers Send plan again).
 	planErr   error
 	planErrAt time.Time
+	jobs      map[string]jobRun // background jobs' last runs
 }
 
 // notePlanChange keeps the outcome of an automatic change of EVCC's plan;

@@ -541,7 +541,7 @@ func (s *Service) CheckAI(ctx context.Context) error {
 		return err
 	}
 	snap := s.snapshot()
-	if snap.state == nil || snap.err != nil || s.now().Sub(snap.okAt) > 3*s.Conn().EVCCPollInterval() {
+	if !s.evccFresh(snap) {
 		return nil
 	}
 	ai, err := s.AISettings()

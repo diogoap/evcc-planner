@@ -268,6 +268,13 @@ func (s *Server) ready(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "unavailable", "error": err.Error()})
 		return
 	}
+	// A background job that stopped makes the container unhealthy.
+	if stopped := s.Svc.StoppedJobs(); len(stopped) > 0 {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+			"status": "stalled", "error": "background checks stopped: " + strings.Join(stopped, "; "),
+		})
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
 }
 

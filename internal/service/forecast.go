@@ -223,6 +223,9 @@ func (s *Service) forecastConnections() ([]ConnectionView, error) {
 			if env != "" && rejected.In(rec.LastError) {
 				renewKey(c, env)
 			}
+		case rec != nil && rec.LastSuccessAt != nil && s.tooOld(*rec.LastSuccessAt, forecastFetchMaxAge):
+			c.Status, c.Detail = "error", c.Detail+" · not fetched since "+dateTimeText(*rec.LastSuccessAt, s.loc())
+			c.Fix = "The advice keeps the last forecast; Refresh tries at once."
 		case stub:
 			c.Status = "stub"
 		default:

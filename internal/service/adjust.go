@@ -431,7 +431,7 @@ func (s *Service) CheckAdjustments(ctx context.Context) error {
 	s.adjustMu.Lock()
 	defer s.adjustMu.Unlock()
 	snap := s.snapshot()
-	if snap.state == nil || snap.err != nil || s.now().Sub(snap.okAt) > 3*s.Conn().EVCCPollInterval() {
+	if !s.evccFresh(snap) {
 		return nil
 	}
 	list, err := s.Store.Adjustments(localtime.Date(s.now(), s.loc()))

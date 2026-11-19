@@ -67,7 +67,7 @@ func (s *Service) CheckNotifications(ctx context.Context) error {
 	s.notifyMu.Lock()
 	defer s.notifyMu.Unlock()
 	snap := s.snapshot()
-	if snap.state == nil || snap.err != nil || s.now().Sub(snap.okAt) > 3*s.Conn().EVCCPollInterval() {
+	if !s.evccFresh(snap) {
 		return nil
 	}
 	lp, ok := s.loadpoint(snap.state)

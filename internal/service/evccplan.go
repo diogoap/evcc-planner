@@ -57,10 +57,14 @@ type HealthIssue struct {
 	LastSuccessAt *time.Time `json:"lastSuccessAt,omitempty"`
 }
 
-// health lists the connections with an error or a rejected key; failing
-// to list them is one too.
+// health lists the background jobs that stopped and the connections with
+// an error or a rejected key; failing to list them is one too.
 func (s *Service) health() []HealthIssue {
 	out := []HealthIssue{}
+	if stopped := s.StoppedJobs(); len(stopped) > 0 {
+		out = append(out, HealthIssue{Name: "Background checks", Detail: strings.Join(stopped, " · "),
+			Fix: "Restart the planner; until then it makes no automatic changes and sends no reminders."})
+	}
 	list, err := s.Connections()
 	if err != nil {
 		return append(out, HealthIssue{Name: "Planner", Detail: err.Error()})
@@ -109,7 +113,10 @@ func (s *Service) Status() StatusView {
 		return v
 	}
 	st := snap.state
-	v.Reachable = snap.err == nil
+	v.Reachable = s.evccFresh(snap)
+	if snap.err == nil && !v.Reachable {
+		v.Error = "no answer since " + s.clockText(snap.okAt)
+	}
 	v.UpdatedAt = &snap.okAt
 	v.Version, v.GridPrice, v.PVPowerW, v.Currency = st.Version, st.GridPrice, st.PVPowerW, st.Currency
 	if lp, ok := s.loadpoint(st); ok {
@@ -381,6 +388,9 @@ func (s *Service) Connections() ([]ConnectionView, error) {
 	case snap.err != nil:
 		ev.Status, ev.Detail = "error", snap.err.Error()
 		ev.Fix = "Check that EVCC runs and that its address under Connection settings is right; the planner keeps trying."
+	case snap.state != nil && !s.evccFresh(snap):
+		ev.Status, ev.Detail = "error", "No answer since "+s.clockText(snap.okAt)
+		ev.Fix = "The planner makes no automatic changes until EVCC answers; Check now tries at once."
 	case s.Cfg.EVCC.Mode == config.ModeStub:
 		ev.Status, ev.Detail = "stub", "Demo feed"
 	case snap.state == nil:
@@ -394,7 +404,7 @@ func (s *Service) Connections() ([]ConnectionView, error) {
 	s.mu.RLock()
 	perr, perrAt := s.planErr, s.planErrAt
 	s.mu.RUnlock()
-	if perr != nil && snap.err == nil {
+	if perr != nil && ev.Status != "error" {
 		ev.Status = "error"
 		ev.Detail += fmt.Sprintf("; changing its plan failed at %s: %v", s.clockText(perrAt), perr)
 		ev.Fix = "Send the plan again; the planner also tries at its next check."
@@ -432,6 +442,10 @@ func (s *Service) Connections() ([]ConnectionView, error) {
 				refused = refused || rejected.In(st.LastError)
 			case st.LastSuccessAt != nil:
 				part += plural(st.EventCount, "event")
+				if s.tooOld(*st.LastSuccessAt, checksMissed*s.Conn().CalendarSyncInterval()) {
+					cal.Status = "error"
+					part += ", last synced " + s.clockText(*st.LastSuccessAt)
+				}
 			default:
 				part += "not synced yet"
 			}
@@ -512,6 +526,9 @@ func (s *Service) homeAssistantConnection() ConnectionView {
 		}
 	case r == nil:
 		c.Status, c.Detail = "error", "Not checked yet"
+	case s.tooOld(okAt, checksMissed*s.Conn().HAPollInterval()):
+		c.Status, c.Detail = "error", "No answer since "+s.clockText(okAt)
+		c.Fix = "The SoC comes from EVCC while plugged in; Check now tries at once."
 	default:
 		c.Status = "ok"
 		if s.Cfg.HomeAssistant.Mode == config.ModeStub {

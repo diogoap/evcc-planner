@@ -305,12 +305,13 @@ func TestHomeAssistantConfiguredFromSettings(t *testing.T) {
 func TestEveryFollowsTheInterval(t *testing.T) {
 	defer func(d time.Duration) { everyCheck = d }(everyCheck)
 	everyCheck = 2 * time.Millisecond
+	ta := newTestApp(t, "")
 	var interval atomic.Int64
 	interval.Store(int64(time.Hour))
 	var runs atomic.Int32
 	ctx, cancel := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
-	every(ctx, &wg, func() time.Duration { return time.Duration(interval.Load()) }, func() { runs.Add(1) })
+	ta.app.every(ctx, &wg, "the test job", func() time.Duration { return time.Duration(interval.Load()) }, func() { runs.Add(1) })
 
 	time.Sleep(20 * time.Millisecond)
 	if n := runs.Load(); n != 1 {
@@ -326,4 +327,35 @@ func TestEveryFollowsTheInterval(t *testing.T) {
 	if n := runs.Load(); n < 3 {
 		t.Errorf("runs = %d after shortening the interval", n)
 	}
+}
+
+func TestAStoppedBackgroundJobFailsReadiness(t *testing.T) {
+	ta := newTestApp(t, "")
+	ta.json("POST", "/api/demo/reset", map[string]any{}, http.StatusNoContent, nil)
+	svc := ta.app.Service
+	svc.JobStarted("the EVCC check", 30*time.Second)
+	svc.JobStarted("the calendar sync", time.Hour)
+	ta.json("GET", "/readyz", nil, http.StatusOK, nil)
+
+	// Ten minutes without a run (three checks would be 90 s, but a run
+	// may take a while): stopped.
+	start := time.Date(2026, 11, 9, 19, 0, 0, 0, ams)
+	ta.at(start.Add(10 * time.Minute))
+	ta.json("GET", "/readyz", nil, http.StatusOK, nil)
+	ta.at(start.Add(11 * time.Minute))
+	var ready map[string]string
+	ta.json("GET", "/readyz", nil, http.StatusServiceUnavailable, &ready)
+	if ready["status"] != "stalled" || ready["error"] != "background checks stopped: The EVCC check last ran at 19:00" {
+		t.Errorf("readyz = %v", ready)
+	}
+	var st struct{ Health []service.HealthIssue }
+	ta.json("GET", "/api/status", nil, http.StatusOK, &st)
+	if len(st.Health) == 0 || st.Health[0].Name != "Background checks" || st.Health[0].Detail != "The EVCC check last ran at 19:00" ||
+		st.Health[0].Fix != "Restart the planner; until then it makes no automatic changes and sends no reminders." {
+		t.Errorf("health = %+v", st.Health)
+	}
+
+	// Running again: ready.
+	svc.JobStarted("the EVCC check", 30*time.Second)
+	ta.json("GET", "/readyz", nil, http.StatusOK, nil)
 }

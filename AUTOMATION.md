@@ -125,7 +125,8 @@ flowchart TD
 - **Activity log:** every write, removal, pause, and resume, with source
   "Automation". Checks that change nothing are not logged.
 - **EVCC unreachable:** nothing is written; EVCC keeps its plan, and the next
-  check tries again.
+  check tries again. The same holds when EVCC's last answer is too old (see
+  [When data is too old](#when-data-is-too-old)).
 
 ## Chosen plans pause the planner
 
@@ -627,6 +628,25 @@ mode: once per mode; plug in for the sun: once per day). Charging stopped, not
 in Smart mode, and plug in for the sun are cleared from the phone once solved
 (for the sun: plugged in, or the sun is gone). Settings turn problems,
 questions, ready messages, and solar reminders on or off separately.
+
+## When data is too old
+
+Each source has one rule: how old its data may be, what the planner does when
+it is older, and where you see it. "Health line" is the warning line at the
+top of the Overview; every connection also shows its last success under
+Settings → Connections.
+
+| Source | Too old after | What the planner does | Where you see it |
+| --- | --- | --- | --- |
+| EVCC (live SoC, prices, plan) | No answer at the last 3 checks (3 minutes by default) | No automatic plan changes, reminders, or AI runs; **Send plan** is off | Ready card ("EVCC unreachable: no answer since 10:12"), EVCC's connection, health line |
+| Published prices | When a slot has ended | Ended slots aren't used; days without published prices use estimates | Charts and the week (estimates dashed) |
+| SoC reading (not live) | 3 hours | Still planned with | Ready card: "Last known, … from Home Assistant" |
+| Home Assistant | No answer at the last 3 checks (30 minutes by default) | The SoC comes from EVCC while plugged in, otherwise the last known | Its connection, health line |
+| Calendars | No sync for 3 syncs (3 hours by default) | Trips stay as last synced | Its connection ("6 events, last synced 19:00"), health line |
+| Tibber outlook | No fetch for 2 days; contents older than 8 days or past their week | Advice keeps the last outlook; from old contents with confidence 1 | Its connection and the health line (fetch); the advice's sources (contents) |
+| KNMI weather | No fetch for 2 days; an outlook issued more than 36 hours ago | Advice keeps the last outlook, marked stale | Its connection and the health line (fetch); the advice's sources (outlook) |
+| AI plan | 30 hours | The automatic rules apply | AI plan row on the Overview |
+| Background checks | A check hasn't run for 3 of its intervals, and at least 10 minutes | Nothing automatic happens until the planner is restarted; `/readyz` fails, so the container shows as unhealthy | Health line ("The EVCC check last ran at 10:12"), Docker or Portainer |
 
 ## Settings
 

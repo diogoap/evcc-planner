@@ -306,7 +306,9 @@ container and keeps the SQLite database (`planner.db`) across restarts and
 rebuilds. To back it up while running, copy `planner.db` together with its
 `-wal` and `-shm` files, or use `sqlite3 /opt/evcc-planner/data/planner.db
 ".backup /path/to/backup.db"`. The container listens on 0.0.0.0:7201 and reports
-health via `/healthz` (liveness) and `/readyz` (database ready). A
+health via `/healthz` (liveness) and `/readyz` (the database answers and the
+background checks still run; the image's health check uses it, so a planner
+whose checks stopped shows as unhealthy). A
 `config.local.yaml` or `.env` placed in the data folder is also read. If commits
 to `main` deploy automatically, run `make verify` before pushing.
 
