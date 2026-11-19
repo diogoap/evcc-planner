@@ -161,7 +161,7 @@ As implemented (2026-11-11):
 <details open>
 <summary><b>V5 — Automatic plans and interaction</b> 🚧</summary>
 
-🚧 **In progress.** Every rule, with diagrams and examples: [AUTOMATION.md](AUTOMATION.md). Implemented 2026-11-12; done once validated live: automatic writes with the real EVCC, notification delivery and button presses with the real Home Assistant (admin token). Telegram moved to V8 (decided 2026-11-12).
+🚧 **In progress.** Every rule, with diagrams and examples: [AUTOMATION.md](AUTOMATION.md). Implemented 2026-11-12; done once validated live: automatic writes with the real EVCC, notification delivery and button presses with the real Home Assistant (admin token). Telegram moved to V8 (decided 2026-11-12), then dropped (2026-11-19).
 
 - ✅ **Plan on plug-in** (2026-11-11): send the next departure's target once when the car is plugged in; keep an equal or higher plan, replace a lower one.
 - ✅ **Automatic trip plans** (default mode; Manual and On plug-in remain): keep EVCC's one plan matched to the trips while plugged in, after every EVCC check, trip or setting change, and calendar sync. Write only real changes; remove the planner's plan when nothing needs it.
@@ -306,14 +306,39 @@ Scope:
 </details>
 
 <details open>
-<summary><b>V8 — Optimization and conversation</b></summary>
+<summary><b>V8 — Optimization and explanations</b></summary>
 
-Validate EVCC optimizer control for solar/grid scheduling; its regular planner selects tariff slots and uses available solar. Optional OpenClaw interface using the same core. UI: schedule comparisons/explanations.
+Check whether EVCC's optimizer should take over solar and grid scheduling, and show next to each plan what other ways to charge would cost. UI: plan comparisons.
 
-- **Telegram notifications** (moved from V5, optional): the same messages and buttons as the Home Assistant Companion app, through a bot. Worth it for reminders to people without a Home Assistant account (e.g. a household group chat), for buttons without an admin Home Assistant token, or for button presses away from home when Home Assistant isn't reachable from outside. The planner reads button presses from Telegram itself (outbound only), and typed replies could lead into conversation. Trip names and times would pass through Telegram's servers.
+Planned 2026-11-19. Today EVCC's regular planner picks the cheap price slots for the planner's plan and charges from solar by itself. V8 first finds out whether EVCC's optimizer does better, then makes the plan easier to judge: what it costs, what the alternatives would cost, and why it was chosen.
+
+Found in the current code:
+
+- The planner already estimates which slots EVCC will charge in and what each costs, solar included (`ChargeSlot` in `internal/planner/ahead.go`); charge ahead and the early reminder use it.
+- The ready card lists the trips a higher target covers and, in AI mode, the model's reason. No screen compares the plan with another way to charge.
+- EVCC has an optimizer; its automatic control is off here (see Context, 2026-11-09). The planner neither reads nor sets it.
+
+Scope:
+
+- **EVCC optimizer check** (a written finding, no code): against the real EVCC, read-only, answer:
+  - what the optimizer controls (only the car, or a home battery and other loads too) and what it uses (prices, solar forecast, the car's plan);
+  - with automatic control on, whether it follows the car's one-off plan, changes it, or ignores it, and whether planned charging still goes past the 80% limit;
+  - whether its schedule can be read through the API;
+  - on a few real days, how its schedule compares with the regular planner's for the same target: cost, solar used, and target met.
+
+  The finding ends in a decision: keep the optimizer off (as now); turn it on and keep sending plans; or let it schedule and have the planner only set targets. Automatic control is switched on in EVCC by hand; the planner never switches it, and tests never write to the real EVCC. Any follow-up becomes its own step.
+- **Plan comparisons:** on the Overview, below the plan, a short table of ways to reach the next departure, all computed by the planner with prices including VAT and solar valued as for charge ahead:
+  - **The plan:** the slots EVCC is expected to use for the target (as today).
+  - **Charge now:** full power from now (or from when the car is home) until the target, as without a plan.
+  - **Without the extra:** when charge ahead or charge extra raised the target, the next departure's own target now and the later trips charged at home just before them, so the saving shows.
+
+  For each: when it charges, kWh from the grid and from solar, the average price per kWh, and the total in euros. A row that can't be priced (prices not published yet) says so instead of guessing. On top, one "why" line, e.g. "Cheapest before Thursday 07:48: €0.21/kWh, €3.40 less than charging now." In AI mode the rows are the same, for the model's target. A pure function in `internal/planner` and a field in the plan response.
+- **The optimizer in the comparison:** only if the check finds its schedule readable and worth showing, add it as a row.
+- **Order**, each step passing `make verify` and deploying on its own: (1) the optimizer check, written up here; (2) plan comparisons in the API, with Go tests; (3) the comparison on the Overview, with Vitest, a Playwright flow on demo data, and the new view in `web/e2e/screens.spec.ts`; (4) the optimizer row, if step 1 says so.
+- Decisions (2026-11-19): Telegram notifications (moved here from V5) and the optional OpenClaw chat interface are dropped. Notifications stay with the Home Assistant Companion app.
 
 </details>
 
-**Costs.** Existing hosting adds little cost. Calendar/Telegram and personal routing should fit free allowances. V2 adds daily OpenRouter extraction usage; model choice determines cost. AI mode adds up to three runs a day (about 3,000 prompt and 1,000 answer tokens each). KNMI open datasets are free.
+**Costs.** Existing hosting adds little cost. Calendar and personal routing should fit free allowances. V2 adds daily OpenRouter extraction usage; model choice determines cost. AI mode adds up to three runs a day (about 3,000 prompt and 1,000 answer tokens each). KNMI open datasets are free.
 
 References: [EVCC plans](https://docs.evcc.io/en/features/plans/), [limits](https://docs.evcc.io/en/features/limits/), [plan API](https://docs.evcc.io/integrations/rest-api/operations/setvehiclesocplan/), [preview API](https://docs.evcc.io/integrations/rest-api/operations/previewloadpointsocplan/), [HA notification actions](https://companion.home-assistant.io/docs/notifications/actionable-notifications/), [Maps pricing](https://developers.google.com/maps/billing-and-pricing/pricing), [OpenRouter structured outputs](https://openrouter.ai/docs/guides/features/structured-outputs), [KNMI API](https://developer.dataplatform.knmi.nl/open-data-api), [KNMI access/costs](https://developer.dataplatform.knmi.nl/faq).

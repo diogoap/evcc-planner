@@ -590,8 +590,6 @@ sequenceDiagram
   with source "Notification" for presses. Tokens never appear.
 - **Demo mode:** a stub records the messages; Settings → Notifications shows
   them with their buttons, which act like a press on the phone.
-- **Telegram:** a possible alternative in V8, using the same rules (see
-  [PLAN.md](PLAN.md)).
 
 ## Plug-in reminders
 
