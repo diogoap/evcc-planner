@@ -734,12 +734,37 @@ func (p autoPolicy) acts(a *DayAdviceView) bool {
 }
 
 // AutoApply acts on today's advice when that is turned on (see autoPolicy).
-// It skips weak, dismissed, or already handled advice, and an EVCC plan the
-// user set manually.
+// It skips weak, dismissed, or already handled advice (see autoAskedAt),
+// and an EVCC plan the user set manually.
 func (s *Service) AutoApply(ctx context.Context) error { return s.autoApply(ctx, false) }
 
-// autoApply is AutoApply; again skips its once-a-day rule, to follow new
-// advice after new prices ended the day's earlier plan.
+// autoAskedAt is when advice auto-apply was last asked to decide again, in
+// automatic and AI mode: new prices were published, or (AI mode) an AI
+// plan was made. Zero in other modes: there it decides once a day.
+func (s *Service) autoAskedAt() (time.Time, error) {
+	settings, err := s.Settings()
+	if err != nil || !settings.KeepsPlan() {
+		return time.Time{}, err
+	}
+	v, err := s.Store.Meta(pricesNewMeta)
+	if err != nil {
+		return time.Time{}, err
+	}
+	at, _ := time.Parse(time.RFC3339Nano, v)
+	if settings.TripPlans == model.TripPlansAI {
+		run, err := s.Store.LatestAIRun(model.AIRunOK)
+		if err != nil {
+			return time.Time{}, err
+		}
+		if run != nil && run.FinishedAt.After(at) {
+			at = run.FinishedAt
+		}
+	}
+	return at, nil
+}
+
+// autoApply is AutoApply; again skips the day's earlier decision, to
+// follow new advice after new prices ended the day's earlier plan.
 func (s *Service) autoApply(ctx context.Context, again bool) error {
 	ctx = audit.WithSource(ctx, model.SourceAutomation)
 	policy, err := s.autoPolicy()
@@ -762,9 +787,18 @@ func (s *Service) autoApply(ctx context.Context, again bool) error {
 	if err != nil {
 		return err
 	}
+	// One change at a time; one made or ended for today's advice is the
+	// day's decision until new prices or a new AI plan ask again.
+	asked, err := s.autoAskedAt()
+	if err != nil {
+		return err
+	}
 	for _, a := range list {
-		if a.AdviceDate == today && a.Kind == day.Action && (!again || a.Status == model.AdjustActive) {
-			return nil // handled once per day
+		if a.AdviceDate != today || a.Kind != day.Action {
+			continue
+		}
+		if a.Status == model.AdjustActive || (!again && (a.EndedAt == nil || !a.EndedAt.Before(asked))) {
+			return nil
 		}
 	}
 	snap := s.snapshot()

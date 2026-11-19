@@ -126,6 +126,56 @@ func TestNewPricesUpdateExtraPlansMadeAutomatically(t *testing.T) {
 	}
 }
 
+// An extra plan you end is the day's decision for advice auto-apply; in
+// Automatic mode new prices ask again, in On plug-in mode it stays.
+func TestNewPricesLetAutoApplyDecideAgain(t *testing.T) {
+	for _, c := range []struct {
+		mode  string
+		again bool
+	}{{model.TripPlansAutomatic, true}, {model.TripPlansPlugIn, false}} {
+		t.Run(c.mode, func(t *testing.T) {
+			ta := newTestApp(t, "")
+			ta.pastWeek(0.40)
+			ta.tripPlans(c.mode)
+			p := newPublishing(ta, 0.10, 0.25)
+			var as map[string]any
+			ta.json("GET", "/api/settings/advice", nil, http.StatusOK, &as)
+			as["autoApply"], as["autoMinConfidence"] = true, 2
+			ta.json("PUT", "/api/settings/advice", as, http.StatusOK, nil)
+			ctx := context.Background()
+			if err := ta.app.Service.AutoApply(ctx); err != nil {
+				t.Fatal(err)
+			}
+			active := func() *adjustment {
+				for _, a := range ta.advice().Advice.Adjustments {
+					if a.Status == model.AdjustActive {
+						return &a
+					}
+				}
+				return nil
+			}
+			a := active()
+			if a == nil {
+				t.Fatal("no extra plan made")
+			}
+			ta.at(time.Date(2026, 11, 9, 19, 5, 0, 0, ams))
+			ta.json("POST", "/api/adjustments/"+itoa(a.ID)+"/cancel", map[string]any{}, http.StatusOK, nil)
+			if err := ta.app.Service.AutoApply(ctx); err != nil {
+				t.Fatal(err)
+			}
+			if a := active(); a != nil {
+				t.Fatalf("made again the same day: %+v", a)
+			}
+
+			ta.at(time.Date(2026, 11, 9, 19, 10, 0, 0, ams))
+			ta.publish(p)
+			if a := active(); (a != nil) != c.again {
+				t.Errorf("after new prices: %+v, want made again %v", a, c.again)
+			}
+		})
+	}
+}
+
 func TestNewPricesRaiseAChosenPlan(t *testing.T) {
 	ta := newTestApp(t, "")
 	ta.json("POST", "/api/demo/reset", map[string]any{}, http.StatusNoContent, nil)

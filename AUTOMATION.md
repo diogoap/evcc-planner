@@ -386,6 +386,12 @@ planner also:
   longer charges extra. An automatic postponement ends when today's advice
   is no longer to defer. Auto-apply then runs at once instead of within 15
   minutes.
+- **A plan you ended is the day's decision, until something new.** Auto-apply
+  makes one plan per day's advice: one you end (**End now**) is not made
+  again by itself. In Automatic and AI mode, new prices and (AI mode) each
+  new AI plan, also one run by hand or after a plug-in, ask again: auto-apply
+  then acts on the new advice, and a plan ended after that stays ended until
+  the next one. In On plug-in mode it stays once a day.
 - **Plans you chose are raised, never lowered** (Automatic and AI mode). A
   plan set in EVCC or sent by hand, which pauses automatic plans, is raised
   to the planner's target when that is higher now: the higher SoC by the
@@ -443,8 +449,9 @@ flowchart TD
 - **Acting on the AI's advice:** the AI's daily advice always shows (the
   automatic rules' part of Settings → Advice doesn't apply in AI mode). With **Automatically create plans
   from the AI's advice** (Settings → Advice → AI mode) off, it offers **Create extra plan**
-  and **Review postponement**; on, they are made once a day on today's AI
-  advice at its minimum confidence (postponing only with **Also postpone**
+  and **Review postponement**; on, they are made on today's AI advice at
+  its minimum confidence, once until the next AI plan or new prices (see
+  [When new prices arrive](#when-new-prices-arrive)) (postponing only with **Also postpone**
   and when the AI asks for it). It never acts on the automatic rules' advice
   shown until the first AI plan. The AI's target for the next departure
   applies either way. Until you change it in AI mode, this switch (with its
@@ -720,7 +727,7 @@ Settings → **Advice → Automatic rules** (greyed out in AI mode):
 | --- | --- | --- |
 | Daily advice | On | Shows a recommendation for each published day. AI mode always shows the AI's. |
 | Charge extra steps | See [Charge extra](#charge-extra-daily-advice) | Per indication of cheaper days ahead: on/off and three steps (% cheaper → target SoC). |
-| Automatically create plans from daily advice | Off | Once a day on today's advice: charge extra's target, ready when its cheap hours end (or by the next departure), and ended then. On plug-in and Automatic mode only (AI mode has its own, under AI). The next trip's plan and charge ahead come from the trip plan mode, not from here. |
+| Automatically create plans from daily advice | Off | Once on today's advice (again after new prices in Automatic mode): charge extra's target, ready when its cheap hours end (or by the next departure), and ended then. On plug-in and Automatic mode only (AI mode has its own, under AI). The next trip's plan and charge ahead come from the trip plan mode, not from here. |
 | Minimum confidence | 3 | 2 also acts against the weekly outlook or a week of price history. |
 | Also postpone | Off | Pauses cheap-grid charging when today's advice is to defer. |
 

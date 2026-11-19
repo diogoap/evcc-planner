@@ -19,6 +19,10 @@ import (
 // pricesMeta holds where the published prices ended at the last review.
 const pricesMeta = "prices.reviewed"
 
+// pricesNewMeta holds when the last new publication was seen (RFC 3339):
+// advice auto-apply decides again after it (autoAskedAt).
+const pricesNewMeta = "prices.published"
+
 // newPricesGap is how much further the published prices must reach to be
 // a new publication (tomorrow's, around 14:00).
 const newPricesGap = time.Hour
@@ -64,6 +68,9 @@ func (s *Service) ReviewNewPrices(ctx context.Context) error {
 		return nil
 	}
 	s.Log.Info("new prices published", "until", end)
+	if err := s.Store.SetMeta(pricesNewMeta, s.now().UTC().Format(time.RFC3339Nano)); err != nil {
+		return err
+	}
 	settings, err := s.Settings()
 	if err != nil {
 		return err

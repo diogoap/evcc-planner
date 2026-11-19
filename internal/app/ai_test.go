@@ -518,6 +518,66 @@ func TestAIModeCreatesPlansByItsOwnSwitch(t *testing.T) {
 	}
 }
 
+// An extra plan you end is the day's decision for advice auto-apply, until
+// a new AI plan asks again.
+func TestANewAIPlanLetsAutoApplyDecideAgain(t *testing.T) {
+	ta := newTestApp(t, "")
+	ta.tripPlans(model.TripPlansAI)
+	ta.json("PUT", "/api/settings/ai", map[string]any{"autoApply": true, "autoMinConfidence": 3}, http.StatusOK, nil)
+	ta.useAI(&fakeAI{content: strings.Replace(strings.Replace(aiDecision,
+		`"date": "2026-11-09", "recommendation": "none", "target_soc": null, "from": null, "until": null,`,
+		`"date": "2026-11-09", "recommendation": "charge_extra", "target_soc": 75, "from": "2026-11-09 23:00", "until": "2026-11-10 05:00",`, 1),
+		`"target_soc": 95`, `"target_soc": 42`, 1)})
+	mon := func(h, m int) time.Time { return time.Date(2026, 11, 9, h, m, 0, 0, ams) }
+	ctx := context.Background()
+	active := func() []model.Adjustment {
+		t.Helper()
+		list, err := ta.app.Store.Adjustments("2026-11-09")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []model.Adjustment
+		for _, a := range list {
+			if a.Status == model.AdjustActive {
+				out = append(out, a)
+			}
+		}
+		return out
+	}
+	end := func(at time.Time) {
+		t.Helper()
+		ta.at(at)
+		a := active()
+		if len(a) != 1 {
+			t.Fatalf("active = %+v", a)
+		}
+		ta.json("POST", "/api/adjustments/"+itoa(a[0].ID)+"/cancel", map[string]any{}, http.StatusOK, nil)
+	}
+
+	ta.checkAI()
+	end(mon(19, 5))
+	if err := ta.app.Service.AutoApply(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if a := active(); len(a) != 0 {
+		t.Fatalf("made again the same day: %+v", a)
+	}
+	// A new AI plan asks again: the plan is made from its advice.
+	ta.at(mon(19, 10))
+	ta.json("POST", "/api/ai/run", map[string]any{}, http.StatusOK, nil)
+	if a := active(); len(a) != 1 || a[0].Plan.SoC != 75 {
+		t.Fatalf("after a new AI plan = %+v", a)
+	}
+	// Ended again, it stays ended until the next one.
+	end(mon(19, 15))
+	if err := ta.app.Service.AutoApply(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if a := active(); len(a) != 0 {
+		t.Errorf("made again after ending it: %+v", a)
+	}
+}
+
 func TestANewAIPlanKeepsEVCCsPlanWhenChargeMovesToChargeExtra(t *testing.T) {
 	ta := newTestApp(t, "")
 	ta.tripPlans(model.TripPlansAI)

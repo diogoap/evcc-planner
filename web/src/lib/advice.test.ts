@@ -208,4 +208,33 @@ describe('goodPrices', () => {
     expect(goodPrices([], { ...t, covered: true }).size).toBe(0)
     expect(goodPrices([{ ...extra, noSuggestion: true }], null).size).toBe(0)
   })
+
+  it('marks the lowest price of every day charge extra’s hours run into', () => {
+    const price = (minAt: string) => ({
+      value: 0.4,
+      basis: 'published' as const,
+      detail: '',
+      stale: false,
+      min: 0.3,
+      minAt,
+    })
+    // The AI's cheap night, Thursday 23:00 to Friday 06:30.
+    const thu = advice({
+      date: '2026-11-19',
+      recommendation: 'charge_extra',
+      targetSoc: 80,
+      price: price('2026-11-19T23:45:00+01:00'),
+      blocks: [{ from: '2026-11-19T23:00:00+01:00', until: '2026-11-20T06:30:00+01:00', price: 0.34 }],
+    })
+    const fri = advice({ date: '2026-11-20', price: price('2026-11-20T01:00:00+01:00') })
+    const sat = advice({ date: '2026-11-21', price: price('2026-11-21T03:00:00+01:00') })
+    expect(Object.fromEntries(goodPrices([thu, fri, sat], null))).toEqual({
+      '2026-11-19': 'Good price: cheap enough to charge extra to 80%',
+      '2026-11-20': 'Good price: cheap enough to charge extra to 80%',
+    })
+    // A day's lowest price outside the cheap hours stays plain, also on
+    // the advice's own day.
+    const early = { ...thu, price: price('2026-11-19T16:00:00+01:00') }
+    expect([...goodPrices([early, { ...fri, price: price('2026-11-20T13:00:00+01:00') }], null)]).toEqual([])
+  })
 })

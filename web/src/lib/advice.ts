@@ -124,10 +124,12 @@ export function priceBadge(
 }
 
 /**
- * Days whose low prices the planner charges at, with why: the day's advice
- * is to charge extra from the grid, or the trip plan charges later trips
- * ahead in its hours (its expected charging). The week highlights their
- * lowest price.
+ * Days whose low prices the planner charges at, with why: charge extra
+ * from the grid charges then (on the advice's day, unless its lowest price
+ * is outside the cheap hours, and on a later day the hours run into, such
+ * as the AI's cheap night), or the trip plan charges later trips ahead in
+ * its hours (its expected charging). The week highlights their lowest
+ * price.
  */
 export function goodPrices(advice: DayAdvice[], target: Target | null): Map<string, string> {
   const why = new Map<string, string[]>()
@@ -135,9 +137,20 @@ export function goodPrices(advice: DayAdvice[], target: Target | null): Map<stri
     const list = why.get(date) ?? []
     if (!list.includes(text)) why.set(date, [...list, text])
   }
+  // Whether a day's lowest price falls in the cheap hours; undefined when
+  // either isn't known.
+  const inHours = (d: DayAdvice, a: DayAdvice) => {
+    if (!d.price?.minAt || !a.blocks?.length) return undefined
+    const at = Date.parse(d.price.minAt)
+    return a.blocks.some((b) => at >= Date.parse(b.from) && at < Date.parse(b.until))
+  }
   for (const a of advice) {
-    if (a.recommendation === 'charge_extra' && !a.solar && !a.noSuggestion && a.targetSoc)
-      add(a.date, `cheap enough to charge extra to ${a.targetSoc}%`)
+    if (a.recommendation !== 'charge_extra' || a.solar || a.noSuggestion || !a.targetSoc) continue
+    for (const d of advice) {
+      const inside = inHours(d, a)
+      if (d.date === a.date ? inside !== false : inside)
+        add(d.date, `cheap enough to charge extra to ${a.targetSoc}%`)
+    }
   }
   if (target && !target.covered && target.ahead.length) {
     const saving = target.savingEur > 0 ? ` (saves about €${target.savingEur.toFixed(2)})` : ''

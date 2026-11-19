@@ -46,7 +46,7 @@ notifications is in [AUTOMATION.md](AUTOMATION.md).
 - Later days show what the outlook expects ("Looks cheaper").
 - On a day the trip plan charges later trips ahead (without charge extra), the advice says "Charge ahead to 80%" rather than "No plan needed".
 - Hints for a trip that misses very cheap or negative prices, and for negative prices while the sun shines (use the solar or switch the panels off).
-- **Create extra plan** and **Review postponement** ask before changing anything and are undone when they expire. An extra plan is ready when its cheap hours end. When those hours come after the next trips (the AI can choose a cheap night after the evening's trips), it is still made right away, but those trips get their own plans first, and EVCC only gets the extra plan after them. Applying advice automatically is optional, off by default, and never happens in Manual mode.
+- **Create extra plan** and **Review postponement** ask before changing anything and are undone when they expire. An extra plan is ready when its cheap hours end. When those hours come after the next trips (the AI can choose a cheap night after the evening's trips), it is still made right away, but those trips get their own plans first, and EVCC only gets the extra plan after them. Applying advice automatically is optional, off by default, and never happens in Manual mode. A plan you end isn't made again that day, until new prices or a new AI plan bring new advice (Automatic and AI mode).
 
 ## AI mode
 
@@ -85,7 +85,7 @@ notifications is in [AUTOMATION.md](AUTOMATION.md).
 - When a service refuses its key, token, or calendar address (Google Routes, OpenRouter, KNMI, Home Assistant, a calendar), its connection is marked **Rejected** and says which environment variable to renew.
 - Each source's data has an age limit (EVCC 3 checks, Home Assistant 3 checks, calendars 3 syncs, forecasts 2 days). Older EVCC data stops automatic changes and the ready card says so; the others show on the warning line. If the planner's background checks stop, the warning line says to restart it, and the container shows as unhealthy.
 - Each connection in Settings → Connections has a button for what can be done now: Check now, Sync now, Refresh, Send test, Run now, and Send plan again when a change of EVCC's plan failed. Every problem comes with a short line on what to do, on the Overview too.
-- In the week, a day's lowest price turns green (with a ⚡) when the plan charges at it: charge extra, or the trip plan charging later trips ahead. Its tooltip says which.
+- In the week, a day's lowest price turns green (with a ⚡) when the plan charges at it: charge extra (also on the next day when its cheap hours run past midnight), or the trip plan charging later trips ahead. Its tooltip says which.
 - **Day panel:** one day's trips, charging, prices, weather, and advice, with quick actions. In the week's tiles, a tap shows the day's advice in the advice card; press and hold (or right-click) opens the day, as does the date on the advice card or a tap on the chart.
 - **Trips**, **Recurring trips**, **Activity**, and **Settings** pages (Settings has a tab for AI mode).
 - Works on phones (bottom bar, installable as an app, pull to refresh) and in light and dark mode. Checked for contrast, keyboard focus, screen reader labels, and 44 px touch targets.
