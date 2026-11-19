@@ -24,12 +24,23 @@ const (
 	FaultRoutes        = "routes"
 )
 
-// How a service fails: unreachable, or refusing its key (or token, or
-// address); "" means it works.
+// How a service fails: unreachable, so slow that calls time out, or
+// refusing its key (or token, or address); "" means it works.
 const (
 	FaultDown = "down"
+	FaultSlow = "slow"
 	FaultKey  = "key"
 )
+
+// SlowFor is how long a slow service keeps a call waiting before it times
+// out (shorter in tests); a caller's earlier deadline ends it sooner.
+var SlowFor = 2 * time.Second
+
+// errSlow is how a call to a slow service ends: a timeout.
+type errSlow struct{}
+
+func (errSlow) Error() string { return "timed out (demo outage)" }
+func (errSlow) Unwrap() error { return context.DeadlineExceeded }
 
 // faultService is a service that can fail: its name in the UI, and the
 // refusal it answers with when it rejects the key (none for EVCC, which
@@ -74,7 +85,7 @@ func (f *Faults) Set(service, fault string) error {
 	switch {
 	case i < 0:
 		return fmt.Errorf("unknown service %q", service)
-	case fault != "" && fault != FaultDown && fault != FaultKey,
+	case fault != "" && fault != FaultDown && fault != FaultSlow && fault != FaultKey,
 		fault == FaultKey && faultNames[i].refusal == nil:
 		return fmt.Errorf("%s can't have fault %q", faultNames[i].name, fault)
 	}
@@ -85,7 +96,7 @@ func (f *Faults) Set(service, fault string) error {
 	f.set[service] = fault
 	f.mu.Unlock()
 	if service == FaultHomeAssistant && f.Phone != nil {
-		f.Phone.SetFail(f.err(service))
+		f.Phone.SetFail(f.faultErr(service))
 	}
 	return nil
 }
@@ -103,7 +114,7 @@ func (f *Faults) List() []Fault {
 	defer f.mu.Unlock()
 	out := make([]Fault, len(faultNames))
 	for i, s := range faultNames {
-		out[i] = Fault{Service: s.key, Name: s.name, Fault: f.set[s.key], Faults: []string{FaultDown}}
+		out[i] = Fault{Service: s.key, Name: s.name, Fault: f.set[s.key], Faults: []string{FaultDown, FaultSlow}}
 		if s.refusal != nil {
 			out[i].Faults = append(out[i].Faults, FaultKey)
 		}
@@ -111,23 +122,40 @@ func (f *Faults) List() []Fault {
 	return out
 }
 
-func (f *Faults) err(service string) error {
+// faultErr is what a call to the service fails with now (nil while it
+// works), without waiting.
+func (f *Faults) faultErr(service string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	switch f.set[service] {
 	case FaultDown:
 		return errDown
+	case FaultSlow:
+		return errSlow{}
 	case FaultKey:
 		return faultNames[slices.IndexFunc(faultNames, func(s faultService) bool { return s.key == service })].refusal
 	}
 	return nil
 }
 
-// EVCC wraps an EVCC client: every call fails while EVCC is down.
+// fail is how a call to the service ends: nil while it works. A slow
+// service first keeps the call waiting.
+func (f *Faults) fail(ctx context.Context, service string) error {
+	err := f.faultErr(service)
+	if errors.Is(err, errSlow{}) {
+		select {
+		case <-ctx.Done():
+		case <-time.After(SlowFor):
+		}
+	}
+	return err
+}
+
+// EVCC wraps an EVCC client: every call fails while EVCC has a fault.
 func (f *Faults) EVCC(c evcc.Client) evcc.Client { return faultyEVCC{c, f} }
 
 // HomeAssistant wraps the SoC reader, and its sensor reads when it has
-// them: they fail while Home Assistant is down.
+// them: they fail while Home Assistant has a fault.
 func (f *Faults) HomeAssistant(r homeassistant.Reader) homeassistant.Reader {
 	if l, ok := r.(homeassistant.Locator); ok {
 		return faultyHASensors{faultyHA{r, f}, l}
@@ -135,10 +163,10 @@ func (f *Faults) HomeAssistant(r homeassistant.Reader) homeassistant.Reader {
 	return faultyHA{r, f}
 }
 
-// Calendar wraps the calendar source: feeds fail while it is down.
+// Calendar wraps the calendar source: feeds fail while it has a fault.
 func (f *Faults) Calendar(s calendar.Source) calendar.Source { return faultyCalendar{s, f} }
 
-// Routes wraps the route provider: lookups fail while it is down.
+// Routes wraps the route provider: lookups fail while it has a fault.
 func (f *Faults) Routes(r routes.Router) routes.Router { return faultyRouter{r, f} }
 
 type faultyEVCC struct {
@@ -147,35 +175,35 @@ type faultyEVCC struct {
 }
 
 func (e faultyEVCC) State(ctx context.Context) (*evcc.State, error) {
-	if err := e.f.err(FaultEVCC); err != nil {
+	if err := e.f.fail(ctx, FaultEVCC); err != nil {
 		return nil, err
 	}
 	return e.Client.State(ctx)
 }
 
 func (e faultyEVCC) PreviewSocPlan(ctx context.Context, loadpoint, soc int, at time.Time) (*evcc.Preview, error) {
-	if err := e.f.err(FaultEVCC); err != nil {
+	if err := e.f.fail(ctx, FaultEVCC); err != nil {
 		return nil, err
 	}
 	return e.Client.PreviewSocPlan(ctx, loadpoint, soc, at)
 }
 
 func (e faultyEVCC) SetSocPlan(ctx context.Context, vehicle string, soc int, at time.Time) (*evcc.SocPlan, error) {
-	if err := e.f.err(FaultEVCC); err != nil {
+	if err := e.f.fail(ctx, FaultEVCC); err != nil {
 		return nil, err
 	}
 	return e.Client.SetSocPlan(ctx, vehicle, soc, at)
 }
 
 func (e faultyEVCC) DeleteSocPlan(ctx context.Context, vehicle string) error {
-	if err := e.f.err(FaultEVCC); err != nil {
+	if err := e.f.fail(ctx, FaultEVCC); err != nil {
 		return err
 	}
 	return e.Client.DeleteSocPlan(ctx, vehicle)
 }
 
 func (e faultyEVCC) SetSmartCostLimit(ctx context.Context, loadpoint int, limit *float64) error {
-	if err := e.f.err(FaultEVCC); err != nil {
+	if err := e.f.fail(ctx, FaultEVCC); err != nil {
 		return err
 	}
 	return e.Client.SetSmartCostLimit(ctx, loadpoint, limit)
@@ -187,7 +215,7 @@ type faultyHA struct {
 }
 
 func (h faultyHA) SoC(ctx context.Context) (*homeassistant.Reading, error) {
-	if err := h.f.err(FaultHomeAssistant); err != nil {
+	if err := h.f.fail(ctx, FaultHomeAssistant); err != nil {
 		return nil, err
 	}
 	return h.Reader.SoC(ctx)
@@ -199,7 +227,7 @@ type faultyHASensors struct {
 }
 
 func (h faultyHASensors) State(ctx context.Context, entityID string) (*homeassistant.EntityState, error) {
-	if err := h.f.err(FaultHomeAssistant); err != nil {
+	if err := h.f.fail(ctx, FaultHomeAssistant); err != nil {
 		return nil, err
 	}
 	return h.l.State(ctx, entityID)
@@ -211,7 +239,7 @@ type faultyCalendar struct {
 }
 
 func (c faultyCalendar) Fetch(ctx context.Context, cal config.CalendarSource) ([]byte, error) {
-	if err := c.f.err(FaultCalendar); err != nil {
+	if err := c.f.fail(ctx, FaultCalendar); err != nil {
 		return nil, err
 	}
 	return c.Source.Fetch(ctx, cal)
@@ -223,7 +251,7 @@ type faultyRouter struct {
 }
 
 func (r faultyRouter) Compute(ctx context.Context, origin, destination string, departAt *time.Time) (routes.Route, error) {
-	if err := r.f.err(FaultRoutes); err != nil {
+	if err := r.f.fail(ctx, FaultRoutes); err != nil {
 		return routes.Route{}, err
 	}
 	return r.Router.Compute(ctx, origin, destination, departAt)

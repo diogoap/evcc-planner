@@ -66,8 +66,8 @@ restarted when Go or config files change) and the Vite UI on 127.0.0.1:7201 with
 hot reload. Ctrl+C stops both. Demo data lives in `data/demo.db`; `make dev-reset`
 deletes it. To see how an outage looks, take a demo service down under Settings →
 Connections → Demo outages (or `PUT /api/demo/faults` with
-`{"service": "homeassistant", "fault": "down"}`, or `"key"` to refuse its key;
-`"fault": ""` brings it back).
+`{"service": "homeassistant", "fault": "down"}`, `"slow"` to make its calls time
+out, or `"key"` to refuse its key; `"fault": ""` brings it back).
 
 ## Commands
 

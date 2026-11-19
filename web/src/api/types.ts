@@ -536,10 +536,10 @@ export interface HealthIssue {
 export interface DemoFault {
   service: 'evcc' | 'homeassistant' | 'calendar' | 'routes'
   name: string
-  /** '' while it works; key: it rejects its key (token, address). */
-  fault: '' | 'down' | 'key'
+  /** '' while it works; slow: calls time out; key: it rejects its key (token, address). */
+  fault: '' | 'down' | 'slow' | 'key'
   /** The faults it can have (EVCC has no key). */
-  faults: ('down' | 'key')[]
+  faults: ('down' | 'slow' | 'key')[]
 }
 
 /** "home", "not_home", or the name of a Home Assistant zone. */

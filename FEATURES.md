@@ -99,4 +99,4 @@ notifications is in [AUTOMATION.md](AUTOMATION.md).
 ## Running it
 
 - No login: the app relies on your home network for access. Secrets live only in environment variables; everything else is set in the app.
-- One Docker container (Go server, web app, SQLite file). A demo mode with sample data and stand-in services needs no accounts; under Settings → Connections it can take EVCC, Home Assistant, the calendar, or Google Routes down, or make them refuse their key, to see how that looks.
+- One Docker container (Go server, web app, SQLite file). A demo mode with sample data and stand-in services needs no accounts; under Settings → Connections it can take EVCC, Home Assistant, the calendar, or Google Routes down, make them so slow that calls time out, or make them refuse their key, to see how that looks.

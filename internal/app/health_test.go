@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/diogoap/evcc-planner/internal/demo"
 	"github.com/diogoap/evcc-planner/internal/forecast"
@@ -52,7 +53,7 @@ func TestDemoOutagesShowOnTheHealthLine(t *testing.T) {
 	var list []demo.Fault
 	ta.json("GET", "/api/demo/faults", nil, http.StatusOK, &list)
 	if len(list) != 4 || list[0].Service != "evcc" || list[0].Name != "EVCC" || list[0].Fault != "" ||
-		strings.Join(list[0].Faults, ",") != "down" || strings.Join(list[1].Faults, ",") != "down,key" {
+		strings.Join(list[0].Faults, ",") != "down,slow" || strings.Join(list[1].Faults, ",") != "down,slow,key" {
 		t.Fatalf("faults = %+v", list)
 	}
 
@@ -95,11 +96,23 @@ func TestDemoOutagesShowOnTheHealthLine(t *testing.T) {
 	ta.plan()
 	expectHealth(t, ta.health())
 
+	// A slow service keeps each call waiting until it times out.
+	defer func(d time.Duration) { demo.SlowFor = d }(demo.SlowFor)
+	demo.SlowFor = 50 * time.Millisecond
+	start := time.Now()
+	ta.fault(demo.FaultEVCC, demo.FaultSlow)
+	if waited := time.Since(start); waited < demo.SlowFor {
+		t.Errorf("the check waited %s, want at least %s", waited, demo.SlowFor)
+	}
+	expectHealth(t, ta.health(), "EVCC: timed out (demo outage) · worked before")
+	ta.fault(demo.FaultEVCC, "")
+	expectHealth(t, ta.health())
+
 	// A reset brings every service back.
 	ta.fault(demo.FaultEVCC, demo.FaultDown)
 	ta.json("POST", "/api/demo/reset", map[string]any{}, http.StatusNoContent, nil)
 	expectHealth(t, ta.health())
-	ta.json("PUT", "/api/demo/faults", map[string]any{"service": "evcc", "fault": "slow"}, http.StatusBadRequest, nil)
+	ta.json("PUT", "/api/demo/faults", map[string]any{"service": "evcc", "fault": "flaky"}, http.StatusBadRequest, nil)
 	ta.json("PUT", "/api/demo/faults", map[string]any{"service": "evcc", "fault": "key"}, http.StatusBadRequest, nil)
 	ta.json("PUT", "/api/demo/faults", map[string]any{"service": "printer", "fault": "down"}, http.StatusBadRequest, nil)
 }

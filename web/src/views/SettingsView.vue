@@ -361,6 +361,7 @@ watch(
 
 function faultText(f: DemoFault, fault: DemoFault['fault']) {
   if (fault === 'down') return 'Down'
+  if (fault === 'slow') return 'Slow (times out)'
   if (fault === 'key') return f.service === 'calendar' ? 'Address rejected' : 'Key rejected'
   return 'Works'
 }

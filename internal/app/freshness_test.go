@@ -75,3 +75,51 @@ func TestTooOldDataStopsAutomaticChangesAndShows(t *testing.T) {
 		t.Errorf("health = %q", got)
 	}
 }
+
+// Ages count real time across a daylight-saving change, not the clock
+// face: when the clocks go back, 02:00 CET comes an hour after 01:58 CEST;
+// when they go forward, 03:00 CEST comes two minutes after 01:58 CET.
+func TestOutagesAcrossADaylightSavingChange(t *testing.T) {
+	type view struct {
+		Reachable bool
+		Error     string
+	}
+	status := func(ta *testApp) view {
+		t.Helper()
+		var st view
+		ta.json("GET", "/api/status", nil, http.StatusOK, &st)
+		return st
+	}
+
+	// Autumn: EVCC answered at 01:58 CEST; at 02:00 CET it is an hour
+	// later, too old though the clock moved two minutes.
+	ta := newTestAppAt(t, "", "2026-10-25T01:58:00+02:00")
+	ta.app.Service.JobStarted("the EVCC check", time.Minute)
+	ta.at(time.Date(2026, 10, 25, 1, 0, 0, 0, time.UTC)) // 02:00 CET, the second 02:00
+	if st := status(ta); st.Reachable || st.Error != "no answer since 01:58" {
+		t.Errorf("after the clocks went back = %+v", st)
+	}
+	if c := connection(ta, "EVCC"); c.Detail != "No answer since 01:58" {
+		t.Errorf("EVCC = %+v", c)
+	}
+	var ready map[string]string
+	ta.json("GET", "/readyz", nil, http.StatusServiceUnavailable, &ready)
+	if ready["error"] != "background checks stopped: The EVCC check last ran at 01:58" {
+		t.Errorf("readyz = %v", ready)
+	}
+
+	// Spring: EVCC answered at 01:58 CET; at 03:00 CEST it is two minutes
+	// later, still fresh though the clock moved an hour; at 03:02 CEST it
+	// is four minutes, too old.
+	ta = newTestAppAt(t, "", "2027-03-28T01:58:00+01:00")
+	ta.app.Service.JobStarted("the EVCC check", time.Minute)
+	ta.at(time.Date(2027, 3, 28, 3, 0, 0, 0, ams))
+	if st := status(ta); !st.Reachable || st.Error != "" {
+		t.Errorf("two minutes after 01:58 CET = %+v", st)
+	}
+	ta.json("GET", "/readyz", nil, http.StatusOK, nil)
+	ta.at(time.Date(2027, 3, 28, 3, 2, 0, 0, ams))
+	if st := status(ta); st.Reachable || st.Error != "no answer since 01:58" {
+		t.Errorf("four minutes after 01:58 CET = %+v", st)
+	}
+}

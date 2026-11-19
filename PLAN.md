@@ -266,12 +266,12 @@ Scope:
 
 </details>
 
-<details open>
-<summary><b>V7 — Reliability</b> 🚧</summary>
+<details>
+<summary><b>V7 — Reliability</b> ✅</summary>
 
 Extend the tests already built from V1; harden recovery, credential renewal, stale-data handling, and notification delivery. UI: sync/health status and recovery actions.
 
-🚧 **In progress**: steps 1–6 are done; left from the failure tests are a demo fault that times out, and Go tests for a restart during an active extra plan and an outage across a daylight-saving change. Every rule on old data: [AUTOMATION.md](AUTOMATION.md#when-data-is-too-old).
+✅ **Done** (2026-11-19). Every rule on old data: [AUTOMATION.md](AUTOMATION.md#when-data-is-too-old).
 
 Planned 2026-11-19. When something breaks (a service down, a key rejected, data too old, a notification that didn't arrive), the app notices, says so on the Overview, and recovers by itself or offers a button to fix it.
 
@@ -300,6 +300,7 @@ Scope:
 - ✅ **Step 4, recovery actions** (2026-11-19): each connection lists what can be done now, as a button on its row in Settings → Connections (replacing the three buttons above the table): **Check now** (EVCC, Home Assistant, and Google Routes, which looks one route up without the cache), **Sync now** (calendars), **Refresh** (forecasts), **Send test** (phone notifications, once there is a phone), **Run now** (AI mode), and **Send plan again** (EVCC, while the planner's last change of its plan failed; cleared once a change works, the plan is in line, the car is unplugged, or the mode keeps no plan). `POST /api/connections/action` does only what the connection offers; checks, syncs, and refreshes are recorded as `connection.check` with their outcome, the others record themselves. Every error has a short "what to do" line, also on the health line.
 - ✅ **Step 5, data that is too old** (2026-11-19): one rule per source, in a table in AUTOMATION.md. EVCC's "three checks" rule, copied in five places, is one helper (`evccFresh`); too old EVCC data now also counts as unreachable in `/api/status`, so the ready card says "no answer since 10:12" and Send plan is off. EVCC and Home Assistant without an answer for three checks, calendars without a sync for three syncs, and forecasts without a fetch for two days show as an error on their connection and the health line, with what to do. The SoC (3 h), the outlook's and weather's contents (8 days, 36 h), and AI plans (30 h) keep their limits.
 - ✅ **Step 6, readiness** (2026-11-19): each background job records when it starts a run; one that hasn't for three of its intervals, and at least 10 minutes (an AI run inside the EVCC check can take a while), counts as stopped. `/readyz` then answers 503 ("background checks stopped: The EVCC check last ran at 10:12"), the image's health check now probes `/readyz` instead of `/healthz`, and the health line says to restart the planner. Docker doesn't restart an unhealthy container by itself; Portainer shows it.
+- ✅ **Failure tests** (2026-11-19): besides those of each step (a refused plan write and Send plan again, a revoked Home Assistant token, a failed send and its retries), demo outages can make a service slow: each call waits (2 s in the demo) and then times out (`errSlow` wraps `context.DeadlineExceeded`), and a caller's earlier deadline ends it sooner. A restart on the same database keeps an active extra plan, which still restores the earlier plan when it ends. Across a daylight-saving change, ages count real time, not the clock face: at the second 02:00 in autumn, an answer from 01:58 CEST is an hour old; at 03:00 CEST in spring, one from 01:58 CET is two minutes old.
 - Decisions (2026-11-19): notification retries and the Overview health line come first; keys stay in environment variables only, and the app explains which one to renew; problems show in the app only, never as phone notifications; database backups are not part of the app (handled on the host, as the README describes).
 
 </details>
