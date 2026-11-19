@@ -75,7 +75,7 @@ func (c *Client) Complete(ctx context.Context, r Request) (string, Usage, error)
 	hreq.Header.Set("Content-Type", "application/json")
 	hreq.Header.Set("Authorization", "Bearer "+c.APIKey)
 	hreq.Header.Set("HTTP-Referer", "https://github.com/diogoap/evcc-planner")
-	hreq.Header.Set("X-Title", "EVCC Trip Planner")
+	hreq.Header.Set("X-Title", "EVCC Planner")
 	resp, err := c.HTTP.Do(hreq)
 	if err != nil {
 		if ctx.Err() != nil || errors.Is(err, context.DeadlineExceeded) {

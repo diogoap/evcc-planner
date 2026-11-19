@@ -30,7 +30,7 @@ var notificationLabels = map[string]string{
 	"quietFrom": "quiet hours", "quietTo": "quiet hours", "urgentInQuiet": "urgent reminders in quiet hours",
 	"snoozeMin": "snooze", "problems": "charging problems", "questions": "questions", "ready": "ready messages",
 	"solar": "solar reminders", "extra": "charge extra reminders", "arrival": "back home reminders",
-	"prices": "plan changes after new prices",
+	"arrivalInQuiet": "back home reminders in quiet hours", "prices": "plan changes after new prices",
 }
 
 // SaveNotificationSettings validates and stores the notification settings.
@@ -142,12 +142,38 @@ func verbTitle(verb string, settings model.NotificationSettings) string {
 	return verb
 }
 
-// aiTitle starts the title of notifications about charging in AI mode.
-const aiTitle = "AI mode: "
+// AppTag starts every notification's title, so the phone shows where it
+// comes from.
+const AppTag = "[EVCC Planner]"
+
+// AILabel ends the title of notifications about charging in AI mode.
+const AILabel = "(🤖 AI mode)"
+
+// notifyEmoji marks each kind of notification in its title.
+var notifyEmoji = map[string]string{
+	model.NotifyTest: "🔔", model.NotifyEarly: "🔌", model.NotifyUrgent: "⏰", model.NotifyLate: "🚨",
+	model.NotifyStopped: "⚠️", model.NotifyUnplugged: "⚠️", model.NotifyMode: "⚠️", model.NotifyMissed: "❌",
+	model.NotifyQuestion: "❓", model.NotifyReady: "✅", model.NotifySolar: "☀️", model.NotifyExtra: "🔋",
+	model.NotifyExtraPlan: "🔌", model.NotifyArrived: "🏠", model.NotifyPrices: "💶", model.NotifyInfo: "⏭️",
+}
 
 // unlabelled kinds are not about how the car charges, so they don't say
 // which trip plan mode is on.
 var unlabelled = map[string]bool{model.NotifyTest: true, model.NotifyQuestion: true}
+
+// titlePrefix is what comes before a kind's title on the phone.
+func titlePrefix(kind string) string { return AppTag + " " + notifyEmoji[kind] }
+
+// phoneTitle is a notification's title as the phones show it: "[EVCC
+// Planner] 🔌 Extra plan created", ending in "(🤖 AI mode)" in AI mode
+// when it is about charging.
+func phoneTitle(kind, title string, ai bool) string {
+	t := titlePrefix(kind) + " " + title
+	if ai && !unlabelled[kind] {
+		t += " " + AILabel
+	}
+	return t
+}
 
 // retryAfter are the waits before each new try of a failed send; after the
 // last, it is given up (AUTOMATION.md).
@@ -173,8 +199,8 @@ func notifyEvent(n model.Notification, summary string) model.AuditEvent {
 
 // deliver sends a notification to the chosen phones and stores it with
 // the outcome, recorded in the activity log. A new notification (ID 0) is
-// stored first, so its buttons can name it. In AI mode, new notifications
-// about charging say so in their title. When no phone gets it, it is tried
+// stored first, so its buttons can name it, with its title as the phones
+// show it (phoneTitle). When no phone gets it, it is tried
 // again later (not a test): the activity log has the first failure and the
 // outcome, not every try.
 func (s *Service) deliver(ctx context.Context, n *model.Notification, settings model.NotificationSettings) error {
@@ -183,10 +209,9 @@ func (s *Service) deliver(ctx context.Context, n *model.Notification, settings m
 		return invalid("%s", s.Clients().NotifyNote)
 	}
 	now := s.now()
-	if n.ID == 0 && !unlabelled[n.Kind] && !strings.HasPrefix(n.Title, aiTitle) {
-		if p, err := s.Settings(); err == nil && p.TripPlans == model.TripPlansAI {
-			n.Title = aiTitle + n.Title
-		}
+	if n.ID == 0 && !strings.HasPrefix(n.Title, AppTag) {
+		p, err := s.Settings()
+		n.Title = phoneTitle(n.Kind, n.Title, err == nil && p.TripPlans == model.TripPlansAI)
 	}
 	if n.ID == 0 {
 		n.CreatedAt, n.State = now, model.NotifySent
@@ -309,8 +334,8 @@ func (s *Service) SendTestNotification(ctx context.Context) (*model.Notification
 	}
 	n := &model.Notification{
 		// Unique even with a fixed clock (tests, demo).
-		Key: "test:" + strconv.FormatInt(time.Now().UnixNano(), 36), Kind: model.NotifyTest, Title: "EVCC Trip Planner",
-		Message: "Test notification: this phone gets plug-in reminders.", Verbs: []string{model.VerbView},
+		Key: "test:" + strconv.FormatInt(time.Now().UnixNano(), 36), Kind: model.NotifyTest, Title: "Test notification",
+		Message: "This phone gets plug-in reminders.", Verbs: []string{model.VerbView},
 	}
 	if err := s.deliver(ctx, n, settings); err != nil {
 		return n, err

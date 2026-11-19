@@ -125,7 +125,7 @@ for (const ratio of [2, 3]) {
       await splash.setContent(
         `<html><body style="margin:0;height:100vh;display:grid;place-content:center;justify-items:center;gap:20px;` +
           `background:${c.bg};color:${c.text};font:600 22px system-ui,-apple-system,sans-serif">` +
-          `${variants.any.replace('<svg ', '<svg width="128" height="128" ')}<div>Trip Planner</div></body></html>`,
+          `${variants.any.replace('<svg ', '<svg width="128" height="128" ')}<div>EVCC Planner</div></body></html>`,
       )
       await splash.screenshot({ path: join(out, file) })
       links.push(

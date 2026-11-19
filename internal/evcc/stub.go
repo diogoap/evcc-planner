@@ -12,7 +12,7 @@ import (
 )
 
 // StubVehicle is the vehicle name the stub reports.
-const StubVehicle = "demo-leaf"
+const StubVehicle = "demo-car"
 
 // Stub is an in-memory EVCC used by demo mode and tests. Quarter-hour prices
 // follow a plausible Dutch daily curve and are published for tomorrow from
@@ -33,7 +33,7 @@ type Stub struct {
 // evening hour reaches it, so the demo's postponement changes something.
 const stubSmartCostLimit = 0.25
 
-// stubKmPerPct is the demo range per SoC point (a Leaf: about 3.2 km).
+// stubKmPerPct is the demo range per SoC point (a small car: about 3.2 km).
 const stubKmPerPct = 3.2
 
 // NewStub returns an unplugged demo car.
@@ -91,7 +91,7 @@ func (s *Stub) State(ctx context.Context) (*State, error) {
 	}
 	lp := Loadpoint{
 		Title: "Demo charger", Mode: "smart", Connected: s.conn, VehicleName: StubVehicle,
-		VehicleTitle: "Nissan Leaf", VehicleSoc: soc, VehicleRange: rangeKm, EffectiveLimitSoc: 80,
+		VehicleTitle: "Demo car", VehicleSoc: soc, VehicleRange: rangeKm, EffectiveLimitSoc: 80,
 	}
 	if s.smart != nil {
 		v := *s.smart
@@ -107,7 +107,7 @@ func (s *Stub) State(ctx context.Context) (*State, error) {
 		HomePowerW: 350,
 		Loadpoints: []Loadpoint{lp},
 		Vehicles: map[string]Vehicle{StubVehicle: {
-			Name: StubVehicle, Title: "Nissan Leaf", CapacityKWh: s.capacity, MinSoc: 10, LimitSoc: 80, Plan: s.plan,
+			Name: StubVehicle, Title: "Demo car", CapacityKWh: s.capacity, MinSoc: 10, LimitSoc: 80, Plan: s.plan,
 		}},
 		PriceSlots:  slots,
 		Solar:       s.solarForecast(now),

@@ -429,13 +429,17 @@ func TestAIModeNotifications(t *testing.T) {
 	ta.notifications(func(s map[string]any) { s["snoozeMin"] = 5 })
 	// Messages that aren't about charging don't mention the mode.
 	ta.json("POST", "/api/notifications/test", map[string]any{}, http.StatusOK, nil)
-	ta.expectSent("EVCC Trip Planner")
+	ta.expectSent("Test notification")
 	ta.check()
 	ta.expectSent("Is this a car trip?")
-	// Charging messages say AI mode is on: here the urgent plug-in reminder.
+	// Charging messages say AI mode is on, at the end of the title: here
+	// the urgent plug-in reminder.
 	ta.at(time.Date(2026, 11, 10, 6, 10, 0, 0, ams))
 	ta.check()
-	ta.expectSent("AI mode: Plug in by 06:36")
+	ta.expectSent("Plug in by 06:36 (🤖 AI mode)")
+	if n := ta.notification("urgent:recurring:1:2026-11-10"); n.Title != "[EVCC Planner] ⏰ Plug in by 06:36 (🤖 AI mode)" {
+		t.Errorf("title = %q", n.Title)
+	}
 	// Sent again after a snooze, it keeps one label.
 	n := ta.notification("urgent:recurring:1:2026-11-10")
 	if err := ta.app.Service.HandleAction(context.Background(), "EVCCP_SNOOZE_"+itoa(n.ID)); err != nil {
@@ -443,7 +447,7 @@ func TestAIModeNotifications(t *testing.T) {
 	}
 	ta.at(time.Date(2026, 11, 10, 6, 16, 0, 0, ams))
 	ta.check()
-	ta.expectSent("AI mode: Plug in by 06:36")
+	ta.expectSent("Plug in by 06:36 (🤖 AI mode)")
 }
 
 func TestAIModeCreatesPlansByItsOwnSwitch(t *testing.T) {
@@ -548,6 +552,105 @@ func TestANewAIPlanKeepsEVCCsPlanWhenChargeMovesToChargeExtra(t *testing.T) {
 	}
 	if p := ta.evccPlan(); p == nil || p.Soc != 80 || !p.Time.Equal(time.Date(2026, 11, 10, 5, 0, 0, 0, ams)) {
 		t.Errorf("plan = %+v, want 80%% by 05:00", p)
+	}
+}
+
+// cycle runs one EVCC check and what follows it, in the jobs' order.
+func (ta *testApp) cycle() {
+	ta.t.Helper()
+	s := ta.app.Service
+	for _, f := range []func(context.Context) error{s.PollEVCC, s.CheckAdjustments, s.SyncPlan, s.CheckAI, s.ReviewNewPrices, s.CheckNotifications} {
+		if err := f(context.Background()); err != nil {
+			ta.t.Fatal(err)
+		}
+	}
+}
+
+// The AI's cheap night starts after the day's trips (school pickup, and
+// the gym in the evening): the extra plan may be made right away, but it is
+// ready when the window ends, the trips get their own plans first, and
+// plugging in for it is asked only once the car is back from the last of
+// them.
+func TestAIWindowAfterTheDaysTrips(t *testing.T) {
+	ta := newTestAppAt(t, "", "2026-11-09T14:15:00+01:00")
+	ta.tripPlans(model.TripPlansAI)
+	ta.notifications(func(s map[string]any) { s["questions"], s["quietFrom"] = false, "22:00" })
+	ta.json("POST", "/api/trips", map[string]any{"title": "Gym", "destination": "Office", "date": "2026-11-09", "start": "20:00", "end": "21:00"},
+		http.StatusCreated, nil)
+	ta.useAI(&fakeAI{content: `{
+		"summary": "Charge extra tonight.", "important": [],
+		"charge_ahead": {"target_soc": 10, "trip_ids": [], "reason": "The trip's own target."},
+		"days": [{"date": "2026-11-09", "recommendation": "charge_extra", "target_soc": 75, "from": "2026-11-09 23:00",
+			"until": "2026-11-10 05:00", "defer_until": null, "postpone": false, "confidence": 3,
+			"summary": "Charge extra to 75% between 23:00 and 05:00.", "rationale": []}]
+	}`})
+	mon := func(h, m int) time.Time { return time.Date(2026, 11, 9, h, m, 0, 0, ams) }
+	tue5 := time.Date(2026, 11, 10, 5, 0, 0, 0, ams)
+	p := newPublishing(ta, 0.30, 0.15)
+	ta.check()
+	ta.phone().Take()
+
+	// Tuesday's prices bring the AI plan. Plugging in now would not help
+	// the cheap night (the car leaves twice before it), so no "New prices:
+	// plug in".
+	p.published = true
+	ta.cycle()
+	ta.expectSent()
+	var prop service.ProposalView
+	ta.json("GET", "/api/advice/2026-11-09/proposal?kind=extra_plan", nil, http.StatusOK, &prop)
+	if !prop.Available || prop.SoC != 75 || !prop.ReadyBy.Equal(tue5) || prop.Protected == nil ||
+		prop.Protected.Title != "School drop-off" || prop.StartSoC == nil || *prop.StartSoC >= 38 ||
+		!strings.Contains(strings.Join(prop.Notes, " "), "Trips before this window (School pickup, Gym) keep their own plans first") {
+		t.Fatalf("proposal = %+v", prop)
+	}
+
+	// Made automatically: right away, ready by 05:00, and announced.
+	ta.json("PUT", "/api/settings/ai", map[string]any{"autoApply": true, "autoMinConfidence": 3}, http.StatusOK, nil)
+	if err := ta.app.Service.AutoApply(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	ta.expectSent("Extra plan created (🤖 AI mode)")
+	if n := ta.notification("extra_plan:1"); !strings.HasSuffix(n.Message, "The plan asks EVCC for 75% by Tue 05:00 and ends then.") {
+		t.Errorf("extra plan created = %q", n.Message)
+	}
+	if plan := ta.evccPlan(); plan == nil || plan.Soc != 75 || !plan.Time.Equal(tue5) {
+		t.Fatalf("EVCC plan = %+v, want 75%% by Tue 05:00", plan)
+	}
+
+	// Plugged in below the pickup's target: its own plan comes first,
+	// without pulling the extra charge before it.
+	ta.plug(true, 16)
+	if plan := ta.evccPlan(); plan == nil || plan.Soc >= 75 || !plan.Time.Equal(mon(14, 33)) {
+		t.Errorf("EVCC plan before the pickup = %+v", plan)
+	}
+	if a := ta.advice().Advice.Adjustments; len(a) != 1 || a[0].Status != model.AdjustActive {
+		t.Errorf("extra plan = %+v", a)
+	}
+	ta.plug(false, 16)
+	ta.phone().Take()
+
+	// Home between the trips: no plug-in reminder for the night yet, even
+	// once it is due (quiet hours from 18:00 here).
+	ta.notifications(func(s map[string]any) { s["questions"], s["quietFrom"] = false, "18:00" })
+	ta.at(mon(17, 50))
+	ta.check()
+	for _, title := range ta.sent() {
+		if strings.Contains(title, "charge extra") {
+			t.Errorf("sent %q before the gym", title)
+		}
+	}
+
+	// Back from the gym (21:55), before quiet hours (22:00): plug in.
+	ta.notifications(func(s map[string]any) { s["questions"], s["quietFrom"] = false, "22:00" })
+	ta.at(mon(21, 56))
+	ta.check()
+	if titles := ta.sent(); !slices.Contains(titles, "Plug in for charge extra (🤖 AI mode)") {
+		t.Errorf("sent %q after the gym", titles)
+	}
+	// Plugged in, EVCC charges for the night: 75% by 05:00.
+	ta.plug(true, 25)
+	if plan := ta.evccPlan(); plan == nil || plan.Soc != 75 || !plan.Time.Equal(tue5) {
+		t.Errorf("EVCC plan after the gym = %+v, want 75%% by Tue 05:00", plan)
 	}
 }
 

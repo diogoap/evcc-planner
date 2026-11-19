@@ -1,6 +1,6 @@
 # Features
 
-What EVCC Trip Planner does today, in short. The goal: the car has enough
+What EVCC Planner does today, in short. The goal: the car has enough
 charge for every trip, charged at the cheapest practical time. EVCC does the
 charging; the planner tells it how much and by when.
 
@@ -46,7 +46,7 @@ notifications is in [AUTOMATION.md](AUTOMATION.md).
 - Later days show what the outlook expects ("Looks cheaper").
 - On a day the trip plan charges later trips ahead (without charge extra), the advice says "Charge ahead to 80%" rather than "No plan needed".
 - Hints for a trip that misses very cheap or negative prices, and for negative prices while the sun shines (use the solar or switch the panels off).
-- **Create extra plan** and **Review postponement** ask before changing anything and are undone when they expire. An extra plan is ready when its cheap hours end. Applying advice automatically is optional, off by default, and never happens in Manual mode.
+- **Create extra plan** and **Review postponement** ask before changing anything and are undone when they expire. An extra plan is ready when its cheap hours end. When those hours come after the next trips (the AI can choose a cheap night after the evening's trips), it is still made right away, but those trips get their own plans first, and EVCC only gets the extra plan after them. Applying advice automatically is optional, off by default, and never happens in Manual mode.
 
 ## AI mode
 
@@ -70,12 +70,13 @@ notifications is in [AUTOMATION.md](AUTOMATION.md).
 - Sent through the Home Assistant Companion app; the buttons act on the planner.
 - Plug-in reminders: early (cheapest time), urgent (latest time), and too late. Buttons: Remind in 30 min, Skip trip, View plan.
 - "New prices: plug in" (Automatic and AI mode) when tomorrow's prices change the plan or bring charge extra while the car is unplugged.
-- "Back home: plug in" when the car gets home from the day's last trip (by the car location sensor), unplugged, and still needs charging for the next trip, charge ahead, or charge extra. It comes in quiet hours too, like urgent reminders.
+- "Back home: plug in" when the car gets home from the day's last trip (by the car location sensor), unplugged, and still needs charging for the next trip, charge ahead, or charge extra. It comes in quiet hours too, unless its "Also in quiet hours" check is off (on by default).
 - Problems: charging stopped, unplugged early, EVCC not in Smart mode, target missed. Questions about unclear calendar events. An optional "ready" message. "Plug in for the sun".
-- Charge extra: "Plug in for charge extra" before its cheap hours when the car is home but unplugged (for a cheap night, just before quiet hours), and a message when an extra plan is created automatically.
+- Charge extra: "Plug in for charge extra" before its cheap hours when the car is home but unplugged (for a cheap night, just before quiet hours), and a message when an extra plan is created automatically. Reminders to plug in for charge extra wait until the car is back from the last trip before its cheap hours.
 - Quiet hours (23:00–07:00 by default). Each message is sent once and is cleared when you plug in.
 - A message that doesn't reach the phone is tried again after 2, 5, and 15 more minutes while it still matters. Settings shows it as "Trying again", and Connections shows the last failure.
-- In AI mode, messages about charging start with "AI mode:".
+- Every title starts with "[EVCC Planner]" and an emoji, such as "[EVCC Planner] 🔌 Extra plan created". In AI mode, messages about charging end their title with "(🤖 AI mode)".
+- Settings → Notifications shows what each message says: hover or tap the info icon next to a setting to see its title, text, and buttons, with placeholders for what is filled in.
 
 ## Screens
 

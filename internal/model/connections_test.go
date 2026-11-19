@@ -25,8 +25,8 @@ func TestConnectionSettingsValidate(t *testing.T) {
 		"evcc password":   {func(c *ConnectionSettings) { c.EVCCURL = "http://user:pw@evcc:7070" }, "user name or password"},
 		"ha address":      {func(c *ConnectionSettings) { c.HAURL = "ha.local" }, "Home Assistant address"},
 		"tibber query":    {func(c *ConnectionSettings) { c.TibberURL = "https://tibber.com/x?token=1" }, "must not contain a query"},
-		"entity":          {func(c *ConnectionSettings) { c.HASoCEntity = "Leaf battery" }, "SoC sensor must be an entity ID"},
-		"range entity":    {func(c *ConnectionSettings) { c.HARangeEntity = "leaf_range" }, "range sensor must be an entity ID"},
+		"entity":          {func(c *ConnectionSettings) { c.HASoCEntity = "Car battery" }, "SoC sensor must be an entity ID"},
+		"range entity":    {func(c *ConnectionSettings) { c.HARangeEntity = "car_range" }, "range sensor must be an entity ID"},
 		"updated entity":  {func(c *ConnectionSettings) { c.HAUpdatedEntity = "updated_on" }, "reading-time sensor must be an entity ID"},
 		"loadpoint":       {func(c *ConnectionSettings) { c.EVCCLoadpoint = 0 }, "EVCC loadpoint must be between 1 and 20"},
 		"evcc poll":       {func(c *ConnectionSettings) { c.EVCCPollIntervalSec = 1 }, "EVCC poll interval"},
@@ -48,7 +48,7 @@ func TestConnectionSettingsValidate(t *testing.T) {
 		}
 	}
 	ok := DefaultConnectionSettings()
-	ok.EVCCURL, ok.HASoCEntity, ok.HARangeEntity = "https://evcc.example:7070/", "sensor.leaf_battery_level", "sensor.leaf_range"
+	ok.EVCCURL, ok.HASoCEntity, ok.HARangeEntity = "https://evcc.example:7070/", "sensor.car_battery_level", "sensor.car_range"
 	if err := ok.Validate(); err != nil {
 		t.Errorf("valid settings rejected: %v", err)
 	}

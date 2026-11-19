@@ -53,11 +53,11 @@ describe('ConnectionSettingsForm', () => {
     vi.resetAllMocks()
     api.connectionSettings.mockResolvedValue(view({ evccUrl: 'http://192.0.2.10:7070' }))
     api.homeAssistantSensors.mockResolvedValue([
-      { entityId: 'sensor.leaf_battery', name: 'Leaf battery', state: '72', unit: '%', kind: 'battery' },
-      { entityId: 'sensor.leaf_range', name: 'Leaf range', state: '190', unit: 'km', kind: 'range' },
+      { entityId: 'sensor.car_battery', name: 'Car battery', state: '72', unit: '%', kind: 'battery' },
+      { entityId: 'sensor.car_range', name: 'Car range', state: '190', unit: 'km', kind: 'range' },
       {
-        entityId: 'sensor.leaf_last_update',
-        name: 'Leaf last update',
+        entityId: 'sensor.car_last_update',
+        name: 'Car last update',
         state: '2026-11-11T07:30:00+00:00',
         unit: '',
         kind: 'timestamp',
@@ -83,33 +83,33 @@ describe('ConnectionSettingsForm', () => {
     )
     expect(w.get('[data-testid=connection-haSocEntity]').attributes('list')).toBe('ha-sensors-battery')
     expect(w.findAll('#ha-sensors-battery option').map((o) => o.attributes('value'))).toEqual([
-      'sensor.leaf_battery',
+      'sensor.car_battery',
     ])
     expect(w.findAll('#ha-sensors-range option').map((o) => o.attributes('value'))).toEqual([
-      'sensor.leaf_range',
+      'sensor.car_range',
     ])
     expect(w.get('[data-testid=connection-haUpdatedEntity]').attributes('list')).toBe('ha-sensors-timestamp')
     expect(w.findAll('#ha-sensors-timestamp option').map((o) => o.attributes('value'))).toEqual([
-      'sensor.leaf_last_update',
+      'sensor.car_last_update',
     ])
   })
 
   it('saves the edited fields and reports the new connection status', async () => {
-    const saved = { ...view({ haSocEntity: 'sensor.leaf_battery' }), connections: [] }
+    const saved = { ...view({ haSocEntity: 'sensor.car_battery' }), connections: [] }
     api.saveConnectionSettings.mockResolvedValue({
       ...saved,
       connections: [{ name: 'Home Assistant', status: 'ok', detail: 'SoC 72%' }],
     })
     const w = mount(ConnectionSettingsForm)
     await flushPromises()
-    await w.get('[data-testid=connection-haSocEntity]').setValue('sensor.leaf_battery')
+    await w.get('[data-testid=connection-haSocEntity]').setValue('sensor.car_battery')
     await w.get('[data-testid=connection-routesTrafficAware]').trigger('click')
     await w.get('form').trigger('submit')
     await flushPromises()
     expect(api.saveConnectionSettings).toHaveBeenCalledWith({
       ...defaults,
       evccUrl: 'http://192.0.2.10:7070',
-      haSocEntity: 'sensor.leaf_battery',
+      haSocEntity: 'sensor.car_battery',
       routesTrafficAware: false,
     })
     expect(w.emitted('saved')).toEqual([[[{ name: 'Home Assistant', status: 'ok', detail: 'SoC 72%' }]]])

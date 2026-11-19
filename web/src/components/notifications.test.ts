@@ -1,11 +1,12 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { NotificationSettings, PhoneNotification } from '../api/types'
+import type { NotificationCopy, NotificationSettings, PhoneNotification } from '../api/types'
 
 const api = vi.hoisted(() => ({
   notificationSettings: vi.fn(),
   saveNotificationSettings: vi.fn(),
   phones: vi.fn(),
+  notificationCopy: vi.fn(),
   notifications: vi.fn(),
   testNotification: vi.fn(),
   pressNotification: vi.fn(),
@@ -34,8 +35,21 @@ const defaults: NotificationSettings = {
   solar: true,
   extra: true,
   arrival: true,
+  arrivalInQuiet: true,
   prices: true,
 }
+
+const copy: NotificationCopy[] = [
+  {
+    setting: 'arrival',
+    kind: 'arrived',
+    titlePrefix: '[EVCC Planner] 🏠',
+    title: 'Back home: plug in',
+    aiSuffix: '(🤖 AI mode)',
+    messages: ['{trip} needs {target}% by {departure}.[ {advice}]', '{advice}'],
+    buttons: ['snooze', 'view'],
+  },
+]
 
 const urgent: PhoneNotification = {
   id: 7,
@@ -56,6 +70,7 @@ describe('NotificationSettingsForm', () => {
     vi.clearAllMocks()
     api.notificationSettings.mockResolvedValue({ ...defaults })
     api.phones.mockResolvedValue(['mobile_app_demo_phone'])
+    api.notificationCopy.mockResolvedValue(copy)
     api.notifications.mockResolvedValue([urgent])
     api.saveNotificationSettings.mockImplementation((s: NotificationSettings) => Promise.resolve(s))
     api.pressNotification.mockResolvedValue(undefined)
@@ -88,6 +103,46 @@ describe('NotificationSettingsForm', () => {
     await w.get('form').trigger('submit')
     await flushPromises()
     expect(api.saveNotificationSettings).toHaveBeenCalledWith({ ...defaults, arrival: false })
+  })
+
+  it('keeps back home reminders out of quiet hours with their own check', async () => {
+    const w = mount(NotificationSettingsForm)
+    await flushPromises()
+    const quiet = w.get<HTMLInputElement>('[data-testid="notify-arrival-quiet"]')
+    expect(quiet.element.checked).toBe(true)
+    expect(w.find('[role="switch"][aria-label*="quiet hours"][aria-label^="Back home"]').exists()).toBe(false)
+    await quiet.setValue(false)
+    await w.get('form').trigger('submit')
+    await flushPromises()
+    expect(api.saveNotificationSettings).toHaveBeenCalledWith({ ...defaults, arrivalInQuiet: false })
+    // Without back home reminders the check has nothing to do.
+    await w.get('[role="switch"][aria-label="Back home reminders"]').trigger('click')
+    expect(quiet.attributes('disabled')).toBeDefined()
+  })
+
+  it('shows what a notification says on hover or tap, with what is filled in marked', async () => {
+    const w = mount(NotificationSettingsForm, { attachTo: document.body })
+    await flushPromises()
+    const button = w.get('[aria-label="What back home reminders say"]')
+    expect(button.attributes('aria-expanded')).toBe('false')
+    // Only settings with copy get the icon.
+    expect(w.find('[aria-label="What early reminders say"]').exists()).toBe(false)
+    await w.get('.info-tip').trigger('mouseenter')
+    expect(button.attributes('aria-expanded')).toBe('true')
+    const panel = w.get(`#${button.attributes('aria-controls')}`)
+    expect(panel.text()).toContain('[EVCC Planner] 🏠 Back home: plug in [ (🤖 AI mode)]')
+    expect(panel.text()).toContain('Buttons: Remind in 30 min · View plan')
+    expect(panel.text()).toContain('One of these, as it applies.')
+    expect(panel.text()).toContain('In AI mode, the title ends with “(🤖 AI mode)”.')
+    expect(panel.findAll('.copy-slot').map((s) => s.text())).toContain('{trip}')
+    // A tap keeps it open; Escape closes it.
+    await button.trigger('click')
+    await w.get('.info-tip').trigger('mouseleave')
+    await new Promise((r) => setTimeout(r, 200))
+    expect(button.attributes('aria-expanded')).toBe('true')
+    await button.trigger('keydown', { key: 'Escape' })
+    expect(button.attributes('aria-expanded')).toBe('false')
+    w.unmount()
   })
 
   it('lists recent notifications and presses the demo phone buttons', async () => {

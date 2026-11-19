@@ -99,6 +99,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/settings/notifications", s.putNotificationSettings)
 	mux.HandleFunc("GET /api/notifications", s.notifications)
 	mux.HandleFunc("GET /api/notifications/phones", s.phones)
+	mux.HandleFunc("GET /api/notifications/copy", s.notificationCopy)
 	mux.HandleFunc("POST /api/notifications/test", s.testNotification)
 	mux.HandleFunc("GET /api/advice/{date}/proposal", s.proposal)
 	mux.HandleFunc("POST /api/advice/{date}/dismiss", s.dismiss)
@@ -625,6 +626,11 @@ func (s *Server) getNotificationSettings(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	writeJSON(w, http.StatusOK, v)
+}
+
+// notificationCopy is what each kind of notification says.
+func (s *Server) notificationCopy(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, service.NotificationCopies())
 }
 
 func (s *Server) putNotificationSettings(w http.ResponseWriter, r *http.Request) {

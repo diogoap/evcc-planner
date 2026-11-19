@@ -1,4 +1,4 @@
-// Command evcc-planner serves the trip planner API and UI and runs its
+// Command evcc-planner serves the EVCC Planner API and UI and runs its
 // periodic jobs (EVCC polling, hourly calendar sync, daily forecasts).
 package main
 

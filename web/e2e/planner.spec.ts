@@ -254,7 +254,7 @@ test('consumption in either unit, or from a Home Assistant sensor', async ({ pag
 
   // The demo car's efficiency sensor (6.4 km/kWh): its unit comes from
   // Home Assistant, and once saved the plan uses it.
-  await page.getByTestId('setting-consumptionEntity').fill('sensor.demo_leaf_efficiency')
+  await page.getByTestId('setting-consumptionEntity').fill('sensor.demo_car_efficiency')
   await expect(page.getByTestId('setting-consumptionEntityUnit')).toHaveValue('km_per_kwh')
   const sensor = page.getByTestId('consumption-sensor')
   await expect(sensor).toHaveText('Reads 6.4 km/kWh now: 15.6 kWh/100 km · 6.4 km/kWh. Save to use it.')
@@ -303,7 +303,7 @@ test('send a plan to EVCC only after confirmation', async ({ page }) => {
   await page.goto('/settings')
   await page.getByRole('link', { name: 'Connections' }).click()
   await expect(page.getByTestId('connection-Home Assistant')).toContainText(
-    'SoC 38% from sensor.demo_leaf_battery, reported Mon 9 Nov 18:40',
+    'SoC 38% from sensor.demo_car_battery, reported Mon 9 Nov 18:40',
   )
   await page.getByLabel('Plugged in').check()
   await page.getByRole('button', { name: 'Apply' }).click()
@@ -440,15 +440,15 @@ test('connection settings are edited in the UI and kept', async ({ page }) => {
   )
 
   await form.getByTestId('connection-haPollIntervalMin').fill('5')
-  await form.getByTestId('connection-haSocEntity').fill('sensor.demo_leaf_battery')
+  await form.getByTestId('connection-haSocEntity').fill('sensor.demo_car_battery')
   await form.getByTestId('save-connections').click()
   await expect(page.getByText('Connection settings saved')).toBeVisible()
-  await expect(page.getByTestId('connection-Home Assistant')).toContainText('sensor.demo_leaf_battery')
+  await expect(page.getByTestId('connection-Home Assistant')).toContainText('sensor.demo_car_battery')
 
   await page.reload()
   await page.getByRole('link', { name: 'Connections' }).click()
   await expect(form.getByTestId('connection-haPollIntervalMin')).toHaveValue('5')
-  await expect(form.getByTestId('connection-haSocEntity')).toHaveValue('sensor.demo_leaf_battery')
+  await expect(form.getByTestId('connection-haSocEntity')).toHaveValue('sensor.demo_car_battery')
   await shot(page, 'connection-settings')
 
   await page.goto('/activity')
@@ -464,7 +464,7 @@ test('installable as an app: manifest and icons', async ({ page, request }) => {
   const res = await request.get('/manifest.webmanifest')
   expect(res.headers()['content-type']).toContain('application/manifest+json')
   const manifest = await res.json()
-  expect(manifest).toMatchObject({ name: 'EVCC Trip Planner', start_url: '/', display: 'standalone' })
+  expect(manifest).toMatchObject({ name: 'EVCC Planner', start_url: '/', display: 'standalone' })
   const sizes = manifest.icons.map((i: { sizes: string }) => i.sizes)
   expect(sizes).toEqual(expect.arrayContaining(['192x192', '512x512']))
   expect(manifest.icons.some((i: { purpose: string }) => i.purpose === 'maskable')).toBe(true)

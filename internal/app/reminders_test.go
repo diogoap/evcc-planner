@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -28,8 +29,13 @@ func (ta *testApp) check() {
 	}
 }
 
+// appTag matches the app's tag and the kind's emoji that start every
+// title on the phone ("[EVCC Planner] 🔌 "), which the tests leave out.
+var appTag = regexp.MustCompile(`\[EVCC Planner\] \S+ `)
+
 // sent describes the stub's calls since the last look: "title" for a
-// message, "-title" for clearing the notification with that title.
+// message, "-title" for clearing the notification with that title, both
+// without the app's tag and emoji.
 func (ta *testApp) sent() []string {
 	ta.t.Helper()
 	titles := map[string]string{}
@@ -40,9 +46,9 @@ func (ta *testApp) sent() []string {
 	var out []string
 	for _, s := range ta.phone().Take() {
 		if s.Cleared {
-			out = append(out, "-"+titles[s.Message.Tag])
+			out = append(out, "-"+appTag.ReplaceAllString(titles[s.Message.Tag], ""))
 		} else {
-			out = append(out, s.Message.Title)
+			out = append(out, appTag.ReplaceAllString(s.Message.Title, ""))
 		}
 	}
 	return out
@@ -313,7 +319,7 @@ func TestPlugInForTheSun(t *testing.T) {
 	}
 
 	n := ta.notification("solar:2026-11-11")
-	if n.Title != "Plug in for the sun" || !strings.Contains(n.Message, "Plug in to use it.") || !strings.Contains(n.Message, "without the tax on own solar") ||
+	if n.Title != "[EVCC Planner] ☀️ Plug in for the sun" || !strings.Contains(n.Message, "Plug in to use it.") || !strings.Contains(n.Message, "without the tax on own solar") ||
 		n.Latest == nil || !n.Latest.Equal(*wed.SolarUntil) {
 		t.Fatalf("solar reminder = %+v", n)
 	}
@@ -408,14 +414,28 @@ func TestBackHomeReminder(t *testing.T) {
 		}
 	}
 
-	// Turned off, or with the reminder setting for urgent ones in quiet
-	// hours off at night: nothing.
+	// In quiet hours it follows its own setting, not the one for urgent
+	// reminders; snoozed, it comes again in quiet hours too.
+	ta = start(mon(23, 0))
+	ta.notifications(func(s map[string]any) { s["urgentInQuiet"] = false })
+	arrive(ta, mon(23, 30))
+	ta.expectSent("Back home: plug in")
+	n = ta.notification(fmt.Sprintf("arrived:%d", mon(23, 30).Unix()))
+	if err := ta.app.Service.HandleAction(context.Background(), "EVCCP_SNOOZE_"+itoa(n.ID)); err != nil {
+		t.Fatal(err)
+	}
+	ta.phone().Take()
+	ta.at(mon(23, 31).Add(31 * time.Minute))
+	ta.check()
+	ta.expectSent("Back home: plug in")
+
+	// Turned off, or kept out of quiet hours at night: nothing.
 	ta = start(mon(18, 0))
 	ta.notifications(func(s map[string]any) { s["arrival"] = false })
 	arrive(ta, mon(19, 5))
 	ta.expectSent()
 	ta = start(mon(23, 0))
-	ta.notifications(func(s map[string]any) { s["urgentInQuiet"] = false })
+	ta.notifications(func(s map[string]any) { s["arrivalInQuiet"] = false })
 	arrive(ta, mon(23, 30))
 	ta.expectSent()
 }
@@ -476,7 +496,7 @@ func (p *downPhone) sends(want ...string) {
 			if e.Outcome == model.OutcomeFailure {
 				mark = "!"
 			}
-			got = append(got, mark+e.Summary)
+			got = append(got, mark+appTag.ReplaceAllString(e.Summary, ""))
 		}
 	}
 	if strings.Join(got, " | ") != strings.Join(want, " | ") {

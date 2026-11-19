@@ -363,7 +363,9 @@ func (s *Service) reconcile(ctx context.Context, st *evcc.State, lp *evcc.Loadpo
 	if target != nil && lp.VehicleSoc < float64(target.SoC)-1e-6 {
 		want = &model.PlanValue{SoC: float64(target.SoC), Time: target.ReadyBy.Truncate(time.Minute)}
 	}
-	if extra != nil {
+	// An extra plan the charge already reaches has nothing to do (EVCC
+	// drops a reached plan).
+	if extra != nil && lp.VehicleSoc < extra.SoC-1e-6 {
 		want = mergePlans(want, extra)
 	}
 	switch {
@@ -502,10 +504,15 @@ func samePlan(a, b *model.PlanValue) bool {
 }
 
 // mergePlans combines the trip target with an extra plan: the higher SoC
-// by the earlier time.
+// by the earlier time. An extra plan ready after the next departure (the
+// AI's window may start after it) waits: the departure's own plan comes
+// first, so the extra charge isn't pulled before it.
 func mergePlans(trip, extra *model.PlanValue) *model.PlanValue {
-	if trip == nil {
+	switch {
+	case trip == nil:
 		return extra
+	case extra.Time.After(trip.Time):
+		return trip
 	}
-	return &model.PlanValue{SoC: math.Max(trip.SoC, extra.SoC), Time: minTime(trip.Time, extra.Time)}
+	return &model.PlanValue{SoC: math.Max(trip.SoC, extra.SoC), Time: extra.Time}
 }

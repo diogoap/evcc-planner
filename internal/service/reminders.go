@@ -168,6 +168,22 @@ func (r *reminders) allowed(urgent bool) bool {
 	return !r.quiet(r.now) || (urgent && r.settings.UrgentInQuiet)
 }
 
+// allowedNow is allowed for a notification sent before: a back-home
+// reminder follows its own quiet-hours setting.
+func (r *reminders) allowedNow(n *model.Notification) bool {
+	if n.Kind == model.NotifyArrived {
+		return r.arrivalAllowed()
+	}
+	return r.allowed(n.Urgent)
+}
+
+// arrivalAllowed reports whether a back-home reminder may be sent now: in
+// quiet hours when its setting says so (on by default), as the car needs
+// charging and you're at it.
+func (r *reminders) arrivalAllowed() bool {
+	return !r.quiet(r.now) || r.settings.ArrivalInQuiet
+}
+
 // send delivers a notification once per key. Informational ones are done
 // right away; a reminder replaces open reminders for the same trip.
 func (r *reminders) send(n model.Notification) {
@@ -264,8 +280,8 @@ func (r *reminders) carAway() bool {
 // arrived asks to plug in when the car gets back home (the location sensor
 // turns home from elsewhere) from the day's last trip, unplugged, while it
 // still needs charging: for the next departure, for later trips charged
-// ahead, or for charge extra's plan. Once per arrival. It is urgent, so it
-// may come in quiet hours (when urgent reminders may): you're at the car.
+// ahead, or for charge extra's plan. Once per arrival. It may come in quiet
+// hours (its own setting, on by default): you're at the car.
 func (r *reminders) arrived(prev, cur *notifyState) {
 	e := r.location()
 	if e == nil || e.State == "" || e.State == "unknown" || e.State == "unavailable" {
@@ -274,7 +290,7 @@ func (r *reminders) arrived(prev, cur *notifyState) {
 	home := e.State == "home"
 	cur.away, cur.awayKnown = !home, true
 	if !home || prev == nil || !prev.awayKnown || !prev.away || r.now.Sub(e.LastChanged) > arrivalWindow ||
-		!r.settings.Arrival || r.lp.Connected || !r.allowed(true) {
+		!r.settings.Arrival || r.lp.Connected || !r.arrivalAllowed() {
 		return
 	}
 	loc := r.s.loc()
@@ -485,7 +501,9 @@ func (r *reminders) solar() {
 // extraAdvice is today's or tomorrow's advice, the first whose cheap
 // blocks are still ahead, when it is to charge extra from the grid with a
 // plan, offered or made, and has not been dismissed. Tomorrow's matters
-// for a cheap night, which starts in quiet hours.
+// for a cheap night, which starts in quiet hours. While a trip before its
+// cheap blocks is still ahead or under way, there is no point plugging in
+// for it yet: the car leaves again first.
 func (r *reminders) extraAdvice() *DayAdviceView {
 	if r.view.Advice == nil {
 		return nil
@@ -496,11 +514,27 @@ func (r *reminders) extraAdvice() *DayAdviceView {
 		a := &r.view.Advice.Days[i]
 		planned := a.Adjustment != nil && a.Adjustment.Kind == model.AdjustExtraPlan
 		if (a.Date == today || a.Date == tomorrow) && a.Recommendation == advice.ChargeExtra && !a.Solar && !a.Dismissed &&
-			len(a.Blocks) > 0 && a.Blocks[len(a.Blocks)-1].Until.After(r.now) && (a.Action == model.AdjustExtraPlan || planned) {
+			len(a.Blocks) > 0 && a.Blocks[len(a.Blocks)-1].Until.After(r.now) && (a.Action == model.AdjustExtraPlan || planned) &&
+			!r.tripBefore(a.Blocks[0].From) {
 			return a
 		}
 	}
 	return nil
+}
+
+// tripBefore reports whether a trip that leaves before t is not over yet.
+// With a car location sensor, one under way is over once the car is home,
+// also before its planned return.
+func (r *reminders) tripBefore(t time.Time) bool {
+	for _, b := range r.view.Blocks {
+		if !b.DepartAt.Before(t) || !b.ReturnAt.After(r.now) {
+			continue
+		}
+		if e := r.location(); b.DepartAt.After(r.now) || e == nil || e.State != "home" {
+			return true
+		}
+	}
+	return false
 }
 
 // extra asks to plug in while the car is home and unplugged on a day whose
@@ -565,7 +599,7 @@ func (r *reminders) snoozed() {
 	}
 	for i := range open {
 		n := &open[i]
-		if n.State != model.NotifySnoozed || n.SnoozedUntil == nil || r.now.Before(*n.SnoozedUntil) || !r.allowed(n.Urgent) {
+		if n.State != model.NotifySnoozed || n.SnoozedUntil == nil || r.now.Before(*n.SnoozedUntil) || !r.allowedNow(n) {
 			continue
 		}
 		if n.Latest != nil && !r.now.Before(*n.Latest) {
@@ -597,7 +631,7 @@ func (r *reminders) retry() {
 			r.fail(r.s.stopRetrying(r.ctx, n, model.NotifyFailed, "too late to try again"))
 		case n.Latest != nil && !r.now.Before(*n.Latest):
 			r.fail(r.s.stopRetrying(r.ctx, n, model.NotifyFailed, "past its latest time"))
-		case !r.allowed(n.Urgent):
+		case !r.allowedNow(n):
 			r.fail(r.s.stopRetrying(r.ctx, n, model.NotifyFailed, "quiet hours"))
 		default:
 			if err := r.s.deliver(r.ctx, n, r.settings); err != nil {

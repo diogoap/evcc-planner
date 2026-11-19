@@ -70,7 +70,7 @@ function reload() {
       <div class="topbar-row">
         <div class="brand">
           <img class="brand-mark" src="/icon.svg" alt="" />
-          <span><span class="brand-evcc">EVCC </span>Trip Planner</span>
+          <span>EVCC Planner</span>
           <span
             v-if="state.meta?.demo"
             class="pill tone-warn"

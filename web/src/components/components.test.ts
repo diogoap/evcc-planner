@@ -21,7 +21,7 @@ const status: Status = {
   plan: null,
   location: null,
   health: [],
-  vehicleTitle: 'Nissan Leaf',
+  vehicleTitle: 'Demo car',
 }
 
 const soc = (over: Partial<SoCView>): SoCView => ({

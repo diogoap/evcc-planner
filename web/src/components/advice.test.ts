@@ -236,7 +236,7 @@ describe('AdviceCard', () => {
           kind: 'extra_plan',
           source: 'ui',
           adviceDate: '2026-11-10',
-          vehicle: 'leaf',
+          vehicle: 'car',
           loadpoint: 1,
           plan: { soc: 70, time: '2026-11-10T06:48:00Z' },
           expiresAt: '2026-11-10T06:48:00Z',

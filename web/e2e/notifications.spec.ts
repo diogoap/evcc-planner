@@ -27,7 +27,7 @@ test('turn on notifications, send a test, and answer a question from the phone',
 
   await page.getByTestId('notify-test').click()
   await expect(page.getByText('Test notification sent')).toBeVisible()
-  await expect(page.getByTestId('notification-test')).toContainText('EVCC Trip Planner')
+  await expect(page.getByTestId('notification-test')).toContainText('[EVCC Planner] 🔔 Test notification')
 
   // The next EVCC check asks about the unclear calendar event.
   await page.getByRole('link', { name: 'Connections' }).click()

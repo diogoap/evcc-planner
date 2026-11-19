@@ -1,7 +1,7 @@
 {
   "id": "/",
-  "name": "EVCC Trip Planner",
-  "short_name": "Trip Planner",
+  "name": "EVCC Planner",
+  "short_name": "EVCC Planner",
   "description": "Have enough charge for upcoming trips, planned with EVCC.",
   "start_url": "/",
   "scope": "/",

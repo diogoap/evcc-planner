@@ -382,14 +382,14 @@ func TestConnectionSettingsAreSparse(t *testing.T) {
 	if v, err := s.ConnectionSettings(defaults); err != nil || v != defaults {
 		t.Fatalf("unsaved = %+v %v", v, err)
 	}
-	if err := s.SaveConnectionSettings(map[string]any{"haSocEntity": "sensor.leaf_battery", "evccPollIntervalSec": 30}); err != nil {
+	if err := s.SaveConnectionSettings(map[string]any{"haSocEntity": "sensor.car_battery", "evccPollIntervalSec": 30}); err != nil {
 		t.Fatal(err)
 	}
 	// Fields that were not saved follow the defaults they are read with.
 	seeded := defaults
 	seeded.EVCCURL = "http://192.0.2.10:7070"
 	v, err := s.ConnectionSettings(seeded)
-	if err != nil || v.HASoCEntity != "sensor.leaf_battery" || v.EVCCPollIntervalSec != 30 || v.EVCCURL != seeded.EVCCURL ||
+	if err != nil || v.HASoCEntity != "sensor.car_battery" || v.EVCCPollIntervalSec != 30 || v.EVCCURL != seeded.EVCCURL ||
 		v.RetentionDays != 90 {
 		t.Fatalf("merged = %+v %v", v, err)
 	}

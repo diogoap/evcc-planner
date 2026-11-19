@@ -66,10 +66,10 @@ func TestConnectionSettingsAreEditedInTheUI(t *testing.T) {
 	log.none("rejected input")
 
 	edit := v.Settings
-	edit.HAPollIntervalMin, edit.HASoCEntity, edit.RetentionDays = 5, " sensor.demo_leaf_battery ", 30
+	edit.HAPollIntervalMin, edit.HASoCEntity, edit.RetentionDays = 5, " sensor.demo_car_battery ", 30
 	var saved connectionSettingsView
 	ta.json("PUT", "/api/settings/connections", edit, http.StatusOK, &saved)
-	if saved.Settings.HASoCEntity != "sensor.demo_leaf_battery" || saved.Settings.RetentionDays != 30 || len(saved.Connections) == 0 {
+	if saved.Settings.HASoCEntity != "sensor.demo_car_battery" || saved.Settings.RetentionDays != 30 || len(saved.Connections) == 0 {
 		t.Fatalf("saved = %+v", saved)
 	}
 	e := log.one("settings.update", model.SourceUI)
@@ -215,23 +215,23 @@ func TestHomeAssistantConfiguredFromSettings(t *testing.T) {
 		// The SoC sensor is not written again while its value is unchanged;
 		// the reading-time sensor shows when the car last reported.
 		battery := map[string]any{
-			"entity_id": "sensor.leaf_battery", "state": "72", "last_changed": "2026-11-09T15:00:00Z",
+			"entity_id": "sensor.car_battery", "state": "72", "last_changed": "2026-11-09T15:00:00Z",
 			"last_updated": "2026-11-09T15:00:00Z", "last_reported": "2026-11-09T15:00:00Z",
-			"attributes": map[string]any{"unit_of_measurement": "%", "device_class": "battery", "friendly_name": "Leaf battery"},
+			"attributes": map[string]any{"unit_of_measurement": "%", "device_class": "battery", "friendly_name": "Car battery"},
 		}
 		updated := map[string]any{
-			"entity_id": "sensor.leaf_last_update", "state": "2026-11-09T17:40:00+00:00",
+			"entity_id": "sensor.car_last_update", "state": "2026-11-09T17:40:00+00:00",
 			"attributes": map[string]any{"device_class": "timestamp"},
 		}
 		switch r.URL.Path {
 		case "/api/states":
 			json.NewEncoder(w).Encode([]any{battery, updated, map[string]any{
-				"entity_id": "sensor.leaf_range", "state": "190",
+				"entity_id": "sensor.car_range", "state": "190",
 				"attributes": map[string]any{"unit_of_measurement": "km", "device_class": "distance"},
 			}})
-		case "/api/states/sensor.leaf_battery":
+		case "/api/states/sensor.car_battery":
 			json.NewEncoder(w).Encode(battery)
-		case "/api/states/sensor.leaf_last_update":
+		case "/api/states/sensor.car_last_update":
 			json.NewEncoder(w).Encode(updated)
 		default:
 			w.WriteHeader(http.StatusNotFound)
@@ -266,17 +266,17 @@ func TestHomeAssistantConfiguredFromSettings(t *testing.T) {
 	ta.json("PUT", "/api/settings/connections", edit, http.StatusOK, nil)
 	var sensors []struct{ EntityID, Kind string }
 	ta.json("GET", "/api/homeassistant/sensors", nil, http.StatusOK, &sensors)
-	if len(sensors) != 3 || sensors[0].EntityID != "sensor.leaf_battery" || sensors[1].Kind != "timestamp" || sensors[2].Kind != "range" {
+	if len(sensors) != 3 || sensors[0].EntityID != "sensor.car_battery" || sensors[1].Kind != "timestamp" || sensors[2].Kind != "range" {
 		t.Fatalf("sensors = %+v", sensors)
 	}
 
-	edit.HASoCEntity = "sensor.leaf_battery"
+	edit.HASoCEntity = "sensor.car_battery"
 	var saved connectionSettingsView
 	ta.json("PUT", "/api/settings/connections", edit, http.StatusOK, &saved)
 	found := false
 	for _, c := range saved.Connections {
 		if c.Name == "Home Assistant" {
-			found = c.Status == "ok" && c.Detail == "SoC 72% from sensor.leaf_battery, reported Mon 9 Nov 16:00"
+			found = c.Status == "ok" && c.Detail == "SoC 72% from sensor.car_battery, reported Mon 9 Nov 16:00"
 		}
 	}
 	if !found {
@@ -286,7 +286,7 @@ func TestHomeAssistantConfiguredFromSettings(t *testing.T) {
 		t.Errorf("soc = %+v", s)
 	}
 	// The reading-time sensor dates the reading to when the car reported.
-	edit.HAUpdatedEntity = "sensor.leaf_last_update"
+	edit.HAUpdatedEntity = "sensor.car_last_update"
 	ta.json("PUT", "/api/settings/connections", edit, http.StatusOK, nil)
 	if status, detail := ta.connection("Home Assistant"); status != "ok" || !strings.HasSuffix(detail, "reported Mon 9 Nov 18:40") {
 		t.Errorf("with reading-time sensor = %s %q", status, detail)

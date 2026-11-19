@@ -71,6 +71,8 @@ func openTestApp(t *testing.T, dir, fixed string) *testApp {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { a.Close() })
+	// Runs first: every notification sent says what Settings shows.
+	t.Cleanup(func() { checkCopy(t, a) })
 	return &testApp{t: t, app: a, dir: dir}
 }
 

@@ -1,4 +1,4 @@
-# EVCC Trip Planner
+# EVCC Planner
 
 Have enough charge for upcoming trips by departure time. The planner combines
 Google Calendar events, recurring trips (such as school runs), and manual trips;
@@ -203,7 +203,7 @@ hourly and keep the last valid forecast.
 ### Home Assistant: always-on SoC (optional)
 
 EVCC only reads the car's state of charge (SoC) while it is plugged in. If
-Home Assistant has the car (for example through a Nissan Leaf integration),
+Home Assistant has the car (for example through the car maker's integration),
 the planner reads the SoC from it too, so it stays current while the car is
 unplugged. It only reads, through Home Assistant's REST API.
 
@@ -215,7 +215,7 @@ unplugged. It only reads, through Home Assistant's REST API.
    user just for the planner is enough.
 2. In **Settings → Connections**, enter Home Assistant's address as the
    planner reaches it, e.g. `http://192.0.2.20:8123`, and save.
-3. Then choose the car's battery level sensor (in %) as the SoC sensor, e.g. `sensor.leaf_battery_level`; the field
+3. Then choose the car's battery level sensor (in %) as the SoC sensor, e.g. `sensor.car_battery_level`; the field
    suggests Home Assistant's battery sensors. Optionally choose the range
    sensor (km or mi).
 4. If the integration has a timestamp sensor with when the car last

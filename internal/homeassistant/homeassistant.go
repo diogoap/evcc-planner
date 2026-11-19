@@ -394,13 +394,13 @@ func apiError(status int, body []byte) error {
 
 // Entities the stub reports.
 const (
-	StubEntity        = "sensor.demo_leaf_battery"
-	StubRangeEntity   = "sensor.demo_leaf_range"
-	StubUpdatedEntity = "sensor.demo_leaf_last_update"
+	StubEntity        = "sensor.demo_car_battery"
+	StubRangeEntity   = "sensor.demo_car_range"
+	StubUpdatedEntity = "sensor.demo_car_last_update"
 	// StubLocationEntity is the demo car's device tracker; the car is home.
-	StubLocationEntity = "device_tracker.demo_leaf"
+	StubLocationEntity = "device_tracker.demo_car"
 	// StubConsumptionEntity is the demo car's efficiency, in km/kWh.
-	StubConsumptionEntity = "sensor.demo_leaf_efficiency"
+	StubConsumptionEntity = "sensor.demo_car_efficiency"
 	stubConsumption       = "6.4"
 )
 
@@ -444,9 +444,9 @@ func (s Stub) Sensors(ctx context.Context) ([]Sensor, error) {
 	soc, rangeKm := s.Car()
 	at := s.Now().Add(-stubLag).Truncate(time.Minute)
 	return []Sensor{
-		{EntityID: StubEntity, Name: "Demo Leaf battery", State: strconv.FormatFloat(soc, 'f', -1, 64), Unit: "%", Kind: KindBattery},
-		{EntityID: StubConsumptionEntity, Name: "Demo Leaf efficiency", State: stubConsumption, Unit: "km/kWh", Kind: KindEfficiency},
-		{EntityID: StubUpdatedEntity, Name: "Demo Leaf last update", State: at.UTC().Format(time.RFC3339), Kind: KindTimestamp},
-		{EntityID: StubRangeEntity, Name: "Demo Leaf range", State: strconv.FormatFloat(rangeKm, 'f', -1, 64), Unit: "km", Kind: KindRange},
+		{EntityID: StubEntity, Name: "Demo car battery", State: strconv.FormatFloat(soc, 'f', -1, 64), Unit: "%", Kind: KindBattery},
+		{EntityID: StubConsumptionEntity, Name: "Demo car efficiency", State: stubConsumption, Unit: "km/kWh", Kind: KindEfficiency},
+		{EntityID: StubUpdatedEntity, Name: "Demo car last update", State: at.UTC().Format(time.RFC3339), Kind: KindTimestamp},
+		{EntityID: StubRangeEntity, Name: "Demo car range", State: strconv.FormatFloat(rangeKm, 'f', -1, 64), Unit: "km", Kind: KindRange},
 	}, nil
 }

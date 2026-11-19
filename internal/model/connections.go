@@ -79,7 +79,7 @@ func (c ConnectionSettings) Validate() error {
 		{"SoC sensor", c.HASoCEntity}, {"range sensor", c.HARangeEntity}, {"reading-time sensor", c.HAUpdatedEntity},
 	} {
 		if e.v != "" && !EntityID.MatchString(e.v) {
-			return fmt.Errorf("%s must be an entity ID such as sensor.leaf_battery_level", e.name)
+			return fmt.Errorf("%s must be an entity ID such as sensor.car_battery_level", e.name)
 		}
 	}
 	ranges := []struct {

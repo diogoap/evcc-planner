@@ -90,7 +90,7 @@ func TestSoCFromHomeAssistantWhileUnplugged(t *testing.T) {
 		t.Errorf("other readings = %+v", s.Other)
 	}
 	if status, detail := ta.connection("Home Assistant"); status != "stub" ||
-		detail != "SoC 38% from sensor.demo_leaf_battery, reported Mon 9 Nov 18:40" {
+		detail != "SoC 38% from sensor.demo_car_battery, reported Mon 9 Nov 18:40" {
 		t.Errorf("connection = %s %q", status, detail)
 	}
 
@@ -162,7 +162,7 @@ func TestEVCCWinsWhilePluggedInAndUntilHomeAssistantHasNews(t *testing.T) {
 	svc := ta.app.Service
 	ctx := context.Background()
 	reading := func(pct float64, reported, changed string) homeassistant.Reading {
-		return homeassistant.Reading{Entity: "sensor.leaf_battery", Percent: pct, ObservedAt: local(reported), ChangedAt: local(changed)}
+		return homeassistant.Reading{Entity: "sensor.car_battery", Percent: pct, ObservedAt: local(reported), ChangedAt: local(changed)}
 	}
 	ha := &fixedHA{r: reading(74, "2026-11-09T18:55:00+01:00", "2026-11-09T18:30:00+01:00")}
 	svc.UseIntegrations(func(i *service.Integrations) { i.HA = ha })

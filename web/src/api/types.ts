@@ -903,8 +903,26 @@ export interface NotificationSettings {
   extra: boolean
   /** Plug in when the car gets back home from the day's last trip and still needs charging. */
   arrival: boolean
+  /** That back-home reminder may come in quiet hours too. */
+  arrivalInQuiet: boolean
   /** Automatic and AI mode: new prices changed the plan (or brought charge extra) while unplugged. */
   prices: boolean
+}
+
+/** What a kind of notification says: {…} is filled in when sent, […] only when it applies. */
+export interface NotificationCopy {
+  /** The setting it belongs to: a switch's key, "test", or "urgent". */
+  setting: string
+  kind: NotificationKind
+  /** Before the title on the phone: "[EVCC Planner] 🔌". */
+  titlePrefix: string
+  title: string
+  /** After the title in AI mode: "(🤖 AI mode)"; empty when it doesn't say the mode. */
+  aiSuffix: string
+  /** One of these. */
+  messages: string[]
+  note?: string
+  buttons: NotificationVerb[]
 }
 
 export type NotificationKind =

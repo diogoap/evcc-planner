@@ -1,10 +1,17 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue'
 import { api } from '../api/client'
-import type { NotificationSettings, NotificationVerb, PhoneNotification } from '../api/types'
+import type {
+  NotificationCopy,
+  NotificationSettings,
+  NotificationVerb,
+  PhoneNotification,
+} from '../api/types'
 import { dateTime } from '../lib/format'
 import { useUnsaved } from '../lib/unsaved'
 import { notify, refresh, state } from '../store'
+import InfoTip from './InfoTip.vue'
+import NotificationCopyList from './NotificationCopyList.vue'
 import SaveBar from './SaveBar.vue'
 import ToggleSwitch from './ToggleSwitch.vue'
 
@@ -15,6 +22,9 @@ watch(unsaved.dirty, (d) => emit('dirty', d))
 const phones = ref<string[]>([])
 const phonesError = ref('')
 const recent = ref<PhoneNotification[]>([])
+// What each notification says, by the setting it belongs to.
+const copy = ref<NotificationCopy[]>([])
+const copyFor = (setting: string) => copy.value.filter((c) => c.setting === setting)
 const saving = ref(false)
 const testing = ref(false)
 const error = ref('')
@@ -57,7 +67,7 @@ const toggles: {
   {
     key: 'arrival',
     label: 'Back home reminders',
-    hint: 'Asks you to plug in when the car gets back home from the day’s last trip and still needs charging: for the next trip, charge ahead, or charge extra. Needs the car location sensor; comes in quiet hours like urgent reminders.',
+    hint: 'Asks you to plug in when the car gets back home from the day’s last trip and still needs charging: for the next trip, charge ahead, or charge extra. Needs the car location sensor.',
   },
 ]
 
@@ -93,6 +103,7 @@ onMounted(async () => {
   } catch (e) {
     phonesError.value = (e as Error).message
   }
+  copy.value = await api.notificationCopy().catch(() => [])
   await loadRecent()
 })
 
@@ -158,6 +169,9 @@ async function press(n: PhoneNotification, verb: NotificationVerb) {
         />
         <div class="small">
           <strong>Notifications</strong>
+          <InfoTip v-if="copyFor('test').length" label="What the test notification says">
+            <NotificationCopyList :copies="copyFor('test')" :snooze-min="settings.snoozeMin" />
+          </InfoTip>
           <div id="hint-notify" class="field-hint">
             Plug-in reminders and charging problems on your phone, through the Home Assistant Companion app.
             Buttons on them (Remind later, Skip trip) come back over Home Assistant's connection; no
@@ -214,6 +228,9 @@ async function press(n: PhoneNotification, verb: NotificationVerb) {
         <ToggleSwitch v-model="settings.early" label="Early reminders" aria-describedby="hint-early" />
         <div class="small">
           <strong>Early reminders</strong>
+          <InfoTip v-if="copyFor('early').length" label="What early reminders say">
+            <NotificationCopyList :copies="copyFor('early')" :snooze-min="settings.snoozeMin" />
+          </InfoTip>
           <div id="hint-early" class="field-hint">
             Before the cheapest charging window of the plan, when the car is unplugged. In quiet hours, just
             before they start.
@@ -260,6 +277,9 @@ async function press(n: PhoneNotification, verb: NotificationVerb) {
         <ToggleSwitch v-model="settings.urgentInQuiet" label="Urgent reminders in quiet hours" />
         <div class="small">
           <strong>Urgent reminders in quiet hours</strong>
+          <InfoTip v-if="copyFor('urgent').length" label="What urgent reminders say">
+            <NotificationCopyList :copies="copyFor('urgent')" :snooze-min="settings.snoozeMin" />
+          </InfoTip>
           <div class="field-hint">On: send them anyway. Off: wait until quiet hours end.</div>
         </div>
       </div>
@@ -267,7 +287,19 @@ async function press(n: PhoneNotification, verb: NotificationVerb) {
         <ToggleSwitch v-model="settings[t.key]" :label="t.label" />
         <div class="small">
           <strong>{{ t.label }}</strong>
+          <InfoTip v-if="copyFor(t.key).length" :label="`What ${t.label.toLowerCase()} say`">
+            <NotificationCopyList :copies="copyFor(t.key)" :snooze-min="settings.snoozeMin" />
+          </InfoTip>
           <div class="field-hint">{{ t.hint }}</div>
+          <label v-if="t.key === 'arrival'" class="row small mt-1">
+            <input
+              v-model="settings.arrivalInQuiet"
+              type="checkbox"
+              :disabled="!settings.arrival"
+              data-testid="notify-arrival-quiet"
+            />
+            Also in quiet hours, right after the car arrives home (separate from urgent reminders)
+          </label>
         </div>
       </div>
       <SaveBar

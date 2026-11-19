@@ -144,8 +144,8 @@ func TestCleanupDeletesOldHistoryOnly(t *testing.T) {
 	s.SaveOverride(model.Override{TripKey: "calendar:gone", Enabled: &off}) // edited just now: kept for now
 	s.PutRoute("home", "school", "any", CachedRoute{DistanceM: 6000, DurationS: 600, Provider: "google", FetchedAt: old})
 	s.PutRoute("home", "office", "any", CachedRoute{DistanceM: 38000, DurationS: 2100, Provider: "google", FetchedAt: recent})
-	s.AddPlanWrite(model.PlanWrite{Vehicle: "leaf", SoC: 40, TargetTime: old, WrittenAt: old})
-	s.AddPlanWrite(model.PlanWrite{Vehicle: "leaf", SoC: 50, TargetTime: old, WrittenAt: old.Add(time.Minute)})
+	s.AddPlanWrite(model.PlanWrite{Vehicle: "car", SoC: 40, TargetTime: old, WrittenAt: old})
+	s.AddPlanWrite(model.PlanWrite{Vehicle: "car", SoC: 50, TargetTime: old, WrittenAt: old.Add(time.Minute)})
 	s.Dismiss("2026-08-10", "defer", old)
 	s.Dismiss("2026-08-11", "defer", old)
 	s.AddAdjustment(model.Adjustment{Kind: model.AdjustPostpone, AdviceDate: "2026-08-10", Status: model.AdjustRestored, ExpiresAt: old})

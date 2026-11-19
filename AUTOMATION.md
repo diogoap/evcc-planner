@@ -168,6 +168,17 @@ share it:
 - **Merge:** the planner writes the higher SoC with the earlier ready-by time.
   When the extra plan already covers the trip target by the departure, nothing
   is written.
+- **Extra plan after the next departure:** an extra plan ready after the next
+  departure (an AI window that starts after the evening's trips) waits. Until
+  that trip has left, EVCC gets the trip's own plan when it needs charge, so
+  the extra charge isn't pulled before it; after it, the extra plan. Example:
+  charge extra to 70% from 23:00 to 05:00, with trips at 15:00 and 20:00: the
+  plan is made right away as 70% by 05:00; plugged in below the 15:00 trip's
+  target, EVCC gets that trip's plan; plugged in after the 20:00 trip, 70% by
+  05:00.
+- **Already reached:** an extra plan the car's charge already reaches is not
+  written (EVCC drops a reached plan); it comes back when a trip has used
+  the charge.
 - **End:** at expiry (or **End now**) the earlier plan comes back, or the extra
   plan is removed, as in V2. In Automatic mode the check then takes that plan
   over as its own: once the car is plugged in it updates it to the current
@@ -440,7 +451,12 @@ flowchart TD
   minimum confidence and Also postpone) follows the one under Automatic
   rules. After each AI plan, auto-apply runs before the plan check, so when
   the AI moves charge from charge ahead to charge extra, the extra plan
-  replaces the planner's plan in EVCC directly. The AI is told whether its
+  replaces the planner's plan in EVCC directly. The extra plan is ready when
+  the AI's window ends. When that window starts after the next departure,
+  the plan keeps the first departure after the window starts, and the trips
+  before it keep their own plans first (see
+  [Extra plans from daily advice](#extra-plans-from-daily-advice)); it is
+  still made right away. The AI is told whether its
   charge extra becomes a plan by itself; if it needs confirmation, it is
   asked to charge the trips' energy through charge ahead.
 - **Checks** (each correction is listed with the run under "Corrected by the
@@ -489,8 +505,9 @@ flowchart TD
 | `{{automatic_plan}}` | What the automatic rules would do, for comparison (not in the default prompt). |
 
 - **Notifications** are the same as in Automatic, with the AI's advice in
-  them; in AI mode every message about charging starts with "AI mode:" (all
-  but test messages and questions about calendar events).
+  them; in AI mode the title of every message about charging ends with
+  "(🤖 AI mode)" (all but test messages and questions about calendar
+  events): "[EVCC Planner] 🔌 Extra plan created (🤖 AI mode)".
 - **Activity log:** every run (`ai.run`, with its trigger, model, and tokens;
   failed runs as failures) and a plug-in without a run (`ai.skip`). Each run
   keeps the prompt as sent and the model's answer (Settings → Advice → AI mode, **What was
@@ -524,7 +541,12 @@ sequenceDiagram
 
 - **Sending:** the planner calls Home Assistant's notify service for each
   chosen phone with the `HA_TOKEN` it already uses. Each message has a title,
-  text, up to three buttons, and a tag. A newer message with the same tag
+  text, up to three buttons, and a tag. Every title starts with
+  "[EVCC Planner]" and an emoji for its kind, so it stands out on the phone:
+  "[EVCC Planner] ⏰ Plug in by 06:36" (🔔 test, 🔌 early reminder and extra
+  plan created, ⏰ urgent, 🚨 too late, ⚠️ problems, ❌ missed target, ❓
+  question, ✅ ready, ☀️ sun, 🔋 charge extra, 🏠 back home, 💶 new prices,
+  ⏭️ trip skipped). A newer message with the same tag
   replaces the old one on the phone; when a message is no longer relevant, the
   planner clears it.
 - **Failed sends:** when no phone gets a message (Home Assistant unreachable,
@@ -551,6 +573,12 @@ sequenceDiagram
 - **View plan** opens the planner, using the **Link address** setting (the
   address your phone uses to reach it). Without one, that button is left out.
 - **Test:** **Send test notification** in Settings sends one right away.
+- **What they say:** an info icon next to each setting in Settings →
+  Notifications shows, on hover or tap, the title, message, and buttons of
+  its notifications, with `{…}` for what is filled in when sent and `[…]`
+  for parts that only appear when they apply. The copy lives in
+  `internal/service/notifycopy.go`; API tests fail when a notification they
+  send doesn't match it.
 - **Activity log:** every message sent (or failed) and every button press,
   with source "Notification" for presses. Tokens never appear.
 - **Demo mode:** a stub records the messages; Settings → Notifications shows
@@ -573,7 +601,7 @@ Reminders only go out when all of these hold:
 | **Early** | 30 min before the first slot of the planned charging (the planner's estimate of EVCC's cheapest slots for the target). If that falls in quiet hours, 15 min before quiet hours start; if that has passed too, when quiet hours end, while the planned charging is still ahead. | "Plug in tonight: charging is cheapest from 01:00 (€0.21/kWh) for Thursday's trips." |
 | **Urgent** | 30 min before the latest plug-in time: the next departure, minus the charging time buffer, minus the time to charge the minimum target. | "Plug in by 10:20 to have 52% for Utrecht at 17:00." |
 | **Too late** | Once, after the latest plug-in time, if the car is still unplugged. | "Plugging in now gives about 46% by 17:00 (Utrecht needs 52%)." |
-| **Back home** | The car location sensor turns `home` (from elsewhere, within the last 30 min) after the day's last trip: no other trip leaves later that day, whether or not the trip was planned. The car is unplugged and still needs charging: for the next departure, for later trips charged ahead, or for a [charge extra](#charge-extra-daily-advice) plan (today's or tomorrow's). Once per arrival; urgent, so it comes in quiet hours too when **Urgent reminders in quiet hours** is on. Needs the car location sensor. Buttons: **Remind in 30 min**, **View plan**. | "Back home: plug in. School drop-off needs 42% by Tue 07:48. Charge extra to 50%: 02:00–05:45 averages €0.23 …" |
+| **Back home** | The car location sensor turns `home` (from elsewhere, within the last 30 min) after the day's last trip: no other trip leaves later that day, whether or not the trip was planned. The car is unplugged and still needs charging: for the next departure, for later trips charged ahead, or for a [charge extra](#charge-extra-daily-advice) plan (today's or tomorrow's). Once per arrival, in every trip plan mode. It comes in quiet hours too, right after the car arrives home, unless **Also in quiet hours** under it is unchecked; that check is separate from urgent reminders, and also applies when it is snoozed. Needs the car location sensor. Charge extra counts only once no trip before its cheap hours is left (see below). Buttons: **Remind in 30 min**, **View plan**. | "Back home: plug in. School drop-off needs 42% by Tue 07:48. Charge extra to 50%: 02:00–05:45 averages €0.23 …" |
 
 The early reminder is about saving money, so it uses the full target. Urgent
 and too-late reminders only use the minimum target.
@@ -606,7 +634,8 @@ gantt
 - **Quiet hours** (default 23:00–07:00): early reminders and questions wait
   (or are skipped when their moment has passed). Urgent and too-late reminders
   follow **Urgent reminders in quiet hours**: send (default) or wait until
-  quiet hours end.
+  quiet hours end. The back-home reminder follows its **Also in quiet hours**
+  check: send (default) or skip.
 
 ## Charging problems, questions, and ready messages
 
@@ -619,8 +648,8 @@ gantt
 | **Question** | A calendar event marked Needs review, within the seven days. Buttons: **Count it** (confirm) and **Not a trip** (turn off). | "Is 'Dinner' (Thu 19:00) a car trip?" |
 | **Ready** (off by default) | Plugged in and the target reached before the departure. | "Ready for Utrecht: 64%." |
 | **Plug in for the sun** | Today's advice is to [charge extra from solar](#charge-extra-daily-advice), the car is home (no trip in progress; at home by the car location sensor, if set) and unplugged, from 30 minutes before the solar surplus starts until 30 minutes before it ends, outside quiet hours. Any confidence: plugging in changes nothing in EVCC by itself. Buttons: **Remind in 30 min** (never after the sun's end), **View plan**. | "Plug in for the sun: Sunshine until about 14:30 charges the car at about €0.16/kWh (€0.05 without the tax on own solar), no more than tomorrow's lowest price. Plug in to use it." |
-| **Plug in for charge extra** | Today's or tomorrow's advice (the first whose cheap hours are still ahead) is to [charge extra](#charge-extra-daily-advice) with a plan (offered, or created by hand or automatically), the car is home and unplugged, from 30 minutes before its cheap hours start until 30 minutes before they end, outside quiet hours. When that start falls in quiet hours, such as a cheap night, it comes from 15 minutes before quiet hours instead. Once a day; cleared when the car is plugged in or the cheap hours are over. Without the plan yet it also asks to create it, or says that automatic plans create it when the day starts. Buttons: **Remind in 30 min**, **View plan**. | "Plug in for charge extra: Charge extra to 71%: 18:30–00:00 averages €0.28, 30% or more below this week's lowest prices (€0.40). Plug in so the plan can charge." |
-| **New prices: plug in** | Automatic and AI mode: tomorrow's prices (around 14:00) change the target for the next departure, or bring charge extra (today's or tomorrow's), while the car is unplugged. Once per publication, outside quiet hours; cleared when the car is plugged in. Button: **View plan**. | "New prices: plug in: The plan for School drop-off is now 64% by Tue 07:48 (was 42%), also for School pickup. Plug in so it can charge." |
+| **Plug in for charge extra** | Today's or tomorrow's advice (the first whose cheap hours are still ahead) is to [charge extra](#charge-extra-daily-advice) with a plan (offered, or created by hand or automatically), the car is home and unplugged, from 30 minutes before its cheap hours start until 30 minutes before they end, outside quiet hours. When that start falls in quiet hours, such as a cheap night, it comes from 15 minutes before quiet hours instead. Once a day; cleared when the car is plugged in or the cheap hours are over. Without the plan yet it also asks to create it, or says that automatic plans create it when the day starts. Not while a trip that leaves before the cheap hours is still ahead or under way (by the car location sensor, if set, it is over once the car is home): the car leaves again first, so it comes once the car is back from the last of them, if that is before quiet hours (later, the back-home reminder still asks). Buttons: **Remind in 30 min**, **View plan**. | "Plug in for charge extra: Charge extra to 71%: 18:30–00:00 averages €0.28, 30% or more below this week's lowest prices (€0.40). Plug in so the plan can charge." |
+| **New prices: plug in** | Automatic and AI mode: tomorrow's prices (around 14:00) change the target for the next departure, or bring charge extra (today's or tomorrow's; not while a trip before its cheap hours is still ahead), while the car is unplugged. Once per publication, outside quiet hours; cleared when the car is plugged in. Button: **View plan**. | "New prices: plug in: The plan for School drop-off is now 64% by Tue 07:48 (was 42%), also for School pickup. Plug in so it can charge." |
 | **Extra plan created** | Advice auto-apply created an extra plan, outside quiet hours (in them, only the activity log has it). Information only. Button: **View plan**. | "Extra plan created: Charge extra to 71%: 18:30–00:00 … The plan asks EVCC for 71% by Mon 00:00 and ends then." |
 
 Each is sent once per trip (unplugged early: once per unplug; not in Smart
@@ -730,7 +759,7 @@ Settings → **Notifications**:
 | Ready messages | Off |
 | Solar reminders | On |
 | Charge extra reminders | On (plug in for charge extra, and extra plans created automatically) |
-| Back home reminders | On (needs the car location sensor) |
+| Back home reminders | On (needs the car location sensor), also in quiet hours (a check under it, separate from urgent reminders) |
 | Plan changes after new prices | On (Automatic and AI mode) |
 
 ## Activity log entries
@@ -759,7 +788,7 @@ Settings → **Notifications**:
   its own table tests.
 - AI mode's prompt, schema, and checks are pure (`internal/aiplan`) with their
   own tests; API tests use a fake model for the triggers, the daily limit,
-  the checks, failures, and the "AI mode:" label.
+  the checks, failures, and the "(🤖 AI mode)" label.
 - Notifications are only sent to the stub in tests; live tests stay read-only.
   The websocket listener is tested against an `httptest` server.
 - Playwright covers the Planning and Notifications settings, pause and resume,

@@ -81,7 +81,7 @@ const groups: Group[] = [
         label: 'SoC sensor',
         kind: 'text',
         sensor: 'battery',
-        hint: "The car's battery level sensor (%), e.g. sensor.leaf_battery_level. Empty: only EVCC's readings.",
+        hint: "The car's battery level sensor (%), e.g. sensor.car_battery_level. Empty: only EVCC's readings.",
       },
       {
         key: 'haRangeEntity',
@@ -95,7 +95,7 @@ const groups: Group[] = [
         label: 'Reading-time sensor',
         kind: 'text',
         sensor: 'timestamp',
-        hint: 'Optional: a timestamp sensor with when the car last reported its SoC, e.g. sensor.leaf_last_updated. Otherwise the time Home Assistant received the SoC.',
+        hint: 'Optional: a timestamp sensor with when the car last reported its SoC, e.g. sensor.car_last_updated. Otherwise the time Home Assistant received the SoC.',
       },
       {
         key: 'haPollIntervalMin',

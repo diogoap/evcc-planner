@@ -91,6 +91,16 @@ const screens: Screen[] = [
     },
   },
   { name: 'settings-notifications', open: settingsTab('Notifications') },
+  {
+    name: 'notification-copy',
+    open: async (page) => {
+      await settingsTab('Notifications')(page)
+      await page.getByRole('button', { name: 'What back home reminders say' }).click()
+      await expect(
+        page.getByTestId('notification-copy').filter({ hasText: 'Back home: plug in' }),
+      ).toBeVisible()
+    },
+  },
   { name: 'settings-connections', open: settingsTab('Connections') },
   { name: 'activity', open: (page) => page.goto('/activity') },
   {

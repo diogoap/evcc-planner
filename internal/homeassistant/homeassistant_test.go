@@ -22,14 +22,14 @@ func entity(state string, attrs map[string]any) EntityState {
 		attrs = map[string]any{"unit_of_measurement": "%", "device_class": "battery"}
 	}
 	return EntityState{
-		EntityID: "sensor.leaf_battery", State: state, Attributes: attrs,
+		EntityID: "sensor.car_battery", State: state, Attributes: attrs,
 		LastChanged: reported.Add(-3 * time.Hour), LastUpdated: reported.Add(-time.Hour), LastReported: reported,
 	}
 }
 
 func TestParseSoC(t *testing.T) {
 	r, err := ParseSoC(entity("72", nil))
-	if err != nil || r.Percent != 72 || !r.ObservedAt.Equal(reported) || r.Entity != "sensor.leaf_battery" ||
+	if err != nil || r.Percent != 72 || !r.ObservedAt.Equal(reported) || r.Entity != "sensor.car_battery" ||
 		!r.ChangedAt.Equal(reported.Add(-3*time.Hour)) {
 		t.Fatalf("reading = %+v %v (want the last reported time, and when the value changed)", r, err)
 	}
@@ -42,9 +42,9 @@ func TestParseSoC(t *testing.T) {
 	}
 
 	for state, want := range map[string]string{
-		"unavailable": "sensor.leaf_battery is unavailable",
-		"unknown":     "sensor.leaf_battery is unknown",
-		"":            "sensor.leaf_battery is empty",
+		"unavailable": "sensor.car_battery is unavailable",
+		"unknown":     "sensor.car_battery is unknown",
+		"":            "sensor.car_battery is empty",
 		"full":        `"full", not a number`,
 		"0":           "reports 0%, treated as unknown",
 		"101":         "reports 101%",
@@ -64,7 +64,7 @@ func TestParseSoC(t *testing.T) {
 
 func TestReadingTimeSensor(t *testing.T) {
 	ts := func(state string) EntityState {
-		return EntityState{EntityID: "sensor.leaf_last_update", State: state, Attributes: map[string]any{"device_class": "timestamp"}}
+		return EntityState{EntityID: "sensor.car_last_update", State: state, Attributes: map[string]any{"device_class": "timestamp"}}
 	}
 	carTime := reported.Add(-40 * time.Minute)
 	for _, state := range []string{
@@ -78,7 +78,7 @@ func TestReadingTimeSensor(t *testing.T) {
 		}
 	}
 	for _, state := range []string{"unavailable", "yesterday"} {
-		if _, err := ParseTimestamp(ts(state), amsterdam); err == nil || !strings.Contains(err.Error(), "sensor.leaf_last_update") {
+		if _, err := ParseTimestamp(ts(state), amsterdam); err == nil || !strings.Contains(err.Error(), "sensor.car_last_update") {
 			t.Errorf("%s: err = %v", state, err)
 		}
 	}
@@ -105,7 +105,7 @@ func TestReadingTimeSensor(t *testing.T) {
 
 func TestParseRange(t *testing.T) {
 	km := func(state, unit string) (*float64, error) {
-		return ParseRange(EntityState{EntityID: "sensor.leaf_range", State: state, Attributes: map[string]any{"unit_of_measurement": unit}})
+		return ParseRange(EntityState{EntityID: "sensor.car_range", State: state, Attributes: map[string]any{"unit_of_measurement": unit}})
 	}
 	if v, err := km("181.4", "km"); err != nil || v == nil || *v != 181 {
 		t.Errorf("km = %v %v", v, err)
@@ -137,12 +137,12 @@ func TestHTTPClient(t *testing.T) {
 			return
 		}
 		switch r.URL.Path {
-		case "/api/states/sensor.leaf_battery":
+		case "/api/states/sensor.car_battery":
 			json.NewEncoder(w).Encode(entity("72", nil))
-		case "/api/states/sensor.leaf_last_update":
-			w.Write([]byte(`{"entity_id":"sensor.leaf_last_update","state":"2026-11-11T07:30:00+00:00","attributes":{"device_class":"timestamp"}}`))
-		case "/api/states/sensor.leaf_range":
-			w.Write([]byte(`{"entity_id":"sensor.leaf_range","state":"190","attributes":{"unit_of_measurement":"km"}}`))
+		case "/api/states/sensor.car_last_update":
+			w.Write([]byte(`{"entity_id":"sensor.car_last_update","state":"2026-11-11T07:30:00+00:00","attributes":{"device_class":"timestamp"}}`))
+		case "/api/states/sensor.car_range":
+			w.Write([]byte(`{"entity_id":"sensor.car_range","state":"190","attributes":{"unit_of_measurement":"km"}}`))
 		case "/api/states/sensor.missing":
 			w.WriteHeader(http.StatusNotFound)
 			w.Write([]byte(`{"message":"Entity not found."}`))
@@ -153,19 +153,19 @@ func TestHTTPClient(t *testing.T) {
 	defer srv.Close()
 	c := &HTTPClient{
 		BaseURL: srv.URL + "/", Token: "secret-token", HTTP: srv.Client(),
-		SoCEntity: "sensor.leaf_battery", RangeEntity: "sensor.leaf_range", Location: amsterdam,
+		SoCEntity: "sensor.car_battery", RangeEntity: "sensor.car_range", Location: amsterdam,
 	}
 	ctx := context.Background()
 	r, err := c.SoC(ctx)
 	if err != nil || r.Percent != 72 || r.RangeKm == nil || *r.RangeKm != 190 || !r.ObservedAt.Equal(reported) {
 		t.Fatalf("reading = %+v %v", r, err)
 	}
-	if strings.Join(paths, ",") != "/api/states/sensor.leaf_battery,/api/states/sensor.leaf_range" {
+	if strings.Join(paths, ",") != "/api/states/sensor.car_battery,/api/states/sensor.car_range" {
 		t.Errorf("paths = %v", paths)
 	}
 
 	// The reading-time sensor dates the reading; a missing one fails it.
-	c.UpdatedEntity = "sensor.leaf_last_update"
+	c.UpdatedEntity = "sensor.car_last_update"
 	if r, err := c.SoC(ctx); err != nil || !r.ObservedAt.Equal(reported.Add(-40*time.Minute)) {
 		t.Errorf("with reading-time sensor = %+v %v", r, err)
 	}
@@ -208,12 +208,12 @@ func TestStubTrailsTheCar(t *testing.T) {
 func TestCandidates(t *testing.T) {
 	states := []EntityState{
 		{EntityID: "sensor.phone_battery", State: "80", Attributes: map[string]any{"device_class": "battery", "unit_of_measurement": "%", "friendly_name": "Phone"}},
-		{EntityID: "sensor.leaf_range", State: "190", Attributes: map[string]any{"device_class": "distance", "unit_of_measurement": "km"}},
-		{EntityID: "sensor.leaf_battery", State: "72", Attributes: map[string]any{"device_class": "battery", "unit_of_measurement": "%", "friendly_name": "Leaf battery"}},
-		{EntityID: "sensor.leaf_battery_kwh", State: "40", Attributes: map[string]any{"device_class": "energy_storage", "unit_of_measurement": "kWh"}},
-		{EntityID: "binary_sensor.leaf_plugged", State: "on", Attributes: map[string]any{"device_class": "plug"}},
+		{EntityID: "sensor.ev_range", State: "190", Attributes: map[string]any{"device_class": "distance", "unit_of_measurement": "km"}},
+		{EntityID: "sensor.ev_battery", State: "72", Attributes: map[string]any{"device_class": "battery", "unit_of_measurement": "%", "friendly_name": "Car battery"}},
+		{EntityID: "sensor.ev_battery_kwh", State: "40", Attributes: map[string]any{"device_class": "energy_storage", "unit_of_measurement": "kWh"}},
+		{EntityID: "binary_sensor.ev_plugged", State: "on", Attributes: map[string]any{"device_class": "plug"}},
 		{EntityID: "sensor.trip", State: "12", Attributes: map[string]any{"unit_of_measurement": "mi"}},
-		{EntityID: "sensor.leaf_last_update", State: "2026-11-11T07:30:00+00:00", Attributes: map[string]any{"device_class": "timestamp"}},
+		{EntityID: "sensor.ev_last_update", State: "2026-11-11T07:30:00+00:00", Attributes: map[string]any{"device_class": "timestamp"}},
 		{EntityID: "sensor.car_efficiency", State: "6.2", Attributes: map[string]any{"unit_of_measurement": "km/kWh"}},
 		{EntityID: "sensor.car_consumption", State: "16.1", Attributes: map[string]any{"unit_of_measurement": "kWh/100 km"}},
 	}
@@ -222,11 +222,11 @@ func TestCandidates(t *testing.T) {
 	for _, c := range got {
 		ids = append(ids, c.EntityID+":"+c.Kind)
 	}
-	if strings.Join(ids, ",") != "sensor.car_consumption:efficiency,sensor.car_efficiency:efficiency,sensor.leaf_battery:battery,"+
-		"sensor.leaf_last_update:timestamp,sensor.leaf_range:range,sensor.phone_battery:battery,sensor.trip:range" {
+	if strings.Join(ids, ",") != "sensor.car_consumption:efficiency,sensor.car_efficiency:efficiency,sensor.ev_battery:battery,"+
+		"sensor.ev_last_update:timestamp,sensor.ev_range:range,sensor.phone_battery:battery,sensor.trip:range" {
 		t.Errorf("candidates = %v", ids)
 	}
-	if got[2].Name != "Leaf battery" || got[2].State != "72" || got[2].Unit != "%" {
+	if got[2].Name != "Car battery" || got[2].State != "72" || got[2].Unit != "%" {
 		t.Errorf("battery = %+v", got[2])
 	}
 	stub, _ := Stub{Now: time.Now, Car: func() (float64, float64) { return 38, 122 }}.Sensors(context.Background())

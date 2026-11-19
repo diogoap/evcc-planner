@@ -7,13 +7,13 @@
   "homePower": 417.1,
   "loadpoints": [
     {
-      "title": "Alfen Eve Pro",
+      "title": "Garage charger",
       "mode": "smart",
       "connected": false,
       "charging": false,
       "chargePower": 0,
       "vehicleName": "db:3",
-      "vehicleTitle": "Nissan Leaf",
+      "vehicleTitle": "My car",
       "vehicleSoc": 0,
       "effectiveLimitSoc": 80,
       "planActive": false,
@@ -28,7 +28,7 @@
   ],
   "vehicles": {
     "db:3": {
-      "title": "Nissan Leaf",
+      "title": "My car",
       "icon": "car",
       "capacity": 62,
       "mode": "smart",

@@ -1126,8 +1126,7 @@ details summary {
 
 /* Phones: navigation moves to the bottom and dialogs become sheets. */
 @media (max-width: 640px) {
-  .topbar .tabs,
-  .brand-evcc {
+  .topbar .tabs {
     display: none;
   }
 

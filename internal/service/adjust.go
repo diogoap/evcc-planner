@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/diogoap/evcc-planner/internal/advice"
@@ -133,11 +134,22 @@ func (s *Service) Proposal(ctx context.Context, kind, date string) (*ProposalVie
 			next.FirstTitle, localtime.Clock(next.DepartAt, s.loc()))
 	}
 	readyBy, latest := end, view.To
-	if next != nil {
-		p.Protected = &ProtectedView{Title: next.FirstTitle, DepartAt: next.DepartAt, TargetSoC: next.TargetSoC}
-		p.MinSoC = next.TargetSoC
-		latest = next.DepartAt
-		readyBy = minTime(readyBy, next.DepartAt)
+	prot := protectedTrip(view, day)
+	if prot != nil {
+		p.Protected = &ProtectedView{Title: prot.FirstTitle, DepartAt: prot.DepartAt, TargetSoC: prot.TargetSoC}
+		p.MinSoC = prot.TargetSoC
+		latest = prot.DepartAt
+		readyBy = minTime(readyBy, prot.DepartAt)
+	}
+	var before []string
+	for _, b := range view.Blocks {
+		if b.DepartAt.After(now) && (prot == nil || b.DepartAt.Before(prot.DepartAt)) {
+			before = append(before, b.FirstTitle)
+		}
+	}
+	if len(before) > 0 {
+		p.Notes = append(p.Notes, fmt.Sprintf("Trips before this window (%s) keep their own plans first when they need charge; this plan follows them.",
+			strings.Join(before, ", ")))
 	}
 	// Charge extra's plan is ready when its cheap blocks end; the AI's
 	// window may run past midnight.
@@ -187,6 +199,13 @@ func (s *Service) Proposal(ctx context.Context, kind, date string) (*ProposalVie
 			p.Notes = append(p.Notes, fmt.Sprintf("Covering every later trip would need %d%%; the default stops at EVCC's charge limit (%d%%).",
 				min(100, int(math.Ceil(base+need-1e-6))), limit))
 		}
+		// The AI's window may start after trips: it charges from what they
+		// leave.
+		if day.AI && !day.Solar && len(day.Blocks) > 0 {
+			if at := s.extraStart(view, day.Blocks[0].From); at != nil {
+				p.StartSoC = ptr(round(*at, 1))
+			}
+		}
 	} else {
 		p.Notes = append(p.Notes, "The SoC is unknown until the car is plugged in; choose the target yourself.")
 	}
@@ -210,6 +229,23 @@ func (s *Service) Proposal(ctx context.Context, kind, date string) (*ProposalVie
 	}
 	p.Available = true
 	return p, nil
+}
+
+// protectedTrip is the departure an extra plan from a day's advice must
+// keep: the next one, or for the AI's window, which may start later, the
+// first that leaves after the window starts. Trips before that window get
+// their own plans first (mergePlans).
+func protectedTrip(view *PlanView, day *DayAdviceView) *BlockView {
+	if !day.AI || day.Solar || len(day.Blocks) == 0 {
+		return view.Next
+	}
+	from := day.Blocks[0].From
+	for i := range view.Blocks {
+		if b := &view.Blocks[i]; b.DepartAt.After(view.Now) && b.DepartAt.After(from) {
+			return b
+		}
+	}
+	return nil
 }
 
 // referenceText is the price charge extra compared with, in a few words.

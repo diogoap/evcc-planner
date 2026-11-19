@@ -41,7 +41,7 @@ curl -fsS "http://127.0.0.1:$port/readyz" >/dev/null || {
   echo "Container did not become ready; logs:"; DEV_PORT=$port "${compose[@]}" logs; exit 1; }
 
 echo "==> Checking UI and API"
-curl -fsS "http://127.0.0.1:$port/" | grep -q "<title>EVCC Trip Planner</title>" || { echo "UI not served"; exit 1; }
+curl -fsS "http://127.0.0.1:$port/" | grep -q "<title>EVCC Planner</title>" || { echo "UI not served"; exit 1; }
 curl -fsS "http://127.0.0.1:$port/trips" | grep -q 'id="app"' || { echo "SPA fallback failed"; exit 1; }
 curl -fsS "http://127.0.0.1:$port/api/plan" | grep -q '"days"' || { echo "plan API failed"; exit 1; }
 

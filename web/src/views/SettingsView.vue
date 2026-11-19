@@ -103,7 +103,7 @@ const fields: { key: keyof Settings; label: string; unit: string; step: string; 
     label: 'Usable capacity',
     unit: 'kWh',
     step: '0.1',
-    hint: 'Energy the battery can actually use, which is less than its gross size (a Leaf e+ uses about 59 of 62 kWh). Converts kWh into SoC %.',
+    hint: 'Energy the battery can actually use, which is less than its gross size (for example, about 59 of 62 kWh). Converts kWh into SoC %.',
   },
   {
     key: 'chargePowerKW',

@@ -25,7 +25,7 @@ func TestParseLiveStateFixture(t *testing.T) {
 		t.Errorf("top-level fields: %+v", st)
 	}
 	lp, ok := st.Loadpoint(1)
-	if !ok || lp.Title != "Alfen Eve Pro" || lp.Connected || lp.VehicleSoc != 0 || lp.VehicleName != "db:3" {
+	if !ok || lp.Title != "Garage charger" || lp.Connected || lp.VehicleSoc != 0 || lp.VehicleName != "db:3" {
 		t.Errorf("loadpoint = %+v", lp)
 	}
 	if lp.EffectivePlanTime != nil {

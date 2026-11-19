@@ -138,9 +138,9 @@ func (s *Service) reviewAutoExtra(ctx context.Context, a *model.Adjustment, day 
 		return s.endAdjustment(ctx, a, "New prices: the advice no longer charges extra. ")
 	}
 	soc, ready := day.TargetSoC, day.Blocks[len(day.Blocks)-1].Until
-	if next := view.Next; next != nil {
-		soc = max(soc, next.TargetSoC)
-		ready = minTime(ready, next.DepartAt)
+	if prot := protectedTrip(view, day); prot != nil {
+		soc = max(soc, prot.TargetSoC)
+		ready = minTime(ready, prot.DepartAt)
 	}
 	if samePlan(a.Plan, &model.PlanValue{SoC: float64(soc), Time: ready.Truncate(time.Minute)}) {
 		return nil

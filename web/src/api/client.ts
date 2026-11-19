@@ -20,6 +20,7 @@ import type {
   HASensor,
   History,
   Meta,
+  NotificationCopy,
   NotificationSettings,
   PhoneNotification,
   Place,
@@ -164,6 +165,7 @@ export const api = {
     request<NotificationSettings>('PUT', '/api/settings/notifications', s),
   notifications: () => request<PhoneNotification[]>('GET', '/api/notifications'),
   phones: () => request<string[]>('GET', '/api/notifications/phones'),
+  notificationCopy: () => request<NotificationCopy[]>('GET', '/api/notifications/copy'),
   testNotification: () => request<PhoneNotification>('POST', '/api/notifications/test', {}),
   /** Demo mode: presses a notification button as the phone would. */
   pressNotification: (id: number, verb: string) =>

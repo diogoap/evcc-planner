@@ -1,4 +1,4 @@
-# EVCC Trip Planner — development commands. Run `make help` for a list.
+# EVCC Planner — development commands. Run `make help` for a list.
 
 SHELL := /bin/bash
 .SHELLFLAGS := -eu -o pipefail -c

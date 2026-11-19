@@ -647,6 +647,8 @@ type NotificationSettings struct {
 	// Arrival asks to plug in when the car gets back home from the day's
 	// last trip (by the location sensor) and still needs charging.
 	Arrival bool `json:"arrival"`
+	// ArrivalInQuiet lets that reminder come in quiet hours too.
+	ArrivalInQuiet bool `json:"arrivalInQuiet"`
 	// Prices says, in automatic and AI mode, when new prices change the
 	// plan or bring charge extra while the car is unplugged.
 	Prices bool `json:"prices"`
@@ -657,7 +659,7 @@ func DefaultNotificationSettings() NotificationSettings {
 	return NotificationSettings{
 		Phones: []string{}, Early: true, EarlyLeadMin: 30, UrgentLeadMin: 30, QuietFrom: "23:00", QuietTo: "07:00",
 		UrgentInQuiet: true, SnoozeMin: 30, Problems: true, Questions: true, Solar: true, Extra: true, Arrival: true,
-		Prices: true,
+		ArrivalInQuiet: true, Prices: true,
 	}
 }
 

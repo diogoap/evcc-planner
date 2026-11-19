@@ -71,12 +71,12 @@ func TestNotificationSettingsAndTest(t *testing.T) {
 	var n model.Notification
 	ta.json("POST", "/api/notifications/test", map[string]any{}, http.StatusOK, &n)
 	sent := ta.phone().Take()
-	if len(sent) != 1 || sent[0].Phone != homeassistant.StubPhone || sent[0].Message.Title != "EVCC Trip Planner" ||
+	if len(sent) != 1 || sent[0].Phone != homeassistant.StubPhone || sent[0].Message.Title != "[EVCC Planner] 🔔 Test notification" ||
 		len(sent[0].Message.Actions) != 1 || sent[0].Message.Actions[0].URI != "http://planner.test:7201/" ||
 		sent[0].Message.Link != "http://planner.test:7201/" {
 		t.Fatalf("sent = %+v", sent)
 	}
-	if e := log.one("notification.send", model.SourceUI); e.Summary != `Sent "EVCC Trip Planner" to 1 phone` {
+	if e := log.one("notification.send", model.SourceUI); e.Summary != `Sent "[EVCC Planner] 🔔 Test notification" to 1 phone` {
 		t.Errorf("event = %+v", e)
 	}
 	var recent []model.Notification
@@ -107,7 +107,7 @@ func TestNotificationButtons(t *testing.T) {
 	save := func(key, subject string, verbs ...string) model.Notification {
 		t.Helper()
 		n, err := ta.app.Store.SaveNotification(model.Notification{
-			Key: key, Kind: model.NotifyUrgent, Subject: subject, Title: "Plug in", Verbs: verbs,
+			Key: key, Kind: model.NotifyUrgent, Subject: subject, Title: "Plug in by 19:20", Message: "School drop-off needs 42% by Tue 07:48.", Verbs: verbs,
 			State: model.NotifySent, CreatedAt: time.Now(), Latest: &latest,
 		})
 		if err != nil {
@@ -127,7 +127,7 @@ func TestNotificationButtons(t *testing.T) {
 	if got.State != model.NotifySnoozed || !got.SnoozedUntil.Equal(latest) {
 		t.Fatalf("snoozed = %+v", got)
 	}
-	if e := log.one("notification.action", model.SourceNotification); e.Summary != `Remind in 30 min pressed: "Plug in" snoozed until 19:20` {
+	if e := log.one("notification.action", model.SourceNotification); e.Summary != `Remind in 30 min pressed: "Plug in by 19:20" snoozed until 19:20` {
 		t.Errorf("event = %+v", e)
 	}
 
@@ -143,7 +143,7 @@ func TestNotificationButtons(t *testing.T) {
 		t.Fatalf("events = %+v", events)
 	}
 	sent := ta.phone().Take()
-	if len(sent) != 1 || sent[0].Message.Title != "Trip skipped" ||
+	if len(sent) != 1 || sent[0].Message.Title != "[EVCC Planner] ⏭️ Trip skipped" ||
 		sent[0].Message.Text != "The next target is 39% by Tue 08:20 for Office visit." {
 		t.Errorf("follow-up = %+v", sent)
 	}

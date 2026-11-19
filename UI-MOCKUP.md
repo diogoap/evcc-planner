@@ -1,13 +1,13 @@
-# EVCC Trip Planner — text UI mockup
+# EVCC Planner — text UI mockup
 
 Illustrative demo data only, set on Monday evening, 9 November 2026. EVCC-inspired: spacious cards, rounded corners, clear typography, muted surfaces, and restrained green/amber accents. Layouts stack on phones, with bottom navigation (V6); confidence and status always have text labels. All energy prices include VAT.
 
 **Overview — the default screen (V6 layout, phone).** The first card answers "will the car be ready?"; everything else supports it.
 
 ```text
-EVCC Trip Planner                DEMO   Updated 19:00 ⟳
+EVCC Planner                     DEMO   Updated 19:00 ⟳
 
-NISSAN LEAF                         [Home] [Unplugged]
+DEMO CAR                            [Home] [Unplugged]
 38%   122 km
 [###########--------|-----------------]
 

@@ -1,4 +1,4 @@
-# EVCC Trip Planner — system configuration (tracked in Git).
+# EVCC Planner — system configuration (tracked in Git).
 #
 # Integration settings that hold no secret (EVCC and Home Assistant addresses,
 # loadpoint, sensors, poll and sync intervals, timeouts, route cache, model,
