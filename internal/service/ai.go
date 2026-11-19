@@ -949,8 +949,10 @@ func (s *Service) applyAI(view *PlanView, result planner.Result) error {
 
 	if t := view.Control.Target; t != nil {
 		switch {
-		case res.Ahead == nil || run.NextTripKey != t.TripKey:
-			view.AI.Note = "The AI plan was made before " + t.Title + " was the next trip: the automatic rules set its target until the next run."
+		case res.Ahead == nil:
+			view.AI.Note = "This AI plan was made when no trip was planned. Until the AI runs again, the automatic rules set the target for " + t.Title + "."
+		case run.NextTripKey != t.TripKey:
+			view.AI.Note = "This AI plan was made for a different trip. Until the AI runs again, the automatic rules set the target for " + t.Title + "."
 		default:
 			a := planner.ChargeFor(result, params, s.aheadSlots(), ap, float64(res.Ahead.TargetSoC))
 			nt := *t

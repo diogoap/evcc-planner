@@ -241,6 +241,16 @@ describe('ReadyCard', () => {
     const w = ready(plan({ soc: soc({ known: false, percent: null, observedAt: null, rangeKm: null }) }))
     expect(w.text()).toContain('SoC unknown')
   })
+
+  it('warns when no AI plan applies, and only informs beside one in use', () => {
+    const note = (inUse: boolean) =>
+      ready(plan({ ai: { inUse, running: false, canRun: true, note: 'A note.' } })).get(
+        '[data-testid=ai-plan-note]',
+      )
+    expect(note(false).classes()).toContain('text-warn')
+    expect(note(true).classes()).not.toContain('text-warn')
+    expect(note(true).text()).toBe('A note.')
+  })
 })
 
 describe('TripRow', () => {

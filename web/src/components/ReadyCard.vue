@@ -180,7 +180,13 @@ const adjustments = computed(() => props.plan.advice.adjustments.filter((a) => a
         <!-- The target's reason is under Trip plans and each day's under its
              advice; the week's summary is under Settings → Advice → AI mode. -->
         <dd data-testid="ai-plan">
-          <span v-if="plan.ai.note" class="text-warn block">{{ plan.ai.note }}</span>
+          <!-- A note beside an AI plan in use is information, not a warning. -->
+          <span
+            v-if="plan.ai.note"
+            :class="['block', { 'text-warn': !plan.ai.inUse }]"
+            data-testid="ai-plan-note"
+            >{{ plan.ai.note }}</span
+          >
           <span class="row gap-2">
             <span v-if="plan.ai.inUse && plan.ai.runAt" class="muted"
               >Made {{ dateTime(plan.ai.runAt) }}</span

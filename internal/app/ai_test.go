@@ -593,3 +593,27 @@ func lastAction(l *eventLog, action string) *activityEvent {
 	}
 	return found
 }
+
+func TestAIPlanForADifferentTripLeavesTheTargetToTheRules(t *testing.T) {
+	ta := newTestApp(t, "")
+	ta.tripPlans(model.TripPlansAI)
+	ta.checkAI()
+	// A trip before Tuesday's school run, which the AI plan was made for.
+	ta.json("POST", "/api/trips", map[string]any{
+		"title": "Hardware store", "destination": "Bouwmarkt 5, Demo Town", "date": "2026-11-09", "start": "21:00",
+	}, http.StatusCreated, nil)
+	var p struct {
+		Control struct {
+			Target struct {
+				Title  string `json:"title"`
+				Source string `json:"source"`
+			} `json:"target"`
+		} `json:"control"`
+		AI *service.AIPlanView `json:"ai"`
+	}
+	ta.json("GET", "/api/plan", nil, http.StatusOK, &p)
+	want := "This AI plan was made for a different trip. Until the AI runs again, the automatic rules set the target for Hardware store."
+	if !p.AI.InUse || p.AI.Note != want || p.Control.Target.Title != "Hardware store" || p.Control.Target.Source == "ai" {
+		t.Errorf("plan = %+v, AI = %+v", p.Control, p.AI)
+	}
+}
