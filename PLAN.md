@@ -158,10 +158,10 @@ As implemented (2026-11-11):
 
 </details>
 
-<details open>
-<summary><b>V5 — Automatic plans and interaction</b> 🚧</summary>
+<details>
+<summary><b>V5 — Automatic plans and interaction</b> ✅</summary>
 
-🚧 **In progress.** Every rule, with diagrams and examples: [AUTOMATION.md](AUTOMATION.md). Implemented 2026-11-12; done once validated live: automatic writes with the real EVCC, notification delivery and button presses with the real Home Assistant (admin token). Telegram moved to V8 (decided 2026-11-12), then dropped (2026-11-19).
+✅ **Done** (2026-11-19). Every rule, with diagrams and examples: [AUTOMATION.md](AUTOMATION.md). Implemented 2026-11-12; validated live: automatic writes with the real EVCC, notification delivery and button presses with the real Home Assistant (admin token). Telegram moved to V8 (decided 2026-11-12), then dropped (2026-11-19).
 
 - ✅ **Plan on plug-in** (2026-11-11): send the next departure's target once when the car is plugged in; keep an equal or higher plan, replace a lower one.
 - ✅ **Automatic trip plans** (default mode; Manual and On plug-in remain): keep EVCC's one plan matched to the trips while plugged in, after every EVCC check, trip or setting change, and calendar sync. Write only real changes; remove the planner's plan when nothing needs it.

@@ -31,7 +31,7 @@ shows where every SoC value comes from and how old it is. Integration
 settings without secrets (addresses, sensors, intervals, model, retention)
 are edited under Settings → Connections instead of config files.
 
-**V5 (in progress):** automatic trip plans that keep EVCC's plan matched to
+**V5:** automatic trip plans that keep EVCC's plan matched to
 your trips, pause for a plan you choose yourself, and charge later trips
 ahead when the night is clearly cheaper (solar first); phone notifications
 through the Home Assistant Companion app: plug-in reminders, charging
