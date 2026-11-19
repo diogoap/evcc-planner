@@ -148,10 +148,34 @@ const aiTitle = "AI mode: "
 // which trip plan mode is on.
 var unlabelled = map[string]bool{model.NotifyTest: true, model.NotifyQuestion: true}
 
+// retryAfter are the waits before each new try of a failed send; after the
+// last, it is given up (AUTOMATION.md).
+var retryAfter = []time.Duration{2 * time.Minute, 5 * time.Minute, 15 * time.Minute}
+
+// infoKinds are information only: done once they reach the phones.
+var infoKinds = map[string]bool{
+	model.NotifyTest: true, model.NotifyUnplugged: true, model.NotifyMissed: true, model.NotifyReady: true,
+	model.NotifyExtraPlan: true, model.NotifyInfo: true,
+}
+
+// notifyEvent is the activity log entry about sending a notification.
+func notifyEvent(n model.Notification, summary string) model.AuditEvent {
+	ev := model.AuditEvent{
+		Action: "notification.send", SubjectType: "notification", SubjectID: strconv.FormatInt(n.ID, 10),
+		Summary: summary, Detail: audit.Marshal(map[string]any{"kind": n.Kind, "message": n.Message}),
+	}
+	if n.Subject != "" {
+		ev.Related = "trip:" + n.Subject
+	}
+	return ev
+}
+
 // deliver sends a notification to the chosen phones and stores it with
 // the outcome, recorded in the activity log. A new notification (ID 0) is
 // stored first, so its buttons can name it. In AI mode, new notifications
-// about charging say so in their title.
+// about charging say so in their title. When no phone gets it, it is tried
+// again later (not a test): the activity log has the first failure and the
+// outcome, not every try.
 func (s *Service) deliver(ctx context.Context, n *model.Notification, settings model.NotificationSettings) error {
 	notifier := s.Clients().Notify
 	if notifier == nil {
@@ -186,24 +210,22 @@ func (s *Service) deliver(ctx context.Context, n *model.Notification, settings m
 			errs = append(errs, fmt.Errorf("%s: %w", p, err))
 		}
 	}
-	ev := model.AuditEvent{
-		Action: "notification.send", SubjectType: "notification", SubjectID: strconv.FormatInt(n.ID, 10),
-		Summary: fmt.Sprintf("Sent %q to %s", n.Title, plural(len(settings.Phones)-len(errs), "phone")),
-		Detail:  audit.Marshal(map[string]any{"kind": n.Kind, "message": n.Message}),
-	}
-	if n.Subject != "" {
-		ev.Related = "trip:" + n.Subject
-	}
+	ev := notifyEvent(*n, fmt.Sprintf("Sent %q to %s", n.Title, plural(len(settings.Phones)-len(errs), "phone")))
 	err := errors.Join(errs...)
 	if err != nil && len(errs) == len(settings.Phones) {
-		n.State, n.Note = model.NotifyFailed, err.Error()
-		ev.Summary = fmt.Sprintf("Sending %q failed", n.Title)
-		ev.Outcome, ev.Error = model.OutcomeFailure, err.Error()
-		s.record(ctx, ev)
-		_, serr := s.Store.SaveNotification(*n)
-		return errors.Join(err, serr)
+		s.mu.Lock()
+		s.sendErr, s.sendErrAt = err, now
+		s.mu.Unlock()
+		return errors.Join(err, s.sendFailed(ctx, n, err, ev))
 	}
-	n.State, n.SentAt, n.SnoozedUntil = model.NotifySent, &now, nil
+	s.mu.Lock()
+	s.sendErr = nil
+	s.mu.Unlock()
+	if n.Tries > 0 {
+		ev.Summary += fmt.Sprintf(" on try %d", n.Tries+1)
+		n.Note = fmt.Sprintf("Sent on try %d", n.Tries+1)
+	}
+	n.State, n.SentAt, n.SnoozedUntil, n.Tries, n.RetryAt = model.NotifySent, &now, nil, 0, nil
 	if err != nil {
 		ev.Error = err.Error()
 	}
@@ -214,9 +236,52 @@ func (s *Service) deliver(ctx context.Context, n *model.Notification, settings m
 	})
 }
 
+// sendFailed stores a send that reached no phone: tried again after the
+// next wait, or failed for good after the last (tests at once).
+func (s *Service) sendFailed(ctx context.Context, n *model.Notification, err error, ev model.AuditEvent) error {
+	n.Tries++
+	ev.Outcome, ev.Error = model.OutcomeFailure, err.Error()
+	switch {
+	case n.Kind == model.NotifyTest:
+		n.State, n.Note = model.NotifyFailed, err.Error()
+		ev.Summary = fmt.Sprintf("Sending %q failed", n.Title)
+	case n.Tries <= len(retryAfter):
+		at := s.now().Add(retryAfter[n.Tries-1])
+		n.State, n.RetryAt = model.NotifyRetrying, &at
+		n.Note = fmt.Sprintf("Not sent (%v); trying again at %s", err, s.clockText(at))
+		ev.Summary = fmt.Sprintf("Sending %q failed; trying again at %s", n.Title, s.clockText(at))
+	default:
+		n.State, n.RetryAt = model.NotifyFailed, nil
+		n.Note = fmt.Sprintf("Not sent after %d tries (%v)", n.Tries, err)
+		ev.Summary = fmt.Sprintf("Sending %q failed %d times; given up", n.Title, n.Tries)
+	}
+	if n.Tries == 1 || n.State == model.NotifyFailed {
+		s.record(ctx, ev)
+	}
+	_, serr := s.Store.SaveNotification(*n)
+	return serr
+}
+
+// stopRetrying ends a notification whose send is tried again, without
+// sending it, and records why: a failure unless it is no longer needed.
+func (s *Service) stopRetrying(ctx context.Context, n *model.Notification, state, why string) error {
+	n.State, n.Note, n.RetryAt = state, "Not sent: "+why, nil
+	ev := notifyEvent(*n, fmt.Sprintf("Stopped sending %q: %s", n.Title, why))
+	if state == model.NotifyFailed {
+		ev.Outcome = model.OutcomeFailure
+	}
+	s.record(ctx, ev)
+	_, err := s.Store.SaveNotification(*n)
+	return err
+}
+
 // resolve marks a notification done and clears it from the phones.
 func (s *Service) resolve(ctx context.Context, n *model.Notification, note string, settings model.NotificationSettings) error {
 	now := s.now()
+	if n.State == model.NotifyRetrying {
+		n.ResolvedAt = &now
+		return s.stopRetrying(ctx, n, model.NotifyDone, strings.ToLower(note[:1])+note[1:])
+	}
 	wasOnPhone := n.State == model.NotifySent
 	n.State, n.Note, n.ResolvedAt, n.SnoozedUntil = model.NotifyDone, note, &now, nil
 	if _, err := s.Store.SaveNotification(*n); err != nil {
@@ -447,6 +512,7 @@ func (s *Service) notificationConnection() ConnectionView {
 	settings, err := s.NotificationSettings()
 	s.mu.RLock()
 	lerr, ok := s.listenErr, s.listenOK
+	serr, serrAt := s.sendErr, s.sendErrAt
 	s.mu.RUnlock()
 	switch {
 	case err != nil:
@@ -455,6 +521,9 @@ func (s *Service) notificationConnection() ConnectionView {
 		c.Status, c.Detail = "not_configured", s.Clients().NotifyNote
 	case !settings.Enabled:
 		c.Status, c.Detail = "not_configured", "Off; turn them on under Settings → Notifications"
+	case serr != nil:
+		c.Status, c.Detail = "error", fmt.Sprintf("%s; the last message failed at %s: %v",
+			plural(len(settings.Phones), "phone"), s.clockText(serrAt), serr)
 	case errors.Is(lerr, homeassistant.ErrNotAdmin):
 		c.Status, c.Detail = "error", plural(len(settings.Phones), "phone")+"; sending works, but "+lerr.Error()+
 			". Make the token's user an administrator in Home Assistant."

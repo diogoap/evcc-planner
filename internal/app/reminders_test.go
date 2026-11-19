@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -417,4 +418,188 @@ func TestBackHomeReminder(t *testing.T) {
 	ta.notifications(func(s map[string]any) { s["urgentInQuiet"] = false })
 	arrive(ta, mon(23, 30))
 	ta.expectSent()
+}
+
+// downPhone turns notifications on (without questions) with a phone that
+// can't be reached until restored. Its check reports the error of the sends
+// it tried; sends records the activity log's notification entries since the
+// last look, failures marked with "!".
+type downPhone struct {
+	ta  *testApp
+	log *eventLog
+}
+
+const unreachable = "phone unreachable"
+
+func newDownPhone(ta *testApp) *downPhone {
+	ta.t.Helper()
+	ta.json("POST", "/api/demo/reset", map[string]any{}, http.StatusNoContent, nil)
+	ta.notifications(func(s map[string]any) { s["questions"] = false })
+	ta.phone().Take()
+	ta.phone().Fail = errors.New(unreachable)
+	p := &downPhone{ta: ta, log: &eventLog{ta: ta}}
+	p.log.fresh()
+	return p
+}
+
+func (p *downPhone) check(at time.Time) error {
+	p.ta.t.Helper()
+	p.ta.at(at)
+	p.ta.poll()
+	if err := p.ta.app.Service.SyncPlan(context.Background()); err != nil {
+		p.ta.t.Fatal(err)
+	}
+	return p.ta.app.Service.CheckNotifications(context.Background())
+}
+
+// fails checks at a time when a send is tried and fails.
+func (p *downPhone) fails(at time.Time) {
+	p.ta.t.Helper()
+	if err := p.check(at); err == nil || !strings.Contains(err.Error(), unreachable) {
+		p.ta.t.Fatalf("check at %s = %v, want the phone's error", at.Format("15:04"), err)
+	}
+}
+
+func (p *downPhone) quiet(at time.Time) {
+	p.ta.t.Helper()
+	if err := p.check(at); err != nil {
+		p.ta.t.Fatalf("check at %s = %v", at.Format("15:04"), err)
+	}
+}
+
+func (p *downPhone) sends(want ...string) {
+	p.ta.t.Helper()
+	var got []string
+	for _, e := range p.log.fresh() {
+		if e.Action == "notification.send" {
+			mark := ""
+			if e.Outcome == model.OutcomeFailure {
+				mark = "!"
+			}
+			got = append(got, mark+e.Summary)
+		}
+	}
+	if strings.Join(got, " | ") != strings.Join(want, " | ") {
+		p.ta.t.Fatalf("activity %q, want %q", got, want)
+	}
+}
+
+func TestFailedNotificationsAreTriedAgain(t *testing.T) {
+	ta := newTestApp(t, "")
+	p := newDownPhone(ta)
+	mon := func(h, m int) time.Time { return time.Date(2026, 11, 9, h, m, 0, 0, ams) }
+	tue := func(h, m int) time.Time { return time.Date(2026, 11, 10, h, m, 0, 0, ams) }
+	const early = "early:recurring:1:2026-11-10"
+
+	// The early reminder can't be sent: it is tried again in 2 minutes, and
+	// Settings → Connections says so.
+	p.fails(mon(22, 46))
+	ta.expectSent()
+	n := ta.notification(early)
+	if n.State != model.NotifyRetrying || n.Tries != 1 || !n.RetryAt.Equal(mon(22, 48)) ||
+		n.Note != "Not sent (mobile_app_demo_phone: phone unreachable); trying again at 22:48" || !n.Open() {
+		t.Fatalf("after the first failure = %+v", n)
+	}
+	p.sends(`!Sending "Plug in to charge cheaply" failed; trying again at 22:48`)
+	if c := connection(ta, "Phone notifications"); c.Status != "error" ||
+		c.Detail != "1 phone; the last message failed at 22:46: mobile_app_demo_phone: phone unreachable" {
+		t.Errorf("connection = %+v", c)
+	}
+
+	// Not before its time; the next failure waits 5 minutes, unlogged.
+	p.quiet(mon(22, 47))
+	p.fails(mon(22, 48))
+	if n := ta.notification(early); n.Tries != 2 || !n.RetryAt.Equal(mon(22, 53)) {
+		t.Fatalf("after the second failure = %+v", n)
+	}
+	p.sends()
+
+	// The phone is back: the third try reaches it.
+	ta.phone().Fail = nil
+	p.quiet(mon(22, 53))
+	ta.expectSent("Plug in to charge cheaply")
+	if n := ta.notification(early); n.State != model.NotifySent || n.Tries != 0 || n.RetryAt != nil || n.Note != "Sent on try 3" {
+		t.Fatalf("after the third try = %+v", n)
+	}
+	p.sends(`Sent "Plug in to charge cheaply" to 1 phone on try 3`)
+	if c := connection(ta, "Phone notifications"); c.Status == "error" {
+		t.Errorf("connection after a send = %+v", c)
+	}
+
+	// The urgent reminder (it may come in quiet hours) fails four times:
+	// given up after waits of 2, 5, and 15 minutes.
+	ta.phone().Fail = errors.New(unreachable)
+	p.fails(tue(6, 10))
+	p.fails(tue(6, 12))
+	p.fails(tue(6, 17))
+	p.quiet(tue(6, 31))
+	p.fails(tue(6, 32))
+	n = ta.notification("urgent:recurring:1:2026-11-10")
+	if n.State != model.NotifyFailed || n.Tries != 4 || n.RetryAt != nil || n.Note != "Not sent after 4 tries (mobile_app_demo_phone: phone unreachable)" || n.Open() {
+		t.Fatalf("given up = %+v", n)
+	}
+	p.sends(`!Sending "Plug in by 06:36" failed; trying again at 06:12`, `!Sending "Plug in by 06:36" failed 4 times; given up`)
+}
+
+func TestRetriesEndWhenNoLongerNeeded(t *testing.T) {
+	mon := func(h, m int) time.Time { return time.Date(2026, 11, 9, h, m, 0, 0, ams) }
+	const early = "early:recurring:1:2026-11-10"
+	stopped := func(ta *testApp, state, note string) {
+		t.Helper()
+		if n := ta.notification(early); n.State != state || n.Note != note || n.RetryAt != nil || n.Open() {
+			t.Errorf("stopped = %+v", n)
+		}
+	}
+
+	// Plugging in ends it, as it ends a reminder on the phone; there is
+	// nothing to clear.
+	ta := newTestApp(t, "")
+	p := newDownPhone(ta)
+	p.fails(mon(22, 46))
+	ta.phone().Fail = nil
+	ta.at(mon(22, 47))
+	ta.plug(true, 38)
+	ta.expectSent()
+	stopped(ta, model.NotifyDone, "Not sent: no longer needed")
+	p.sends(`!Sending "Plug in to charge cheaply" failed; trying again at 22:48`,
+		`Stopped sending "Plug in to charge cheaply": no longer needed`)
+
+	// A non-urgent reminder doesn't come in quiet hours (from 23:00).
+	ta = newTestApp(t, "")
+	p = newDownPhone(ta)
+	p.fails(mon(22, 46))
+	p.fails(mon(22, 48))
+	p.fails(mon(22, 53))
+	p.quiet(mon(23, 8))
+	stopped(ta, model.NotifyFailed, "Not sent: quiet hours")
+	p.sends(`!Sending "Plug in to charge cheaply" failed; trying again at 22:48`,
+		`!Stopped sending "Plug in to charge cheaply": quiet hours`)
+
+	// Nor more than 15 minutes after its time, e.g. after the checks paused.
+	ta = newTestApp(t, "")
+	p = newDownPhone(ta)
+	p.fails(mon(22, 46))
+	ta.phone().Fail = nil
+	p.quiet(mon(22, 48).Add(16 * time.Minute))
+	ta.expectSent()
+	stopped(ta, model.NotifyFailed, "Not sent: too late to try again")
+}
+
+func TestInformationIsDoneOnceARetryArrives(t *testing.T) {
+	ta := newTestApp(t, "")
+	p := newDownPhone(ta)
+	at := time.Date(2026, 11, 9, 20, 0, 0, 0, ams)
+	ta.at(at)
+	ta.plug(true, 38)
+	ta.plug(false, 38) // Tuesday's school run needs 42%
+	recent, _ := ta.app.Store.RecentNotifications(1)
+	if len(recent) != 1 || recent[0].Kind != model.NotifyUnplugged || recent[0].State != model.NotifyRetrying {
+		t.Fatalf("unplugged early = %+v", recent)
+	}
+	ta.phone().Fail = nil
+	p.quiet(at.Add(2 * time.Minute))
+	ta.expectSent("Unplugged early")
+	if n, _ := ta.app.Store.Notification(recent[0].ID); n.State != model.NotifyDone || n.Note != "Sent on try 2" {
+		t.Errorf("after the retry = %+v", n)
+	}
 }

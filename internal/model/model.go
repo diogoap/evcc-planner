@@ -740,10 +740,11 @@ const (
 	NotifyPrices    = "prices"     // new prices changed the plan while unplugged
 	NotifyInfo      = "info"       // a follow-up, e.g. after Skip trip
 
-	NotifySent    = "sent"
-	NotifySnoozed = "snoozed"
-	NotifyDone    = "done"
-	NotifyFailed  = "failed"
+	NotifySent     = "sent"
+	NotifySnoozed  = "snoozed"
+	NotifyRetrying = "retrying" // the send failed; it is tried again
+	NotifyDone     = "done"
+	NotifyFailed   = "failed"
 
 	VerbSnooze = "snooze"
 	VerbSkip   = "skip"
@@ -772,10 +773,17 @@ type Notification struct {
 	SentAt       *time.Time `json:"sentAt,omitempty"`
 	SnoozedUntil *time.Time `json:"snoozedUntil,omitempty"`
 	ResolvedAt   *time.Time `json:"resolvedAt,omitempty"`
+	// Tries counts the failed sends since the last one that worked;
+	// RetryAt is when a retrying notification is tried again.
+	Tries   int        `json:"tries,omitempty"`
+	RetryAt *time.Time `json:"retryAt,omitempty"`
 }
 
-// Open reports whether the notification still asks for something.
-func (n Notification) Open() bool { return n.State == NotifySent || n.State == NotifySnoozed }
+// Open reports whether the notification still asks for something: also
+// while its send is tried again.
+func (n Notification) Open() bool {
+	return n.State == NotifySent || n.State == NotifySnoozed || n.State == NotifyRetrying
+}
 
 // Adjustment is a temporary EVCC change the app made from daily advice. When
 // it expires (or is cancelled) the previous value is restored, unless it was

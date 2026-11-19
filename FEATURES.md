@@ -74,6 +74,7 @@ notifications is in [AUTOMATION.md](AUTOMATION.md).
 - Problems: charging stopped, unplugged early, EVCC not in Smart mode, target missed. Questions about unclear calendar events. An optional "ready" message. "Plug in for the sun".
 - Charge extra: "Plug in for charge extra" before its cheap hours when the car is home but unplugged (for a cheap night, just before quiet hours), and a message when an extra plan is created automatically.
 - Quiet hours (23:00–07:00 by default). Each message is sent once and is cleared when you plug in.
+- A message that doesn't reach the phone is tried again after 2, 5, and 15 more minutes while it still matters. Settings shows it as "Trying again", and Connections shows the last failure.
 - In AI mode, messages about charging start with "AI mode:".
 
 ## Screens

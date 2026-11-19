@@ -85,6 +85,9 @@ type Service struct {
 	consNote  consumptionNote
 	listenErr error // the notification button listener
 	listenOK  bool
+	// The last notification send, while it failed: its error and time.
+	sendErr   error
+	sendErrAt time.Time
 }
 
 func (s *Service) loc() *time.Location { return s.Cfg.Location }

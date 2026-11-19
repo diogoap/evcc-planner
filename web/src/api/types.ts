@@ -906,11 +906,14 @@ export interface PhoneNotification {
   message: string
   verbs: NotificationVerb[]
   urgent: boolean
-  state: 'sent' | 'snoozed' | 'done' | 'failed'
+  /** retrying: the send failed and is tried again at retryAt. */
+  state: 'sent' | 'snoozed' | 'retrying' | 'done' | 'failed'
   note?: string
   latest?: string
   createdAt: string
   sentAt?: string
   snoozedUntil?: string
   resolvedAt?: string
+  tries?: number
+  retryAt?: string
 }

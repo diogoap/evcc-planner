@@ -1335,10 +1335,10 @@ func (s *Store) NotificationByKey(key string) (*model.Notification, error) {
 	return &list[0], nil
 }
 
-// OpenNotifications lists notifications that are sent or snoozed, oldest
-// first.
+// OpenNotifications lists notifications that are sent, snoozed, or tried
+// again, oldest first.
 func (s *Store) OpenNotifications() ([]model.Notification, error) {
-	return s.notifications(`WHERE state IN (?, ?) ORDER BY id`, model.NotifySent, model.NotifySnoozed)
+	return s.notifications(`WHERE state IN (?, ?, ?) ORDER BY id`, model.NotifySent, model.NotifySnoozed, model.NotifyRetrying)
 }
 
 // RecentNotifications lists the newest notifications.

@@ -50,6 +50,7 @@ var (
 	beforeQuiet     = 15 * time.Minute // early reminders due in quiet hours come this long before them
 	arrivalWindow   = 30 * time.Minute // the location sensor turned home this recently: an arrival
 	arrivalHold     = 30 * time.Minute // other non-urgent plug-in reminders wait this long after a back-home one
+	retryLate       = 15 * time.Minute // a failed send not tried again within this of its time is given up
 )
 
 // reminderKinds ask the driver to plug in; plugging in ends them.
@@ -109,6 +110,7 @@ func (s *Service) CheckNotifications(ctx context.Context) error {
 	r.solar()
 	r.extra()
 	r.snoozed()
+	r.retry()
 	r.questions()
 	return r.err()
 }
@@ -168,7 +170,7 @@ func (r *reminders) allowed(urgent bool) bool {
 
 // send delivers a notification once per key. Informational ones are done
 // right away; a reminder replaces open reminders for the same trip.
-func (r *reminders) send(n model.Notification, info bool) {
+func (r *reminders) send(n model.Notification) {
 	if existing, err := r.s.Store.NotificationByKey(n.Key); err != nil || existing != nil {
 		r.fail(err)
 		return
@@ -185,7 +187,7 @@ func (r *reminders) send(n model.Notification, info bool) {
 		r.fail(err)
 		return
 	}
-	if info {
+	if infoKinds[n.Kind] {
 		n.State = model.NotifyDone
 		_, err := r.s.Store.SaveNotification(n)
 		r.fail(err)
@@ -313,7 +315,7 @@ func (r *reminders) arrived(prev, cur *notifyState) {
 		Key: fmt.Sprintf("arrived:%d", e.LastChanged.Unix()), Kind: model.NotifyArrived, Subject: key, Urgent: true, Latest: latest,
 		Title: "Back home: plug in", Message: strings.Join(parts, " "),
 		Verbs: []string{model.VerbSnooze, model.VerbView},
-	}, false)
+	})
 }
 
 // arrivedRecently reports whether a back-home reminder went out in the last
@@ -426,7 +428,7 @@ func (r *reminders) newPrices(prev, cur *notifyState) {
 	r.send(model.Notification{
 		Key: fmt.Sprintf("prices:%d", cur.pricesUntil.Unix()), Kind: model.NotifyPrices, Title: "New prices: plug in",
 		Message: strings.Join(parts, " ") + " Plug in so it can charge.", Verbs: []string{model.VerbView},
-	}, false)
+	})
 }
 
 // solarAdvice is today's advice when it is to charge extra from the sun and
@@ -477,7 +479,7 @@ func (r *reminders) solar() {
 		Message: fmt.Sprintf("Sunshine until about %s charges the car at about €%.2f/kWh (€%.2f without the tax on own solar), %s. Plug in to use it.",
 			r.s.clockText(*a.SolarUntil), solarGridPrice(a), *a.SolarPrice, than),
 		Verbs: []string{model.VerbSnooze, model.VerbView},
-	}, false)
+	})
 }
 
 // extraAdvice is today's or tomorrow's advice, the first whose cheap
@@ -534,7 +536,7 @@ func (r *reminders) extra() {
 		Key: "extra:" + a.Date, Kind: model.NotifyExtra, Subject: "extra:" + a.Date, Latest: &until,
 		Title: "Plug in for charge extra", Message: a.Summary + then,
 		Verbs: []string{model.VerbSnooze, model.VerbView},
-	}, false)
+	})
 }
 
 // autoExtra reports whether advice auto-apply will create the day's extra
@@ -574,6 +576,41 @@ func (r *reminders) snoozed() {
 	}
 }
 
+// retry sends notifications again whose send failed, once their wait is
+// over (retryAfter). cleanUp and newer reminders have already ended those
+// no longer needed; it gives up past the notification's latest time, in
+// quiet hours it may not come in, or when the checks were paused too long
+// to try in time.
+func (r *reminders) retry() {
+	open, err := r.s.Store.OpenNotifications()
+	if err != nil {
+		r.fail(err)
+		return
+	}
+	for i := range open {
+		n := &open[i]
+		if n.State != model.NotifyRetrying || n.RetryAt == nil || r.now.Before(*n.RetryAt) {
+			continue
+		}
+		switch {
+		case r.now.Sub(*n.RetryAt) > retryLate:
+			r.fail(r.s.stopRetrying(r.ctx, n, model.NotifyFailed, "too late to try again"))
+		case n.Latest != nil && !r.now.Before(*n.Latest):
+			r.fail(r.s.stopRetrying(r.ctx, n, model.NotifyFailed, "past its latest time"))
+		case !r.allowed(n.Urgent):
+			r.fail(r.s.stopRetrying(r.ctx, n, model.NotifyFailed, "quiet hours"))
+		default:
+			if err := r.s.deliver(r.ctx, n, r.settings); err != nil {
+				r.fail(err)
+			} else if infoKinds[n.Kind] {
+				n.State = model.NotifyDone
+				_, err := r.s.Store.SaveNotification(*n)
+				r.fail(err)
+			}
+		}
+	}
+}
+
 // plugIn sends the plug-in reminders for the next departure while the car
 // is unplugged at home.
 func (r *reminders) plugIn() {
@@ -602,7 +639,7 @@ func (r *reminders) plugIn() {
 			Message: fmt.Sprintf("Plugging in now gives about %d%% by %s (%s needs %d%%).",
 				int(math.Min(100, math.Floor(reach))), r.s.clockText(next.DepartAt), r.title(next), next.TargetSoC),
 			Verbs: []string{model.VerbSkip, model.VerbView},
-		}, false)
+		})
 		return
 	}
 	// Urgent: shortly before the latest plug-in time.
@@ -615,7 +652,7 @@ func (r *reminders) plugIn() {
 			Title:   "Plug in by " + r.s.clockText(*latest),
 			Message: fmt.Sprintf("%s needs %d%% by %s.", r.title(next), next.TargetSoC, r.s.clockText(next.DepartAt)),
 			Verbs:   verbs,
-		}, false)
+		})
 		return
 	}
 	// Early: before the first slot of the planned charging; just before
@@ -645,7 +682,7 @@ func (r *reminders) plugIn() {
 		n.Message = fmt.Sprintf("Charging is cheapest from %s (%s/kWh); the plan charges %d%% by %s, also for %s.",
 			when, priceText(first.Value), target.SoC, r.s.clockText(target.ReadyBy), target.Ahead[0].Title)
 	}
-	r.send(n, false)
+	r.send(n)
 }
 
 func priceText(v float64) string { return fmt.Sprintf("€%.2f", v) }
@@ -680,7 +717,7 @@ func (r *reminders) problems(cur *notifyState) {
 		r.send(model.Notification{
 			Key: fmt.Sprintf("stopped:%s:%d", key, next.DepartAt.Unix()), Kind: model.NotifyStopped, Subject: key, Urgent: true,
 			Title: "Charging stopped", Message: fmt.Sprintf("Charging stopped at %d%%; %s", soc, needs), Verbs: []string{model.VerbView},
-		}, false)
+		})
 	}
 	if wrongMode && r.now.Sub(cur.modeSince) >= modeAfter {
 		n := model.Notification{
@@ -695,7 +732,7 @@ func (r *reminders) problems(cur *notifyState) {
 		case "Fast":
 			n.Message = "It charges at full power now, not in the plan's cheapest slots or from solar. Set EVCC to Smart."
 		}
-		r.send(n, false)
+		r.send(n)
 	}
 }
 
@@ -748,7 +785,7 @@ func (r *reminders) unplugged(soc float64) {
 			r.fail(err)
 			return
 		}
-		r.send(n, true)
+		r.send(n)
 		return
 	}
 	if r.on && r.settings.Problems && r.allowed(true) {
@@ -757,7 +794,7 @@ func (r *reminders) unplugged(soc float64) {
 			Title:   "Unplugged early",
 			Message: fmt.Sprintf("Unplugged at %d%%; %s needs %d%% by %s.", at, r.title(next), next.TargetSoC, r.s.clockText(next.DepartAt)),
 			Verbs:   []string{model.VerbView},
-		}, true)
+		})
 	}
 }
 
@@ -782,7 +819,7 @@ func (r *reminders) ready(cur *notifyState) {
 		Title: "Ready for " + target.Title, Message: fmt.Sprintf("Charged to %d%% for %s at %s.",
 			int(math.Round(r.lp.VehicleSoc)), target.Title, r.s.clockText(target.ReadyBy)),
 		Verbs: []string{model.VerbView},
-	}, true)
+	})
 }
 
 // questions asks about calendar events marked Needs review, once each.
@@ -798,6 +835,6 @@ func (r *reminders) questions() {
 			Key: "question:" + t.Key, Kind: model.NotifyQuestion, Subject: t.Key, Title: "Is this a car trip?",
 			Message: fmt.Sprintf("%q on %s at %s, %s.", t.Title, r.s.dayText(t.ArriveAt), t.ArriveLocal, t.Destination),
 			Verbs:   []string{model.VerbCount, model.VerbNoTrip, model.VerbView},
-		}, false)
+		})
 	}
 }

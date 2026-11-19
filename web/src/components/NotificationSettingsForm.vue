@@ -72,6 +72,7 @@ const verbTitles: Record<NotificationVerb, string> = {
 const stateText: Record<PhoneNotification['state'], string> = {
   sent: 'On the phone',
   snoozed: 'Snoozed',
+  retrying: 'Trying again',
   done: 'Done',
   failed: 'Failed',
 }
@@ -300,7 +301,10 @@ async function press(n: PhoneNotification, verb: NotificationVerb) {
             <strong>{{ n.title }}</strong>
             <span
               class="pill"
-              :class="{ 'tone-warn': n.state === 'snoozed', 'tone-bad': n.state === 'failed' }"
+              :class="{
+                'tone-warn': n.state === 'snoozed' || n.state === 'retrying',
+                'tone-bad': n.state === 'failed',
+              }"
             >
               {{ stateText[n.state] }}
             </span>

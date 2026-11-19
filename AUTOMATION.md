@@ -526,6 +526,17 @@ sequenceDiagram
   text, up to three buttons, and a tag. A newer message with the same tag
   replaces the old one on the phone; when a message is no longer relevant, the
   planner clears it.
+- **Failed sends:** when no phone gets a message (Home Assistant unreachable,
+  say), it is tried again after 2, then 5, then 15 more minutes, and given up
+  after the fourth failed try. Meanwhile it counts as open, so the usual rules
+  end it once it's no longer needed (plugged in, the trip left, a newer
+  reminder). It is also given up past its latest time (such as the latest
+  plug-in time), in quiet hours it may not come in, and when the planner
+  couldn't try within 15 minutes of its time (EVCC data too old, the app
+  stopped). The activity log has the first failure and the outcome, not every
+  try. Settings → Notifications lists it as "Trying again", and Settings →
+  Connections shows the last failure until a message gets through. A test
+  notification is not tried again: its error shows right away.
 - **Phones:** Settings → Notifications lists Home Assistant's
   `notify.mobile_app_*` services to choose from.
 - **Button presses:** the planner keeps a websocket connection to Home
@@ -711,7 +722,7 @@ Settings → **Notifications**:
 | `plan.keep` | Automation | On plug-in mode: why nothing was sent |
 | `control.pause` / `control.resume` | Automation or UI | "Automatic plans paused: plan chosen in EVCC (80% by Wed 07:00)" |
 | `plan.missed` | Automation | "Left for Utrecht with 48% (target 52%)" |
-| `notification.send` | Automation | "Sent 'Plug in by 10:20' to 1 phone" (failures are logged too) |
+| `notification.send` | Automation | "Sent 'Plug in by 10:20' to 1 phone"; a failed send: "Sending 'Plug in by 06:36' failed; trying again at 06:12", then "Sent … on try 3", "… failed 4 times; given up", or "Stopped sending …: no longer needed" |
 | `notification.action` | Notification | "Remind in 30 min pressed: reminder snoozed until 10:20" |
 | `ai.run` | Automation or UI | "AI plan (new prices): target 64% by Tue 07:48; Tue charge extra to 75%" |
 | `ai.skip` | Automation | "AI plan not made on plug-in: 3 runs today already (Settings → Advice → AI mode); the last plan applies", or "… the last of today's 3 runs is kept for tomorrow's prices …" |
@@ -722,8 +733,8 @@ Settings → **Notifications**:
 
 - Go API tests run the production wiring in demo mode with a fixed clock: each
   mode, writes and removals, pause and resume, extra-plan merges, charge-ahead
-  decisions, each reminder and its quiet-hour handling, deduplication, and
-  button actions.
+  decisions, each reminder and its quiet-hour handling, deduplication,
+  failed sends tried again, and button actions.
 - The charge-ahead calculation is a pure function in `internal/planner` with
   its own table tests.
 - AI mode's prompt, schema, and checks are pure (`internal/aiplan`) with their

@@ -103,6 +103,26 @@ describe('NotificationSettingsForm', () => {
     expect(api.pressNotification).toHaveBeenCalledWith(7, 'snooze')
   })
 
+  it('shows a send that is tried again, with its note and no demo buttons', async () => {
+    api.notifications.mockResolvedValue([
+      {
+        ...urgent,
+        state: 'retrying',
+        sentAt: undefined,
+        tries: 1,
+        retryAt: '2026-11-10T05:12:00Z',
+        note: 'Not sent (phone unreachable); trying again at 06:12',
+      },
+    ])
+    const w = mount(NotificationSettingsForm)
+    await flushPromises()
+    const item = w.get('[data-testid="notification-urgent"]')
+    expect(item.get('.pill').text()).toBe('Trying again')
+    expect(item.get('.pill').classes()).toContain('tone-warn')
+    expect(item.text()).toContain('Not sent (phone unreachable); trying again at 06:12')
+    expect(item.findAll('button')).toHaveLength(0)
+  })
+
   it('explains when Home Assistant cannot list phones', async () => {
     api.phones.mockRejectedValue(new Error('Set HA_TOKEN to send notifications through Home Assistant'))
     const w = mount(NotificationSettingsForm)

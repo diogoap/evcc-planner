@@ -92,6 +92,10 @@ func TestNotificationSettingsAndTest(t *testing.T) {
 	if len(got) != 1 || got[0].Outcome != model.OutcomeFailure || !strings.Contains(got[0].Error, "phone unreachable") {
 		t.Errorf("failure = %+v", got)
 	}
+	// A test is not tried again: you see the error right away.
+	if recent, _ := ta.app.Store.RecentNotifications(1); len(recent) != 1 || recent[0].State != model.NotifyFailed {
+		t.Errorf("failed test = %+v", recent)
+	}
 }
 
 func TestNotificationButtons(t *testing.T) {
