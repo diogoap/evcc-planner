@@ -70,6 +70,11 @@ func New(cfg *config.Config, log *slog.Logger) (*App, error) {
 		stub = evcc.NewStub(clk, cfg.Location)
 	}
 	phone := &homeassistant.NotifyStub{}
+	// Demo services can be made to fail on request (Settings → Connections).
+	var faults *demo.Faults
+	if cfg.Demo {
+		faults = &demo.Faults{Phone: phone}
+	}
 
 	var source calendar.Source = calendar.HTTPSource{
 		HTTP: client(service.APICalendar, 30*time.Second, func(t *audit.Transport) { t.HideURL = true }),
@@ -80,6 +85,9 @@ func New(cfg *config.Config, log *slog.Logger) (*App, error) {
 		if len(calendars) == 0 {
 			calendars = calendar.StubCalendars
 		}
+	}
+	if faults != nil {
+		source = faults.Calendar(source)
 	}
 	syncer := &calendar.Syncer{
 		Store: st, Source: source, Calendars: calendars, Clock: clk, Location: cfg.Location, Log: log,
@@ -97,6 +105,9 @@ func New(cfg *config.Config, log *slog.Logger) (*App, error) {
 		}
 		var router routes.Router
 		router, i.RoutesNote = routesRouter(cfg, cs, clk, client)
+		if faults != nil {
+			i.EVCC, router = faults.EVCC(i.EVCC), faults.Routes(router)
+		}
 		i.Routes = &routes.Resolver{
 			Router: router, Cache: st, Clock: clk, Location: cfg.Location,
 			TTL: cs.RoutesCacheTTL(), TrafficAware: cs.RoutesTrafficAware,
@@ -104,6 +115,9 @@ func New(cfg *config.Config, log *slog.Logger) (*App, error) {
 		i.Forecasts = forecasts(cfg, cs, clk, client)
 		i.AI, i.AINote = aiDecider(cfg, cs, client)
 		i.HA, i.HASensors, i.HANote = homeAssistant(cfg, cs, stub, func() time.Time { return svc.Clock.Now() })
+		if faults != nil && i.HA != nil {
+			i.HA = faults.HomeAssistant(i.HA)
+		}
 		i.Notify, i.Actions, i.NotifyNote = notifier(cfg, cs, phone)
 		return i
 	}
@@ -122,9 +136,10 @@ func New(cfg *config.Config, log *slog.Logger) (*App, error) {
 		st.Close()
 		return nil, err
 	}
-	srv := &server.Server{Svc: svc, Log: log, Demo: stub}
+	srv := &server.Server{Svc: svc, Log: log, Demo: stub, Faults: faults}
 	if cfg.Demo {
 		srv.Reset = func(ctx context.Context) error {
+			faults.Clear()
 			if err := st.Reset(); err != nil {
 				return err
 			}

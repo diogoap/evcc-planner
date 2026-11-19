@@ -13,6 +13,7 @@ import (
 	"math"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/diogoap/evcc-planner/internal/audit"
@@ -181,6 +182,30 @@ type Resolver struct {
 	TTL          time.Duration
 	TrafficAware bool
 	Timeout      time.Duration
+
+	// How the provider's lookups went (see Health).
+	mu         sync.Mutex
+	okAt       time.Time
+	failedAt   time.Time
+	lastFailed error
+}
+
+// Health reports the provider's last successful lookup, and the last
+// failed one while no lookup has worked since (err nil otherwise).
+func (r *Resolver) Health() (okAt, failedAt time.Time, err error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.okAt, r.failedAt, r.lastFailed
+}
+
+func (r *Resolver) noteLookup(err error, at time.Time) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if err != nil {
+		r.failedAt, r.lastFailed = at, err
+		return
+	}
+	r.okAt, r.lastFailed = at, nil
 }
 
 // Typical returns any cached duration for the pair, used to guess the
@@ -223,6 +248,7 @@ func (r *Resolver) Leg(ctx context.Context, origin, destination string, departAt
 		},
 	})
 	route, err := r.Router.Compute(cctx, origin, destination, &departAt)
+	r.noteLookup(err, now)
 	if err != nil {
 		if c, cerr := r.Cache.AnyRoute(o, d, provider); cerr == nil && c != nil {
 			return legFrom(c, true, true), nil

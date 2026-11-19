@@ -306,6 +306,13 @@ func (s *NotifyStub) Phones(context.Context) ([]string, error) {
 	return []string{StubPhone}, nil
 }
 
+// SetFail makes every call fail with err, or work again with nil.
+func (s *NotifyStub) SetFail(err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.Fail = err
+}
+
 // Notify records a message.
 func (s *NotifyStub) Notify(_ context.Context, phone string, m Message) error {
 	s.mu.Lock()

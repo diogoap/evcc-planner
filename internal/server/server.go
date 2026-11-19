@@ -21,6 +21,7 @@ import (
 
 	"github.com/diogoap/evcc-planner/internal/audit"
 	"github.com/diogoap/evcc-planner/internal/config"
+	"github.com/diogoap/evcc-planner/internal/demo"
 	"github.com/diogoap/evcc-planner/internal/evcc"
 	"github.com/diogoap/evcc-planner/internal/model"
 	"github.com/diogoap/evcc-planner/internal/service"
@@ -38,6 +39,8 @@ type Server struct {
 	Demo *evcc.Stub // set in demo mode to expose vehicle controls
 	// Reset reseeds demo data (demo mode only); browser tests use it.
 	Reset func(context.Context) error
+	// Faults makes demo services fail on request (demo mode only).
+	Faults *demo.Faults
 }
 
 // Handler returns the full HTTP handler.
@@ -108,6 +111,12 @@ func (s *Server) Handler() http.Handler {
 
 	if s.Demo != nil {
 		mux.HandleFunc("POST /api/demo/vehicle", s.demoVehicle)
+	}
+	if s.Faults != nil {
+		mux.HandleFunc("GET /api/demo/faults", func(w http.ResponseWriter, r *http.Request) {
+			writeJSON(w, http.StatusOK, s.Faults.List())
+		})
+		mux.HandleFunc("PUT /api/demo/faults", s.setDemoFault)
 	}
 	if s.Reset != nil {
 		mux.HandleFunc("POST /api/demo/notification-action", s.demoNotificationAction)
@@ -841,6 +850,31 @@ func (s *Server) demoHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// setDemoFault makes a demo service fail, or work again, then checks the
+// services at once so their status shows it.
+func (s *Server) setDemoFault(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Service string `json:"service"`
+		Fault   string `json:"fault"`
+	}
+	if err := decode(r, &in); err != nil {
+		s.fail(w, err)
+		return
+	}
+	if err := s.Faults.Set(in.Service, in.Fault); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	// These fail while their service is down; the status shows it.
+	ctx := r.Context()
+	_ = s.Svc.PollEVCC(ctx)
+	_ = s.Svc.PollHomeAssistant(ctx)
+	if in.Service == demo.FaultCalendar {
+		_ = s.Svc.Calendar.SyncAll(ctx)
+	}
+	writeJSON(w, http.StatusOK, s.Faults.List())
 }
 
 func (s *Server) demoVehicle(w http.ResponseWriter, r *http.Request) {

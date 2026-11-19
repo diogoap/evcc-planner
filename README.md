@@ -64,7 +64,9 @@ make dev     # demo data + stubbed integrations; open http://127.0.0.1:7201
 `make dev` needs no API keys. It runs the Go API on 127.0.0.1:7202 (rebuilt and
 restarted when Go or config files change) and the Vite UI on 127.0.0.1:7201 with
 hot reload. Ctrl+C stops both. Demo data lives in `data/demo.db`; `make dev-reset`
-deletes it.
+deletes it. To see how an outage looks, take a demo service down under Settings →
+Connections → Demo outages (or `PUT /api/demo/faults` with
+`{"service": "homeassistant", "fault": "down"}`; `"fault": ""` brings it back).
 
 ## Commands
 

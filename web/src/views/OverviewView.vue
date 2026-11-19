@@ -9,6 +9,7 @@ import ChartCards from '../components/ChartCards.vue'
 import DaysSelect from '../components/DaysSelect.vue'
 import DayPanel from '../components/DayPanel.vue'
 import ErrorBanner from '../components/ErrorBanner.vue'
+import HealthLine from '../components/HealthLine.vue'
 import PageSkeleton from '../components/PageSkeleton.vue'
 import ProposalDialog from '../components/ProposalDialog.vue'
 import ReadyCard from '../components/ReadyCard.vue'
@@ -162,6 +163,7 @@ function cancelAdjustment(id: number) {
     />
     <PageSkeleton v-else-if="!plan" kind="overview" />
     <template v-else>
+      <HealthLine :issues="status?.health ?? []" :now="plan.now" />
       <div v-for="w in plan.warnings" :key="w" class="banner tone-warn" role="status">{{ w }}</div>
 
       <div class="overview" :class="{ 'no-advice': !advice }">

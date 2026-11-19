@@ -46,6 +46,18 @@ const screens: Screen[] = [
       await expect(page.getByTestId('day-panel')).toBeVisible()
     },
   },
+  {
+    // An outage: the health line at the top of the Overview.
+    name: 'overview-health',
+    open: async (page) => {
+      const res = await page.request.put('/api/demo/faults', {
+        data: { service: 'homeassistant', fault: 'down' },
+      })
+      expect(res.status()).toBe(200)
+      await page.goto('/')
+      await expect(page.getByTestId('health-line')).toBeVisible()
+    },
+  },
   { name: 'charts', open: (page) => page.goto('/charts') },
   { name: 'trips', open: (page) => page.goto('/trips') },
   { name: 'recurring', open: (page) => page.goto('/recurring') },

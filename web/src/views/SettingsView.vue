@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
-import { onBeforeRouteLeave } from 'vue-router'
+import { onBeforeRouteLeave, useRoute } from 'vue-router'
 import { api } from '../api/client'
-import type { Connection, HASensor, Place, Settings, TripPlans } from '../api/types'
+import type { Connection, DemoFault, HASensor, Place, Settings, TripPlans } from '../api/types'
 import AIRunCard from '../components/AIRunCard.vue'
 import AISettingsForm from '../components/AISettingsForm.vue'
 import AdviceSettingsForm from '../components/AdviceSettingsForm.vue'
@@ -36,7 +36,10 @@ const adviceTabs: [AdviceTab, string][] = [
   ['rules', 'Automatic rules'],
   ['ai', 'AI mode'],
 ]
-const tab = ref<Tab>('home')
+// A link can open a section, e.g. /settings?tab=connections from the
+// Overview's health line.
+const route = useRoute()
+const tab = ref<Tab>(tabs.find(([t]) => t === route.query.tab)?.[0] ?? 'home')
 const adviceTab = ref<AdviceTab>('rules')
 const settings = ref<Settings | null>(null)
 // Home & vehicle and Planning edit the same settings; the other tabs' forms
@@ -250,6 +253,12 @@ async function load() {
 }
 onMounted(() => {
   load()
+  if (state.meta?.demo) {
+    api
+      .demoFaults()
+      .then((list) => (faults.value = list))
+      .catch(() => {})
+  }
   api
     .homeAssistantSensors()
     .then((list) => (sensors.value = list))
@@ -314,6 +323,20 @@ async function refreshForecasts() {
 async function checkEVCC() {
   await mutate(() => api.refreshEVCC(), 'EVCC checked')
   connections.value = await api.connections()
+}
+
+// Demo outages: a demo service fails until switched back.
+const faults = ref<DemoFault[]>([])
+
+async function setFault(f: DemoFault, down: boolean) {
+  try {
+    faults.value = await api.setDemoFault(f.service, down ? 'down' : '')
+    notify(down ? `${f.name} is down (demo)` : `${f.name} works again`)
+    connections.value = await api.connections()
+    refresh()
+  } catch (e) {
+    notify((e as Error).message, 'error')
+  }
 }
 
 async function applyDemo() {
@@ -631,6 +654,24 @@ async function applyDemo() {
           <p class="small muted m-0 mt-2">
             EVCC reads this SoC only while plugged in; the Home Assistant stub reports it always, 20 minutes
             behind.
+          </p>
+        </div>
+        <div v-if="faults.length" class="mt-5" data-testid="demo-faults">
+          <div class="card-title">Demo outages</div>
+          <div class="stack gap-2">
+            <div v-for="f in faults" :key="f.service" class="row nowrap">
+              <ToggleSwitch
+                :model-value="f.fault === 'down'"
+                :label="`${f.name} down`"
+                :data-testid="`demo-fault-${f.service}`"
+                @update:model-value="(down: boolean) => setFault(f, down)"
+              />
+              <span class="small">{{ f.name }} down</span>
+            </div>
+          </div>
+          <p class="small muted m-0 mt-2">
+            Makes a demo service fail, to see how the planner shows it: in the table above and on the
+            Overview. A reset of the demo, or switching it back, ends it.
           </p>
         </div>
       </section>

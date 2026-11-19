@@ -41,6 +41,33 @@ type StatusView struct {
 	// Location is where Home Assistant's car location sensor puts the car;
 	// nil without a sensor or a known state.
 	Location *LocationView `json:"location"`
+	// Health lists the connections that need attention (the Overview's
+	// health line).
+	Health []HealthIssue `json:"health"`
+}
+
+// HealthIssue is a connection with an error: what went wrong, and when it
+// last worked.
+type HealthIssue struct {
+	Name          string     `json:"name"`
+	Detail        string     `json:"detail"`
+	LastSuccessAt *time.Time `json:"lastSuccessAt,omitempty"`
+}
+
+// health lists the connections with an error; failing to list them is
+// one too.
+func (s *Service) health() []HealthIssue {
+	out := []HealthIssue{}
+	list, err := s.Connections()
+	if err != nil {
+		return append(out, HealthIssue{Name: "Planner", Detail: err.Error()})
+	}
+	for _, c := range list {
+		if c.Status == "error" {
+			out = append(out, HealthIssue{Name: c.Name, Detail: c.Detail, LastSuccessAt: c.LastSuccessAt})
+		}
+	}
+	return out
 }
 
 // LocationView is the car's location: "home", "not_home", or the name of a
@@ -68,7 +95,7 @@ type EVCCPlanView struct {
 // Status returns the cached EVCC state for the UI.
 func (s *Service) Status() StatusView {
 	snap := s.snapshot()
-	v := StatusView{Mode: s.Cfg.EVCC.Mode, PriceSlots: []evcc.Rate{}, Solar: []SolarView{}}
+	v := StatusView{Mode: s.Cfg.EVCC.Mode, PriceSlots: []evcc.Rate{}, Solar: []SolarView{}, Health: s.health()}
 	s.mu.RLock()
 	v.Location = s.carLoc
 	s.mu.RUnlock()
@@ -325,10 +352,10 @@ func (s *Service) Connections() ([]ConnectionView, error) {
 	snap := s.snapshot()
 	ev := ConnectionView{Name: "EVCC", Mode: s.Cfg.EVCC.Mode}
 	switch {
-	case s.Cfg.EVCC.Mode == config.ModeStub:
-		ev.Status, ev.Detail = "stub", "Demo feed"
 	case snap.err != nil:
 		ev.Status, ev.Detail = "error", snap.err.Error()
+	case s.Cfg.EVCC.Mode == config.ModeStub:
+		ev.Status, ev.Detail = "stub", "Demo feed"
 	case snap.state == nil:
 		ev.Status, ev.Detail = "error", "Not checked yet"
 	default:
@@ -367,11 +394,11 @@ func (s *Service) Connections() ([]ConnectionView, error) {
 				part += st.LastError
 			case st.LastSuccessAt != nil:
 				part += plural(st.EventCount, "event")
-				if cal.LastSuccessAt == nil || st.LastSuccessAt.Before(*cal.LastSuccessAt) {
-					cal.LastSuccessAt = st.LastSuccessAt
-				}
 			default:
 				part += "not synced yet"
+			}
+			if st.LastSuccessAt != nil && (cal.LastSuccessAt == nil || st.LastSuccessAt.Before(*cal.LastSuccessAt)) {
+				cal.LastSuccessAt = st.LastSuccessAt
 			}
 			if detail != "" {
 				detail += " · "
@@ -383,7 +410,14 @@ func (s *Service) Connections() ([]ConnectionView, error) {
 	out = append(out, cal)
 
 	rt := ConnectionView{Name: "Google Routes", Mode: s.Cfg.Routes.Mode}
+	okAt, failedAt, rerr := s.Clients().Routes.Health()
+	if !okAt.IsZero() {
+		rt.LastSuccessAt = &okAt
+	}
 	switch {
+	case rerr != nil:
+		rt.Status, rt.Detail = "error", fmt.Sprintf("The last lookup failed at %s: %v; trips use a cached route where there is one",
+			s.clockText(failedAt), rerr)
 	case s.Clients().Routes.Router.Name() == "stub":
 		rt.Status, rt.Detail = "stub", "Stub distances"
 		if s.Clients().RoutesNote != "" {

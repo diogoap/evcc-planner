@@ -20,6 +20,7 @@ const status: Status = {
   solar: [],
   plan: null,
   location: null,
+  health: [],
   vehicleTitle: 'Nissan Leaf',
 }
 

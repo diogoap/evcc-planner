@@ -519,6 +519,23 @@ export interface Status {
   plan: EVCCPlan | null
   /** Where Home Assistant's car location sensor puts the car, if one is set. */
   location: CarLocation | null
+  /** Connections that need attention: the Overview's health line. */
+  health: HealthIssue[]
+}
+
+/** A connection with an error: what went wrong, and when it last worked. */
+export interface HealthIssue {
+  name: string
+  detail: string
+  lastSuccessAt?: string
+}
+
+/** A demo service that can be made to fail (demo mode only). */
+export interface DemoFault {
+  service: 'evcc' | 'homeassistant' | 'calendar' | 'routes'
+  name: string
+  /** '' while it works. */
+  fault: '' | 'down'
 }
 
 /** "home", "not_home", or the name of a Home Assistant zone. */

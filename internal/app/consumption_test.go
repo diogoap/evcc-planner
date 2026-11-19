@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/diogoap/evcc-planner/internal/homeassistant"
 	"github.com/diogoap/evcc-planner/internal/model"
@@ -15,15 +16,16 @@ import (
 // efficiencySensor is the demo Home Assistant with a consumption sensor
 // whose state a test sets.
 type efficiencySensor struct {
-	homeassistant.Stub
-	state *string
+	homeassistant.Reader // the demo's, which reads sensors too
+	now                  func() time.Time
+	state                *string
 }
 
 func (e efficiencySensor) State(ctx context.Context, entityID string) (*homeassistant.EntityState, error) {
 	if entityID != "sensor.car_efficiency" {
-		return e.Stub.State(ctx, entityID)
+		return e.Reader.(homeassistant.Locator).State(ctx, entityID)
 	}
-	at := e.Now()
+	at := e.now()
 	return &homeassistant.EntityState{EntityID: entityID, State: *e.state, LastReported: at, LastChanged: at}, nil
 }
 
@@ -55,7 +57,7 @@ func TestConsumptionSensorReplacesTheSetValue(t *testing.T) {
 	build := ta.app.Service.Build
 	ta.app.Service.Build = func(cs model.ConnectionSettings) service.Integrations {
 		i := build(cs)
-		i.HA = efficiencySensor{Stub: i.HA.(homeassistant.Stub), state: &state}
+		i.HA = efficiencySensor{Reader: i.HA, now: func() time.Time { return ta.app.Service.Clock.Now() }, state: &state}
 		return i
 	}
 	if err := ta.app.Service.LoadSettings(); err != nil {

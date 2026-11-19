@@ -14,6 +14,7 @@ import type {
   Connection,
   ConnectionSettings,
   ConnectionSettingsView,
+  DemoFault,
   EVCCPlan,
   HASensor,
   History,
@@ -140,6 +141,10 @@ export const api = {
     `/api/activity/export${activityQuery(f, { format })}`,
   demoVehicle: (connected: boolean, soc: number) =>
     request<Status>('POST', '/api/demo/vehicle', { connected, soc }),
+  demoFaults: () => request<DemoFault[]>('GET', '/api/demo/faults'),
+  /** Makes a demo service fail, or work again with fault ''. */
+  setDemoFault: (service: DemoFault['service'], fault: DemoFault['fault']) =>
+    request<DemoFault[]>('PUT', '/api/demo/faults', { service, fault }),
 
   aiSettings: () => request<AISettingsView>('GET', '/api/settings/ai'),
   saveAISettings: (s: AISettings) => request<AISettingsView>('PUT', '/api/settings/ai', s),
