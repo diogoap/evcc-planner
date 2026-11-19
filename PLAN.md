@@ -271,6 +271,29 @@ Scope:
 
 Extend the tests already built from V1; harden recovery, credential renewal, stale-data handling, and notification delivery. UI: sync/health status and recovery actions.
 
+Planned 2026-11-19. When something breaks (a service down, a key rejected, data too old, a notification that didn't arrive), the app notices, says so on the Overview, and recovers by itself or offers a button to fix it.
+
+Found in the current code:
+
+- A reminder that fails to send is never sent again: `reminders.send` skips every stored key, failed ones included, so a short Home Assistant outage at reminder time loses the reminder. The button listener already reconnects by itself.
+- Problems show only under Settings → Connections; the Overview says nothing when Home Assistant, the calendar, or a forecast fails (only "Can't reach EVCC" and "Not updated" exist). Google Routes reports "ok" whenever a key is set, whatever its calls return.
+- A rejected key is explained for KNMI only ("missing, mistyped, or expired"); Home Assistant notices a 401 but shows it as a plain error; OpenRouter, Google Routes, and a reset calendar address get no specific message.
+- Each source handles old data its own way: the SoC says "last known", old forecasts lower the confidence, AI plans stop after 30 hours, and AI mode waits while EVCC data is older than three checks. Prices, the solar forecast, the calendar, the weather, and the car's location have no common rule.
+- `/readyz` only pings the database, so stalled background checks go unnoticed.
+- Tests cover the normal paths well; few cover failures in the middle of a flow.
+
+Scope:
+
+- **Notifications that arrive:** a failed send is tried again after 2, 5, and 15 minutes, keeping quiet hours (urgent ones as set), and given up once it no longer matters: the trip left, the car was plugged in, or a newer reminder replaced it. The activity log records the first failure and the final outcome, not every try; Settings → Connections shows the last failure.
+- **Health on the Overview:** a line at the top of the Overview, shown only while something needs attention, such as "Home Assistant unreachable since 10:12 · SoC last known 09:58", linking to Settings → Connections. In the app only, never a phone notification. Google Routes reports its real state from its recent calls.
+- **Rejected keys:** an answer meaning "not allowed" (401/403, or a calendar address that no longer exists) from Google Routes, OpenRouter, KNMI, Home Assistant, or a calendar feed gives the status **key rejected** with what to do: "Renew `OPENROUTER_API_KEY` in the deployment's environment and redeploy". Keys stay in environment variables only.
+- **Recovery actions:** in Settings → Connections, **Check now** per service, **Sync now** for calendars, and **Refresh** for forecasts; **Send plan again** where EVCC's plan differs from the planner's. Each failure kind has a short "what to do" text. Actions go through the activity log.
+- **Stale data:** one rule per source: how old its data may be, what the planner does when it is older, and where the age is shown. For example: with EVCC data older than three checks, no automatic writes to EVCC and the ready card says so; prices older than their last slot count as missing; a calendar not synced for 3 hours shows on the health line.
+- **Readiness:** `/readyz` also fails when the background checks haven't run for three intervals, and the health line says when they stopped. Portainer then shows the container as unhealthy (Docker doesn't restart unhealthy containers by itself).
+- **Tests for failures:** demo stubs that fail, time out, or reject the key on request (a demo-only endpoint, like `POST /api/demo/history`), so browser tests can show the health line, the key-rejected status, and each recovery button. Go tests for EVCC dropping during a plan write, a revoked Home Assistant token, a restart during an active extra plan, a failed send followed by a retry, and an outage across a daylight-saving change.
+- **Order**, each step passing `make verify` and deploying on its own: (1) notifications that arrive; (2) the failing demo stubs and the health line on the Overview, with Google Routes' real state; (3) rejected keys; (4) recovery actions; (5) stale-data rules; (6) readiness. Every step brings its own tests, and new screens or states go into `web/e2e/screens.spec.ts`.
+- Decisions (2026-11-19): notification retries and the Overview health line come first; keys stay in environment variables only, and the app explains which one to renew; problems show in the app only, never as phone notifications; database backups are not part of the app (handled on the host, as the README describes).
+
 </details>
 
 <details open>
