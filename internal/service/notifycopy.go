@@ -8,7 +8,7 @@ import "github.com/diogoap/evcc-planner/internal/model"
 // starts with TitlePrefix and, in AI mode, ends with AISuffix. API tests
 // check every notification they send against it.
 type NotificationCopy struct {
-	Setting     string   `json:"setting"` // the setting it belongs to: a switch's key, "test", or "urgent"
+	Setting     string   `json:"setting"` // the setting it belongs to: a switch's key, "test", "urgent", or "evening"
 	Kind        string   `json:"kind"`
 	TitlePrefix string   `json:"titlePrefix"` // "[EVCC Planner] 🔌"
 	Title       string   `json:"title"`
@@ -83,6 +83,15 @@ func NotificationCopies() []NotificationCopy {
 				"{advice}[ {about the plan}] Plug in so it can charge.",
 			},
 			Note: "When both apply, they come in one message. " + extraPlanWhat},
+		{Setting: "evening", Kind: model.NotifyEvening, Title: "Plug in tonight", ai: true,
+			Buttons: []string{model.VerbSnooze, model.VerbView},
+			Messages: []string{
+				"Charging is cheapest from {time, or now} ({price}/kWh); {trip} needs {target}% by {time}.[ {advice}[ {about the plan}]]",
+				"Charging is cheapest from {time, or now} ({price}/kWh); the plan charges {target}% by {time}, also for {later trip}.[ {advice}[ {about the plan}]]",
+				"{advice}[ {about the plan}]",
+			},
+			Note: "At the evening reminder time, when charging is planned for tonight. When both apply, they come in one message. " +
+				extraPlanWhat},
 		{Setting: "arrival", Kind: model.NotifyArrived, Title: "Back home: plug in", ai: true,
 			Buttons: []string{model.VerbSnooze, model.VerbView},
 			Messages: []string{

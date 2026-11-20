@@ -47,7 +47,7 @@ var (
 	stoppedAfter    = 10 * time.Minute // a planned charge idle this long has stopped
 	modeAfter       = 10 * time.Minute // plugged in this long outside Smart mode is a problem
 	unpluggedBefore = 30 * time.Minute // unplugging earlier than this before a departure is early
-	beforeQuiet     = 15 * time.Minute // early reminders due in quiet hours come this long before them
+	beforeQuiet     = 15 * time.Minute // plug-in reminders due in quiet hours come this long before them
 	arrivalWindow   = 30 * time.Minute // the location sensor turned home this recently: an arrival
 	arrivalHold     = 30 * time.Minute // other non-urgent plug-in reminders wait this long after a back-home one
 	retryLate       = 15 * time.Minute // a failed send not tried again within this of its time is given up
@@ -57,7 +57,7 @@ var (
 var reminderKinds = map[string]bool{model.NotifyEarly: true, model.NotifyUrgent: true, model.NotifyLate: true}
 
 // CheckNotifications sends the phone notifications that are due: plug-in
-// reminders (for trips, the sun, charge extra, and back home), charging problems,
+// reminders (for trips, the sun, charge extra, back home, and the evening), charging problems,
 // questions about calendar events, and ready messages, and ends those no
 // longer needed (AUTOMATION.md). It runs
 // after each EVCC check and only acts on a fresh EVCC state. A missed
@@ -106,6 +106,7 @@ func (s *Service) CheckNotifications(ctx context.Context) error {
 	r.cleanUp()
 	r.newPrices(prev, cur)
 	r.arrived(prev, cur)
+	r.evening()
 	r.plugIn()
 	r.solar()
 	r.extra()
@@ -140,26 +141,42 @@ func (r *reminders) fail(err error) {
 
 // quiet reports whether t falls in the quiet hours.
 func (r *reminders) quiet(t time.Time) bool {
-	from, to := r.settings.QuietFrom, r.settings.QuietTo
-	if from == to {
-		return false
-	}
-	hm := t.In(r.s.loc()).Format("15:04")
-	if from < to {
-		return hm >= from && hm < to
-	}
-	return hm >= from || hm < to
+	return r.settings.Quiet(t.In(r.s.loc()).Format("15:04"))
 }
 
-// quietStart is when the quiet hours around t began.
-func (r *reminders) quietStart(t time.Time) time.Time {
-	h, m, _ := localtime.ParseClock(r.settings.QuietFrom)
+// clockAt is the last time at or before t that the local clock reads hhmm.
+func (r *reminders) clockAt(t time.Time, hhmm string) time.Time {
+	h, m, _ := localtime.ParseClock(hhmm)
 	day := localtime.StartOfDay(t, r.s.loc())
-	start := localtime.OnDay(day, h, m)
-	if start.After(t) {
-		start = localtime.OnDay(localtime.AddDays(day, -1), h, m)
+	at := localtime.OnDay(day, h, m)
+	if at.After(t) {
+		at = localtime.OnDay(localtime.AddDays(day, -1), h, m)
 	}
-	return start
+	return at
+}
+
+// clockAfter is the first time after t that the local clock reads hhmm.
+func (r *reminders) clockAfter(t time.Time, hhmm string) time.Time {
+	h, m, _ := localtime.ParseClock(hhmm)
+	return localtime.OnDay(localtime.AddDays(localtime.StartOfDay(r.clockAt(t, hhmm), r.s.loc()), 1), h, m)
+}
+
+// remindAt is when the early or charge extra reminder for charging from
+// start comes: lead before it, or just before quiet hours when that falls
+// in them.
+func (r *reminders) remindAt(start time.Time, lead time.Duration) time.Time {
+	due := start.Add(-lead)
+	if r.quiet(due) {
+		due = r.clockAt(due, r.settings.QuietFrom).Add(-beforeQuiet)
+	}
+	return due
+}
+
+// tonight is the evening reminder's night: from the last evening time
+// until quiet hours end the next morning.
+func (r *reminders) tonight() (from, until time.Time) {
+	from = r.clockAt(r.now, r.settings.EveningAt)
+	return from, r.clockAfter(from, r.settings.QuietTo)
 }
 
 // allowed reports whether a notification may be sent now: urgent ones in
@@ -196,8 +213,9 @@ func (r *reminders) send(n model.Notification) {
 			"Replaced by a newer reminder")
 	}
 	// A later plug-in reminder says it again, and more precisely.
-	if reminderKinds[n.Kind] || n.Kind == model.NotifySolar || n.Kind == model.NotifyExtra {
-		r.endOpen(func(o model.Notification) bool { return o.Kind == model.NotifyArrived }, "Replaced by a newer reminder")
+	if reminderKinds[n.Kind] || n.Kind == model.NotifySolar || n.Kind == model.NotifyExtra || n.Kind == model.NotifyEvening {
+		r.endOpen(func(o model.Notification) bool { return o.Kind == model.NotifyArrived || o.Kind == model.NotifyEvening },
+			"Replaced by a newer reminder")
 	}
 	if err := r.s.deliver(r.ctx, &n, r.settings); err != nil {
 		r.fail(err)
@@ -379,7 +397,7 @@ func (r *reminders) cleanUp() {
 		case n.Kind == model.NotifyExtra:
 			a := r.extraAdvice()
 			return r.lp.Connected || a == nil || n.Subject != "extra:"+a.Date || !r.now.Before(a.Blocks[len(a.Blocks)-1].Until)
-		case n.Kind == model.NotifyArrived:
+		case n.Kind == model.NotifyArrived || n.Kind == model.NotifyEvening:
 			return r.lp.Connected || r.carAway() || (n.Latest != nil && !r.now.Before(*n.Latest))
 		case n.Kind == model.NotifyPrices:
 			return r.lp.Connected
@@ -426,17 +444,7 @@ func (r *reminders) newPrices(prev, cur *notifyState) {
 		parts = append(parts, text+".")
 	}
 	if a := r.extraAdvice(); a != nil && now.extra != was.extra {
-		text := a.Summary
-		switch {
-		case a.Adjustment != nil && a.Adjustment.Source == "auto":
-			text += " The extra plan was created automatically."
-		case a.Adjustment != nil:
-		case a.Date != localtime.Date(r.now, r.s.loc()) && r.autoExtra(a):
-			text += " The plan is created automatically when the day starts."
-		default:
-			text += " Create the plan in the planner."
-		}
-		parts = append(parts, text)
+		parts = append(parts, a.Summary+r.extraPlanNote(a))
 	}
 	if len(parts) == 0 {
 		return
@@ -444,6 +452,65 @@ func (r *reminders) newPrices(prev, cur *notifyState) {
 	r.send(model.Notification{
 		Key: fmt.Sprintf("prices:%d", cur.pricesUntil.Unix()), Kind: model.NotifyPrices, Title: "New prices: plug in",
 		Message: strings.Join(parts, " ") + " Plug in so it can charge.", Verbs: []string{model.VerbView},
+	})
+}
+
+// extraPlanNote says what becomes of charge extra's plan (extraPlanWhat).
+func (r *reminders) extraPlanNote(a *DayAdviceView) string {
+	switch {
+	case a.Adjustment != nil && a.Adjustment.Source == "auto":
+		return " The extra plan was created automatically."
+	case a.Adjustment != nil:
+		return ""
+	case a.Date != localtime.Date(r.now, r.s.loc()) && r.autoExtra(a):
+		return " The plan is created automatically when the day starts."
+	}
+	return " Create the plan in the planner."
+}
+
+// evening is an extra plug-in reminder at the evening time, while there is
+// time to go out and plug in: the car is home and unplugged, and charging
+// is planned for tonight (until quiet hours end) for the next departure or
+// charge extra, whose usual reminder is still to come. Those still come if
+// the car isn't plugged in by then, and replace it on the phone.
+func (r *reminders) evening() {
+	if !r.settings.Evening || r.lp.Connected || r.onTheRoad() || r.carAway() {
+		return
+	}
+	from, until := r.tonight()
+	if !r.now.Before(until) || !r.allowed(false) || r.arrivedRecently() {
+		return
+	}
+	date := localtime.Date(from, r.s.loc())
+	subject := "evening:" + date
+	var parts []string
+	var latest *time.Time
+	next, key := r.next()
+	if target := r.view.Control.Target; next != nil && target != nil && !target.Covered && len(target.Charging) > 0 {
+		first, last := target.Charging[0], target.Charging[len(target.Charging)-1]
+		latestStart := next.LatestChargeStart
+		if first.Start.Before(until) && r.now.Before(r.remindAt(first.Start, time.Duration(r.settings.EarlyLeadMin)*time.Minute)) &&
+			(latestStart == nil || r.now.Before(latestStart.Add(-time.Duration(r.settings.UrgentLeadMin)*time.Minute))) {
+			parts = append(parts, r.earlyText(target, first))
+			subject, latest = key, &last.End
+		}
+	}
+	if a := r.extraAdvice(); a != nil {
+		start, end := a.Blocks[0].From, a.Blocks[len(a.Blocks)-1].Until
+		if start.Before(until) && r.now.Before(r.remindAt(start, 30*time.Minute)) {
+			parts = append(parts, a.Summary+r.extraPlanNote(a))
+			if latest == nil || end.After(*latest) {
+				latest = &end
+			}
+		}
+	}
+	if len(parts) == 0 {
+		return
+	}
+	r.send(model.Notification{
+		Key: "evening:" + date, Kind: model.NotifyEvening, Subject: subject, Latest: latest,
+		Title: "Plug in tonight", Message: strings.Join(parts, " "),
+		Verbs: []string{model.VerbSnooze, model.VerbView},
 	})
 }
 
@@ -539,9 +606,9 @@ func (r *reminders) tripBefore(t time.Time) bool {
 
 // extra asks to plug in while the car is home and unplugged on a day whose
 // advice is to charge extra with a plan: from half an hour before its cheap
-// blocks start (just before quiet hours when that falls in them) until half
-// an hour before they end. Without the plan yet, it also asks to create it,
-// unless advice auto-apply will when tomorrow starts.
+// blocks start (or earlier, see remindAt) until half an hour before they
+// end. Without the plan yet, it also asks to create it, unless advice
+// auto-apply will when tomorrow starts.
 func (r *reminders) extra() {
 	if !r.settings.Extra || r.lp.Connected || r.onTheRoad() || r.carAway() {
 		return
@@ -551,10 +618,7 @@ func (r *reminders) extra() {
 		return
 	}
 	from, until := a.Blocks[0].From, a.Blocks[len(a.Blocks)-1].Until
-	due := from.Add(-30 * time.Minute)
-	if r.quiet(due) {
-		due = r.quietStart(due).Add(-beforeQuiet)
-	}
+	due := r.remindAt(from, 30*time.Minute)
 	if r.now.Before(due) || !r.now.Before(until.Add(-30*time.Minute)) || !r.allowed(false) || r.arrivedRecently() {
 		return
 	}
@@ -689,34 +753,35 @@ func (r *reminders) plugIn() {
 		})
 		return
 	}
-	// Early: before the first slot of the planned charging; just before
-	// quiet hours when it falls in them.
+	// Early: before the first slot of the planned charging (or earlier, see
+	// remindAt).
 	if !r.settings.Early || target.Covered || len(target.Charging) == 0 {
 		return
 	}
 	first, last := target.Charging[0], target.Charging[len(target.Charging)-1]
-	due := first.Start.Add(-time.Duration(r.settings.EarlyLeadMin) * time.Minute)
-	if r.quiet(due) {
-		due = r.quietStart(due).Add(-beforeQuiet)
-	}
+	due := r.remindAt(first.Start, time.Duration(r.settings.EarlyLeadMin)*time.Minute)
 	if r.now.Before(due) || !r.now.Before(last.End) || !r.allowed(false) || r.arrivedRecently() {
 		return
 	}
+	r.send(model.Notification{
+		Key: "early:" + key, Kind: model.NotifyEarly, Subject: key, Latest: latest, Title: "Plug in to charge cheaply",
+		Message: r.earlyText(target, first), Verbs: verbs,
+	})
+}
+
+// earlyText says when the planned charging is cheapest and what it charges
+// for.
+func (r *reminders) earlyText(target *TargetView, first evcc.Rate) string {
 	when := r.s.clockText(first.Start)
 	if !first.Start.After(r.now) {
 		when = "now"
 	}
-	n := model.Notification{
-		Key: "early:" + key, Kind: model.NotifyEarly, Subject: key, Latest: latest, Title: "Plug in to charge cheaply",
-		Message: fmt.Sprintf("Charging is cheapest from %s (%s/kWh); %s needs %d%% by %s.",
-			when, priceText(first.Value), target.Title, target.SoC, r.s.clockText(target.ReadyBy)),
-		Verbs: verbs,
-	}
 	if len(target.Ahead) > 0 {
-		n.Message = fmt.Sprintf("Charging is cheapest from %s (%s/kWh); the plan charges %d%% by %s, also for %s.",
+		return fmt.Sprintf("Charging is cheapest from %s (%s/kWh); the plan charges %d%% by %s, also for %s.",
 			when, priceText(first.Value), target.SoC, r.s.clockText(target.ReadyBy), target.Ahead[0].Title)
 	}
-	r.send(n)
+	return fmt.Sprintf("Charging is cheapest from %s (%s/kWh); %s needs %d%% by %s.",
+		when, priceText(first.Value), target.Title, target.SoC, r.s.clockText(target.ReadyBy))
 }
 
 func priceText(v float64) string { return fmt.Sprintf("€%.2f", v) }

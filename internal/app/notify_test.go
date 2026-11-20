@@ -36,7 +36,7 @@ func TestNotificationSettingsAndTest(t *testing.T) {
 	var s model.NotificationSettings
 	ta.json("GET", "/api/settings/notifications", nil, http.StatusOK, &s)
 	if s.Enabled || len(s.Phones) != 0 || s.QuietFrom != "23:00" || s.QuietTo != "07:00" || s.SnoozeMin != 30 ||
-		!s.Early || s.Ready || !s.UrgentInQuiet {
+		!s.Early || s.Ready || !s.UrgentInQuiet || s.Evening || s.EveningAt != "19:30" {
 		t.Fatalf("defaults = %+v", s)
 	}
 	var phones []string
@@ -53,6 +53,8 @@ func TestNotificationSettingsAndTest(t *testing.T) {
 		{"phones": []string{"notify.phone"}},
 		{"linkUrl": "planner.local"},
 		{"quietFrom": "11pm"},
+		{"eveningAt": "7pm"},
+		{"evening": true, "eveningAt": "23:30"}, // in quiet hours
 		{"snoozeMin": 1},
 		{"locationEntity": "car location"},
 	} {

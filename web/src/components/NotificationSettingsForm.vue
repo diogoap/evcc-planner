@@ -237,6 +237,25 @@ async function press(n: PhoneNotification, verb: NotificationVerb) {
           </div>
         </div>
       </div>
+      <div class="row items-start nowrap">
+        <ToggleSwitch
+          v-model="settings.evening"
+          label="Evening reminder"
+          aria-describedby="hint-evening"
+          data-testid="notify-evening"
+        />
+        <div class="small">
+          <strong>Evening reminder</strong>
+          <InfoTip v-if="copyFor('evening').length" label="What the evening reminder says">
+            <NotificationCopyList :copies="copyFor('evening')" :snooze-min="settings.snoozeMin" />
+          </InfoTip>
+          <div id="hint-evening" class="field-hint">
+            An extra reminder at this time when charging is planned for tonight (for a trip or charge extra)
+            and the car is unplugged, so there's time to go out and plug in. The usual reminders still come
+            later if it isn't plugged in by then.
+          </div>
+        </div>
+      </div>
       <div class="form-grid">
         <label class="field">
           Early reminder
@@ -245,6 +264,18 @@ async function press(n: PhoneNotification, verb: NotificationVerb) {
               >min before</span
             ></span
           >
+        </label>
+        <label class="field">
+          Evening reminder at
+          <input
+            v-model="settings.eveningAt"
+            type="time"
+            required
+            :disabled="!settings.evening"
+            aria-describedby="hint-evening-at"
+            data-testid="notify-evening-at"
+          />
+          <span id="hint-evening-at" class="field-hint">Before quiet hours start.</span>
         </label>
         <label class="field">
           Urgent reminder

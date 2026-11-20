@@ -31,6 +31,7 @@ var notificationLabels = map[string]string{
 	"snoozeMin": "snooze", "problems": "charging problems", "questions": "questions", "ready": "ready messages",
 	"solar": "solar reminders", "extra": "charge extra reminders", "arrival": "back home reminders",
 	"arrivalInQuiet": "back home reminders in quiet hours", "prices": "plan changes after new prices",
+	"evening": "evening reminder", "eveningAt": "evening reminder time",
 }
 
 // SaveNotificationSettings validates and stores the notification settings.
@@ -155,6 +156,7 @@ var notifyEmoji = map[string]string{
 	model.NotifyStopped: "⚠️", model.NotifyUnplugged: "⚠️", model.NotifyMode: "⚠️", model.NotifyMissed: "❌",
 	model.NotifyQuestion: "❓", model.NotifyReady: "✅", model.NotifySolar: "☀️", model.NotifyExtra: "🔋",
 	model.NotifyExtraPlan: "🔌", model.NotifyArrived: "🏠", model.NotifyPrices: "💶", model.NotifyInfo: "⏭️",
+	model.NotifyEvening: "🌙",
 }
 
 // unlabelled kinds are not about how the car charges, so they don't say

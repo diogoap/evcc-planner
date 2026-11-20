@@ -652,6 +652,11 @@ type NotificationSettings struct {
 	// Prices says, in automatic and AI mode, when new prices change the
 	// plan or bring charge extra while the car is unplugged.
 	Prices bool `json:"prices"`
+	// Evening sends an extra plug-in reminder at EveningAt (local HH:MM,
+	// outside quiet hours) when charging is planned for tonight, before
+	// the usual reminders.
+	Evening   bool   `json:"evening"`
+	EveningAt string `json:"eveningAt"`
 }
 
 // DefaultNotificationSettings are off, with the reminder rules ready.
@@ -659,7 +664,7 @@ func DefaultNotificationSettings() NotificationSettings {
 	return NotificationSettings{
 		Phones: []string{}, Early: true, EarlyLeadMin: 30, UrgentLeadMin: 30, QuietFrom: "23:00", QuietTo: "07:00",
 		UrgentInQuiet: true, SnoozeMin: 30, Problems: true, Questions: true, Solar: true, Extra: true, Arrival: true,
-		ArrivalInQuiet: true, Prices: true,
+		ArrivalInQuiet: true, Prices: true, EveningAt: "19:30",
 	}
 }
 
@@ -671,6 +676,19 @@ var (
 // ValidPhone reports whether name is a Home Assistant mobile app notify
 // service.
 func ValidPhone(name string) bool { return phoneRe.MatchString(name) }
+
+// Quiet reports whether the local clock time hhmm (HH:MM) falls in the
+// quiet hours.
+func (n NotificationSettings) Quiet(hhmm string) bool {
+	from, to := n.QuietFrom, n.QuietTo
+	if from == to {
+		return false
+	}
+	if from < to {
+		return hhmm >= from && hhmm < to
+	}
+	return hhmm >= from || hhmm < to
+}
 
 // Validate reports the first invalid field.
 func (n NotificationSettings) Validate() error {
@@ -686,6 +704,12 @@ func (n NotificationSettings) Validate() error {
 		if _, err := time.Parse("15:04", t); err != nil {
 			return fmt.Errorf("quiet hours must be HH:MM")
 		}
+	}
+	if _, err := time.Parse("15:04", n.EveningAt); err != nil {
+		return fmt.Errorf("the evening reminder must be HH:MM")
+	}
+	if n.Evening && n.Quiet(n.EveningAt) {
+		return fmt.Errorf("the evening reminder must be outside quiet hours")
 	}
 	for _, p := range n.Phones {
 		if !ValidPhone(p) {
@@ -740,6 +764,7 @@ const (
 	NotifyExtraPlan = "extra_plan" // an extra plan was created automatically
 	NotifyArrived   = "arrived"    // back home from the day's last trip: plug in
 	NotifyPrices    = "prices"     // new prices changed the plan while unplugged
+	NotifyEvening   = "evening"    // charging is planned tonight: an extra reminder in the evening
 	NotifyInfo      = "info"       // a follow-up, e.g. after Skip trip
 
 	NotifySent     = "sent"

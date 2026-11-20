@@ -169,6 +169,61 @@ func TestUrgentRemindersWaitForQuietHoursWhenAsked(t *testing.T) {
 	ta.expectSent("Plug in now")
 }
 
+// With the evening reminder on, an extra reminder comes at its time when
+// charging is planned for tonight. The early reminder still comes before
+// quiet hours while the car is unplugged, and replaces it on the phone.
+func TestEveningReminder(t *testing.T) {
+	mon := func(h, m int) time.Time { return time.Date(2026, 11, 9, h, m, 0, 0, ams) }
+	start := func(at string) *testApp {
+		ta := newTestApp(t, "")
+		ta.json("POST", "/api/demo/reset", map[string]any{}, http.StatusNoContent, nil)
+		ta.notifications(func(s map[string]any) { s["questions"], s["evening"], s["eveningAt"] = false, true, at })
+		ta.phone().Take()
+		return ta
+	}
+	// Monday 19:00, unplugged at 38%; Tuesday's school run charges at night.
+	ta := start("19:30")
+	ta.check()
+	ta.expectSent()
+	ta.at(mon(19, 29))
+	ta.check()
+	ta.expectSent()
+	ta.at(mon(19, 30))
+	ta.check()
+	ta.expectSent("Plug in tonight")
+	n := ta.notification("evening:2026-11-09")
+	if n.Kind != model.NotifyEvening || !strings.HasPrefix(n.Message, "Charging is cheapest from Tue ") ||
+		!strings.HasSuffix(n.Message, "School drop-off needs 42% by Tue 07:48.") || len(n.Verbs) != 2 {
+		t.Errorf("evening reminder = %+v", n)
+	}
+	ta.check()
+	ta.expectSent()
+	ta.at(mon(22, 46))
+	ta.check()
+	ta.expectSent("-Plug in tonight", "Plug in to charge cheaply")
+
+	// Plugged in after it: no more reminders.
+	ta = start("19:30")
+	ta.at(mon(19, 30))
+	ta.check()
+	ta.expectSent("Plug in tonight")
+	ta.plug(true, 38)
+	ta.expectSent("-Plug in tonight")
+	ta.at(mon(22, 46))
+	ta.check()
+	ta.expectSent()
+
+	// The usual reminder already came (just before quiet hours, at 22:45):
+	// no evening reminder after it.
+	ta = start("22:50")
+	ta.at(mon(22, 45))
+	ta.check()
+	ta.expectSent("Plug in to charge cheaply")
+	ta.at(mon(22, 50))
+	ta.check()
+	ta.expectSent()
+}
+
 // modEVCC is the demo EVCC with a changed loadpoint.
 type modEVCC struct {
 	*evcc.Stub

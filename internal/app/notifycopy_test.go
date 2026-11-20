@@ -74,7 +74,7 @@ func TestNotificationCopyCoversEveryKind(t *testing.T) {
 	var list []service.NotificationCopy
 	ta.json("GET", "/api/notifications/copy", nil, http.StatusOK, &list)
 	kinds := map[string]bool{}
-	settings := []string{"test", "early", "urgent", "problems", "questions", "ready", "solar", "extra", "prices", "arrival"}
+	settings := []string{"test", "early", "urgent", "problems", "questions", "ready", "solar", "extra", "prices", "arrival", "evening"}
 	verbs := []string{model.VerbSnooze, model.VerbSkip, model.VerbView, model.VerbCount, model.VerbNoTrip}
 	for _, c := range list {
 		kinds[c.Kind] = true
@@ -97,7 +97,7 @@ func TestNotificationCopyCoversEveryKind(t *testing.T) {
 	}
 	for _, k := range []string{model.NotifyTest, model.NotifyEarly, model.NotifyUrgent, model.NotifyLate, model.NotifyStopped,
 		model.NotifyUnplugged, model.NotifyMode, model.NotifyMissed, model.NotifyQuestion, model.NotifyReady, model.NotifySolar,
-		model.NotifyExtra, model.NotifyExtraPlan, model.NotifyArrived, model.NotifyPrices, model.NotifyInfo} {
+		model.NotifyExtra, model.NotifyExtraPlan, model.NotifyArrived, model.NotifyPrices, model.NotifyInfo, model.NotifyEvening} {
 		if !kinds[k] {
 			t.Errorf("no copy for %s", k)
 		}

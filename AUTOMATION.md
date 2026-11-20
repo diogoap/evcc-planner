@@ -552,7 +552,7 @@ sequenceDiagram
   "[EVCC Planner]" and an emoji for its kind, so it stands out on the phone:
   "[EVCC Planner] ⏰ Plug in by 06:36" (🔔 test, 🔌 early reminder and extra
   plan created, ⏰ urgent, 🚨 too late, ⚠️ problems, ❌ missed target, ❓
-  question, ✅ ready, ☀️ sun, 🔋 charge extra, 🏠 back home, 💶 new prices,
+  question, ✅ ready, ☀️ sun, 🔋 charge extra, 🏠 back home, 🌙 evening, 💶 new prices,
   ⏭️ trip skipped). A newer message with the same tag
   replaces the old one on the phone; when a message is no longer relevant, the
   planner clears it.
@@ -610,6 +610,31 @@ Reminders only go out when all of these hold:
 
 The early reminder is about saving money, so it uses the full target. Urgent
 and too-late reminders only use the minimum target.
+
+### Evening reminder
+
+Plugging in for the night can mean going outside, which is easier to do
+early in the evening than at 22:45. With **Evening reminder** on (off by
+default), an extra reminder, **Plug in tonight**, comes at its time (19:30 by
+default) when:
+
+- charging is planned for tonight (it starts before quiet hours end the next
+  morning): for the next departure, or for [charge extra](#charge-extra-daily-advice);
+- the usual reminder for it (early, urgent, or plug in for charge extra) is
+  still to come;
+- the car is home and unplugged, and no trip is in progress. If the car is
+  away at 19:30, it comes once the car is back, before quiet hours.
+
+It comes once an evening, with both in one message when both apply. The
+usual reminders still come at their own time if the car isn't plugged in by
+then, and replace it on the phone. Plugging in clears it. It waits half an
+hour after a back-home reminder, and replaces that one. The time must be
+outside quiet hours. Buttons: **Remind in 30 min**, **View plan**.
+
+**Example.** Tuesday's school run needs charging, cheapest from 01:00. On
+Monday at 19:30: "Plug in tonight: Charging is cheapest from Tue 01:00
+(€0.21/kWh); School drop-off needs 42% by Tue 07:48." Still unplugged at
+22:45, the early reminder comes as usual.
 
 ```mermaid
 gantt
@@ -755,6 +780,7 @@ Settings → **Notifications**:
 | Link address | empty |
 | Car location sensor (optional) | empty |
 | Early reminders | On, 30 min before |
+| Evening reminder | Off, 19:30 |
 | Urgent reminder | 30 min before the latest plug-in time |
 | Quiet hours | 23:00–07:00 |
 | Urgent reminders in quiet hours | Send |

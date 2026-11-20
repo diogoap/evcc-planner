@@ -907,6 +907,10 @@ export interface NotificationSettings {
   arrivalInQuiet: boolean
   /** Automatic and AI mode: new prices changed the plan (or brought charge extra) while unplugged. */
   prices: boolean
+  /** An extra plug-in reminder at eveningAt when charging is planned for tonight. */
+  evening: boolean
+  /** Local HH:MM, outside quiet hours. */
+  eveningAt: string
 }
 
 /** What a kind of notification says: {…} is filled in when sent, […] only when it applies. */
@@ -941,6 +945,7 @@ export type NotificationKind =
   | 'extra_plan'
   | 'arrived'
   | 'prices'
+  | 'evening'
   | 'info'
 
 export type NotificationVerb = 'snooze' | 'skip' | 'view' | 'count' | 'notrip'

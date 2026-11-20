@@ -95,6 +95,8 @@ const fieldLabels: Record<string, string> = {
   extra: 'Charge extra reminders',
   arrival: 'Back home reminders',
   arrivalInQuiet: 'Back home reminders in quiet hours',
+  evening: 'Evening reminder',
+  eveningAt: 'Evening reminder at',
   message: 'Message',
   autoApply: 'Automatic plans',
   autoMinConfidence: 'Minimum confidence',

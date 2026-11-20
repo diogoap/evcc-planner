@@ -201,7 +201,7 @@ func TestNoChargeExtraNotificationsWhenOff(t *testing.T) {
 
 // A cheap night: Tuesday's charge extra starts after midnight, in quiet
 // hours (23:00–07:00), so the reminder comes on Monday evening just before
-// them, and not in them.
+// them, and not in them. The evening reminder comes before it.
 func TestChargeExtraReminderBeforeQuietHours(t *testing.T) {
 	mon := func(h, m int) time.Time { return time.Date(2026, 11, 9, h, m, 0, 0, ams) }
 	night := func(auto bool) *testApp {
@@ -259,5 +259,26 @@ func TestChargeExtraReminderBeforeQuietHours(t *testing.T) {
 	ta.check()
 	if reminded(ta) {
 		t.Fatal("reminded in quiet hours")
+	}
+
+	// With the evening reminder on, an extra one comes at 19:30; the usual
+	// one still comes before quiet hours.
+	ta = night(false)
+	ta.notifications(func(s map[string]any) { s["evening"] = true })
+	ta.at(mon(19, 29))
+	ta.check()
+	if n, _ := ta.app.Store.NotificationByKey("evening:2026-11-09"); n != nil {
+		t.Fatal("evening reminder before its time")
+	}
+	ta.at(mon(19, 30))
+	ta.check()
+	evening := ta.notification("evening:2026-11-09")
+	if tue = ta.advice().day("2026-11-10"); !strings.HasSuffix(evening.Message, tue.Summary+" Create the plan in the planner.") {
+		t.Fatalf("evening reminder = %q (advice %q)", evening.Message, tue.Summary)
+	}
+	ta.at(mon(22, 50))
+	ta.check()
+	if !reminded(ta) {
+		t.Fatal("no reminder before quiet hours after the evening one")
 	}
 }

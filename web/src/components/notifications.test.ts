@@ -37,6 +37,8 @@ const defaults: NotificationSettings = {
   arrival: true,
   arrivalInQuiet: true,
   prices: true,
+  evening: false,
+  eveningAt: '19:30',
 }
 
 const copy: NotificationCopy[] = [
@@ -118,6 +120,24 @@ describe('NotificationSettingsForm', () => {
     // Without back home reminders the check has nothing to do.
     await w.get('[role="switch"][aria-label="Back home reminders"]').trigger('click')
     expect(quiet.attributes('disabled')).toBeDefined()
+  })
+
+  it('turns the evening reminder on and sets its time', async () => {
+    const w = mount(NotificationSettingsForm)
+    await flushPromises()
+    const at = w.get<HTMLInputElement>('[data-testid="notify-evening-at"]')
+    expect(at.element.value).toBe('19:30')
+    expect(at.attributes('disabled')).toBeDefined()
+    await w.get('[role="switch"][aria-label="Evening reminder"]').trigger('click')
+    expect(at.attributes('disabled')).toBeUndefined()
+    await at.setValue('20:00')
+    await w.get('form').trigger('submit')
+    await flushPromises()
+    expect(api.saveNotificationSettings).toHaveBeenCalledWith({
+      ...defaults,
+      evening: true,
+      eveningAt: '20:00',
+    })
   })
 
   it('shows what a notification says on hover or tap, with what is filled in marked', async () => {
