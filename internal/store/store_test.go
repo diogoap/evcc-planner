@@ -92,6 +92,38 @@ func TestOverridesRoundTripAndDeleteWhenEmpty(t *testing.T) {
 	if all, _ := s.Overrides(); len(all) != 0 {
 		t.Fatalf("empty override should be deleted, got %+v", all)
 	}
+	// A calendar trip's own route.
+	route := model.Override{TripKey: "calendar:e1", Points: []string{"Home", "Dentist 1", "Shop 2", "Home"}}
+	if err := s.SaveOverride(route); err != nil {
+		t.Fatal(err)
+	}
+	if all, _ := s.Overrides(); strings.Join(all["calendar:e1"].Points, "|") != "Home|Dentist 1|Shop 2|Home" {
+		t.Fatalf("route = %+v", all["calendar:e1"])
+	}
+}
+
+func TestManualTripRoute(t *testing.T) {
+	s := open(t)
+	start := time.Date(2026, 11, 12, 10, 0, 0, 0, time.UTC)
+	m, err := s.CreateManualTrip(model.ManualTrip{
+		Title: "Airport", Destination: "Airport", Start: start, End: start, Enabled: true, Points: []string{"Home", "Airport"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.ManualTrip(m.ID)
+	if err != nil || strings.Join(got.Points, "|") != "Home|Airport" {
+		t.Fatalf("created = %+v %v", got, err)
+	}
+	// Back to the default route: no points stored.
+	got.Points = nil
+	if err := s.UpdateManualTrip(got); err != nil {
+		t.Fatal(err)
+	}
+	list, err := s.ManualTrips(start.Add(-time.Hour), start.Add(time.Hour))
+	if err != nil || len(list) != 1 || list[0].Points != nil {
+		t.Fatalf("updated = %+v %v", list, err)
+	}
 }
 
 func TestDeleteTemplateRemovesItsOverrides(t *testing.T) {

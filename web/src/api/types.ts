@@ -150,6 +150,12 @@ export interface Trip {
   enabled: boolean
   needsReview: boolean
   overridden: string[]
+  /** The route from start to end (2 to 5 points); by default home → destination → home. */
+  points: TripPoint[]
+  /** The drive between each pair of points, when the route is known. */
+  legs: TripLeg[]
+  /** No stop between start and end: the trip arrives at its end by the arrive-by time. */
+  oneWay: boolean
   distanceKm: number | null
   distanceOverrideKm: number | null
   distanceSource: 'route' | 'manual' | 'unknown'
@@ -162,6 +168,18 @@ export interface Trip {
   state: 'upcoming' | 'in_progress' | 'done'
   blockIndex?: number
   requiredSoc?: number
+}
+
+/** One place on a trip's route: Home, a saved place, or an address. */
+export interface TripPoint {
+  name: string
+  placeName?: string
+  home: boolean
+}
+
+export interface TripLeg {
+  distanceKm: number
+  minutes: number
 }
 
 export interface IgnoredEvent {
@@ -812,6 +830,8 @@ export interface HASensor {
 export interface TripInput {
   title?: string
   destination?: string
+  /** The whole route, start to end; its second point becomes the destination. */
+  points?: string[]
   date?: string
   start?: string
   end?: string

@@ -49,6 +49,7 @@ describe('activity', () => {
   it('labels fields and values', () => {
     expect(fieldLabel('consumptionKWhPer100Km')).toBe('Consumption (kWh/100 km)')
     expect(fieldLabel('somethingNew')).toBe('Something new')
+    expect(fieldLabel('route')).toBe('Route')
     expect(fieldLabel('enabled', event({ subjectType: 'settings' }))).toBe('Daily advice')
     expect(formatValue(null)).toBe('—')
     expect(formatValue([])).toBe('none')

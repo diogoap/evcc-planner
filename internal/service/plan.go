@@ -77,36 +77,54 @@ const socStaleAfter = 3 * time.Hour
 
 // TripView is one trip with its route and energy.
 type TripView struct {
-	Key                string    `json:"key"`
-	Source             string    `json:"source"`
-	SourceLabel        string    `json:"sourceLabel"`
-	SourceID           int64     `json:"sourceId,omitempty"`
-	Title              string    `json:"title"`
-	Destination        string    `json:"destination"`
-	Address            string    `json:"address"`
-	PlaceName          string    `json:"placeName,omitempty"`
-	Date               string    `json:"date"`
-	ArriveAt           time.Time `json:"arriveAt"`
-	EndAt              time.Time `json:"endAt"`
-	ArriveLocal        string    `json:"arriveLocal"`
-	EndLocal           string    `json:"endLocal"`
-	DepartAt           time.Time `json:"departAt"`
-	ReturnAt           time.Time `json:"returnAt"`
-	DepartLocal        string    `json:"departLocal"`
-	Enabled            bool      `json:"enabled"`
-	NeedsReview        bool      `json:"needsReview"`
-	Overridden         []string  `json:"overridden"`
-	DistanceKm         *float64  `json:"distanceKm"`
-	DistanceOverrideKm *float64  `json:"distanceOverrideKm"`
-	DistanceSource     string    `json:"distanceSource"` // route, manual, unknown
-	RouteProvider      string    `json:"routeProvider,omitempty"`
-	RouteStale         bool      `json:"routeStale,omitempty"`
-	RouteError         string    `json:"routeError,omitempty"`
-	DisabledReason     string    `json:"disabledReason,omitempty"` // set when the distance is unknown
-	EnergyKWh          *float64  `json:"energyKWh"`
-	State              string    `json:"state"` // upcoming, in_progress, done
-	BlockIndex         *int      `json:"blockIndex,omitempty"`
-	RequiredSoC        *float64  `json:"requiredSoc,omitempty"`
+	Key         string    `json:"key"`
+	Source      string    `json:"source"`
+	SourceLabel string    `json:"sourceLabel"`
+	SourceID    int64     `json:"sourceId,omitempty"`
+	Title       string    `json:"title"`
+	Destination string    `json:"destination"`
+	Address     string    `json:"address"`
+	PlaceName   string    `json:"placeName,omitempty"`
+	Date        string    `json:"date"`
+	ArriveAt    time.Time `json:"arriveAt"`
+	EndAt       time.Time `json:"endAt"`
+	ArriveLocal string    `json:"arriveLocal"`
+	EndLocal    string    `json:"endLocal"`
+	DepartAt    time.Time `json:"departAt"`
+	ReturnAt    time.Time `json:"returnAt"`
+	DepartLocal string    `json:"departLocal"`
+	Enabled     bool      `json:"enabled"`
+	NeedsReview bool      `json:"needsReview"`
+	Overridden  []string  `json:"overridden"`
+	// Points is the route from start to end; Legs, when the route is
+	// known, has the drive between each pair of points.
+	Points             []PointView `json:"points"`
+	Legs               []LegView   `json:"legs"`
+	OneWay             bool        `json:"oneWay"` // no stop between start and end: End doesn't apply
+	DistanceKm         *float64    `json:"distanceKm"`
+	DistanceOverrideKm *float64    `json:"distanceOverrideKm"`
+	DistanceSource     string      `json:"distanceSource"` // route, manual, unknown
+	RouteProvider      string      `json:"routeProvider,omitempty"`
+	RouteStale         bool        `json:"routeStale,omitempty"`
+	RouteError         string      `json:"routeError,omitempty"`
+	DisabledReason     string      `json:"disabledReason,omitempty"` // set when the distance is unknown
+	EnergyKWh          *float64    `json:"energyKWh"`
+	State              string      `json:"state"` // upcoming, in_progress, done
+	BlockIndex         *int        `json:"blockIndex,omitempty"`
+	RequiredSoC        *float64    `json:"requiredSoc,omitempty"`
+}
+
+// PointView is one place on a trip's route.
+type PointView struct {
+	Name      string `json:"name"`                // as entered: Home, a saved place, or an address
+	PlaceName string `json:"placeName,omitempty"` // the saved place, or Home
+	Home      bool   `json:"home"`
+}
+
+// LegView is the drive from one point of a trip to the next.
+type LegView struct {
+	DistanceKm float64 `json:"distanceKm"`
+	Minutes    int     `json:"minutes"`
 }
 
 // IgnoredView is a calendar event that is not a trip.
@@ -225,7 +243,8 @@ func (s *Service) sendOptions(res planner.Result, p planner.Params, blocks []Blo
 // tripRoute is a trip's resolved route and timing.
 type tripRoute struct {
 	departAt   time.Time
-	returnAt   time.Time
+	returnAt   time.Time // back home, or at the end of a trip that ends away
+	legs       []routes.Leg
 	distanceKm *float64
 	source     string
 	provider   string
@@ -296,11 +315,13 @@ func (s *Service) Plan(ctx context.Context) (*PlanView, error) {
 		}
 		input = append(input, planner.Trip{
 			Key: t.Key, DepartAt: resolved[i].departAt, ReturnAt: resolved[i].returnAt, DistanceKm: *resolved[i].distanceKm,
+			StartsAway: t.StartsAway(), EndsAway: t.EndsAway(),
 		})
 	}
 
 	socIn, socView := s.currentSoC()
 	params := planParams(settings)
+	params.Horizon = to
 	result := planner.Plan(now, params, socIn, input)
 	if socIn.Known {
 		socView.Estimated = result.SoCEstimated
@@ -351,10 +372,17 @@ func (s *Service) Plan(ctx context.Context) (*PlanView, error) {
 			DepartAt: r.departAt, ReturnAt: r.returnAt, DepartLocal: localtime.Clock(r.departAt, s.loc()),
 			Enabled: t.Enabled && !blocked, NeedsReview: t.NeedsReview, Overridden: t.Overridden,
 			DistanceOverrideKm: t.DistanceOverrideKm, DistanceSource: r.source, RouteProvider: r.provider,
-			RouteStale: r.stale, RouteError: r.err, State: "upcoming",
+			RouteStale: r.stale, RouteError: r.err, State: "upcoming", OneWay: t.OneWay(),
+			Points: make([]PointView, len(t.Points)), Legs: []LegView{},
 		}
 		if tv.Overridden == nil {
 			tv.Overridden = []string{}
+		}
+		for j, p := range t.Points {
+			tv.Points[j] = PointView{Name: p.Name, PlaceName: p.PlaceName, Home: p.Home}
+		}
+		for _, l := range r.legs {
+			tv.Legs = append(tv.Legs, LegView{DistanceKm: round(l.DistanceKm, 1), Minutes: int(math.Round(l.Duration.Minutes()))})
 		}
 		if blocked {
 			tv.DisabledReason = r.err
@@ -538,59 +566,95 @@ func (s *Service) resolveRoutes(ctx context.Context, rr *routes.Resolver, list [
 	return out
 }
 
+// resolveTrip routes a trip in at most two lookups: the drive out, from the
+// start through the stops before the last one (in one request), and the
+// drive from the last stop to the end, which leaves at End. The car departs
+// to arrive at the first stop by Start and is back home (or at the end) the
+// last drive's duration after End. A one-way trip is one drive that arrives
+// by Start.
 func resolveTrip(ctx context.Context, rr *routes.Resolver, t trips.Trip, settings model.Settings) tripRoute {
 	buffer := time.Duration(settings.DepartureBufferMin) * time.Minute
 	r := tripRoute{departAt: t.Start.Add(-buffer), returnAt: t.End, source: "unknown"}
+	pts := t.Points
+	legs := len(pts) - 1
+	out := pts
+	var back []trips.Point
+	if !t.OneWay() {
+		out, back = pts[:legs], pts[legs-1:]
+	} else {
+		r.returnAt = t.Start
+	}
 	manual := t.DistanceOverrideKm
 	estimate := func() {
 		if manual == nil {
 			return
 		}
-		oneWay := time.Duration(*manual / 2 / fallbackSpeedKmh * float64(time.Hour))
-		r.departAt = t.Start.Add(-oneWay - buffer)
-		r.returnAt = t.End.Add(oneWay)
+		// Each leg gets an equal share of the distance.
+		leg := time.Duration(*manual / float64(legs) / fallbackSpeedKmh * float64(time.Hour))
+		r.departAt = t.Start.Add(-leg - buffer)
+		if back != nil {
+			r.returnAt = t.End.Add(leg)
+		}
 	}
 	if manual != nil {
 		r.distanceKm = ptr(*manual)
 		r.source = "manual"
 	}
-	home := settings.HomeAddress
-	switch {
-	case home == "":
-		r.err = "Home address not set"
-		estimate()
-		return r
-	case t.Address == "":
-		r.err = "No location"
+	for _, p := range pts {
+		switch {
+		case p.Home && p.Address == "":
+			r.err = "Home address not set"
+		case p.Address == "":
+			r.err = "No location"
+		default:
+			continue
+		}
 		estimate()
 		return r
 	}
 
 	guess := 20 * time.Minute
-	if d, ok := rr.Typical(home, t.Address); ok {
+	if d, ok := rr.Typical(pts[0].Address, pts[1].Address); ok {
 		guess = d
 	}
-	out, err := rr.Leg(ctx, home, t.Address, t.Start.Add(-guess-buffer))
+	outLegs, err := rr.Route(ctx, addresses(out), t.Start.Add(-guess-buffer))
 	if err != nil {
 		r.err = routeError(err)
 		estimate()
 		return r
 	}
-	back, err := rr.Leg(ctx, t.Address, home, t.End)
-	if err != nil {
-		r.err = routeError(err)
-		estimate()
-		return r
+	r.legs = outLegs
+	r.departAt = t.Start.Add(-outLegs[0].Duration - buffer)
+	if back != nil {
+		backLegs, err := rr.Route(ctx, addresses(back), t.End)
+		if err != nil {
+			r.legs = nil
+			r.err = routeError(err)
+			estimate()
+			return r
+		}
+		r.legs = append(r.legs, backLegs...)
+		r.returnAt = t.End.Add(backLegs[0].Duration)
 	}
-	r.departAt = t.Start.Add(-out.Duration - buffer)
-	r.returnAt = t.End.Add(back.Duration)
-	r.provider = out.Provider
-	r.stale = out.Stale || back.Stale
+	r.provider = outLegs[0].Provider
+	km := 0.0
+	for _, l := range r.legs {
+		km += l.DistanceKm
+		r.stale = r.stale || l.Stale
+	}
 	if manual == nil {
-		r.distanceKm = ptr(out.DistanceKm + back.DistanceKm)
+		r.distanceKm = ptr(km)
 		r.source = "route"
 	}
 	return r
+}
+
+func addresses(points []trips.Point) []string {
+	out := make([]string, len(points))
+	for i, p := range points {
+		out[i] = p.Address
+	}
+	return out
 }
 
 func routeError(err error) string {

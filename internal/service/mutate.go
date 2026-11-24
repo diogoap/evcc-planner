@@ -41,10 +41,14 @@ func (n *NullableFloat) UnmarshalJSON(b []byte) error {
 }
 
 // TripInput creates or edits a trip. Times are local: Start is the arrive-by
-// time and the return leaves at End (the next day if End is before Start).
+// time at the first stop and End is when the last stop is left (the next day
+// if End is before Start). Points, when given, is the whole route from start
+// to end (2 to 5 points; Home is the home address); its second point becomes
+// the destination. Recurring trips keep home → destination → home.
 type TripInput struct {
 	Title              *string       `json:"title"`
 	Destination        *string       `json:"destination"`
+	Points             *[]string     `json:"points"`
 	Date               *string       `json:"date"`
 	Start              *string       `json:"start"`
 	End                *string       `json:"end"`
@@ -58,6 +62,37 @@ func trimmed(p *string) string {
 		return ""
 	}
 	return strings.TrimSpace(*p)
+}
+
+// maxPointLength keeps a point to a plausible address.
+const maxPointLength = 200
+
+// cleanRoute checks a route and returns it trimmed, with Home spelled one
+// way, or nil when it is home → destination → home (no route of its own).
+func cleanRoute(points []string) (route []string, destination string, err error) {
+	if len(points) < model.MinRoutePoints || len(points) > model.MaxRoutePoints {
+		return nil, "", invalid("a trip has %d to %d points", model.MinRoutePoints, model.MaxRoutePoints)
+	}
+	route = make([]string, len(points))
+	for i, p := range points {
+		p = strings.TrimSpace(p)
+		switch {
+		case p == "":
+			return nil, "", invalid("point %d of the route is empty", i+1)
+		case len(p) > maxPointLength:
+			return nil, "", invalid("point %d of the route is too long", i+1)
+		case trips.IsHome(p):
+			p = model.RouteHome
+		}
+		if i > 0 && strings.EqualFold(strings.Join(strings.Fields(p), " "), strings.Join(strings.Fields(route[i-1]), " ")) {
+			return nil, "", invalid("points %d and %d of the route are the same place", i, i+1)
+		}
+		route[i] = p
+	}
+	if trips.IsDefaultRoute(route) {
+		return nil, route[1], nil
+	}
+	return route, route[1], nil
 }
 
 func validDistance(n NullableFloat) error {
@@ -104,13 +139,30 @@ func (s *Service) times(in TripInput, curStart, curEnd time.Time, stay time.Dura
 
 // onlyEnabled reports an on/off switch without other edits.
 func (in TripInput) onlyEnabled() bool {
-	return in.Enabled != nil && in.Title == nil && in.Destination == nil && in.Date == nil && in.Start == nil &&
-		in.End == nil && !in.DistanceOverrideKm.Set && in.Reviewed == nil
+	return in.Enabled != nil && in.Title == nil && in.Destination == nil && in.Points == nil && in.Date == nil &&
+		in.Start == nil && in.End == nil && !in.DistanceOverrideKm.Set && in.Reviewed == nil
 }
 
 func (in TripInput) onlyReviewed() bool {
-	return in.Reviewed != nil && in.Title == nil && in.Destination == nil && in.Date == nil && in.Start == nil &&
-		in.End == nil && !in.DistanceOverrideKm.Set && in.Enabled == nil
+	return in.Reviewed != nil && in.Title == nil && in.Destination == nil && in.Points == nil && in.Date == nil &&
+		in.Start == nil && in.End == nil && !in.DistanceOverrideKm.Set && in.Enabled == nil
+}
+
+// route resolves the input's route and destination against a trip's
+// current ones: new points replace the route; a new destination alone
+// replaces its first stop.
+func (in TripInput) route(curRoute []string, curDest string) ([]string, string, error) {
+	switch {
+	case in.Points != nil:
+		return cleanRoute(*in.Points)
+	case in.Destination != nil && curRoute != nil:
+		r := append([]string(nil), curRoute...)
+		r[1] = trimmed(in.Destination)
+		return cleanRoute(r)
+	case in.Destination != nil:
+		return nil, trimmed(in.Destination), nil
+	}
+	return curRoute, curDest, nil
 }
 
 // describeTripEdit completes a trip edit's activity entry.
@@ -138,7 +190,10 @@ func (s *Service) CreateTrip(ctx context.Context, in TripInput) (string, error) 
 	if err != nil {
 		return "", err
 	}
-	dest := trimmed(in.Destination)
+	route, dest, err := in.route(nil, "")
+	if err != nil {
+		return "", err
+	}
 	if dest == "" {
 		return "", invalid("destination is required")
 	}
@@ -166,7 +221,7 @@ func (s *Service) CreateTrip(ctx context.Context, in TripInput) (string, error) 
 		func(tx *store.Store, e *model.AuditEvent) error {
 			m, err := tx.CreateManualTrip(model.ManualTrip{
 				Title: title, Destination: dest, Start: startAt, End: endAt, Enabled: enabled,
-				DistanceOverrideKm: in.DistanceOverrideKm.Value,
+				DistanceOverrideKm: in.DistanceOverrideKm.Value, Points: route,
 			})
 			if err != nil {
 				return err
@@ -193,6 +248,15 @@ func (s *Service) UpdateTrip(ctx context.Context, key string, in TripInput) erro
 	}
 	if in.Destination != nil && trimmed(in.Destination) == "" {
 		return invalid("destination is required")
+	}
+	if in.Points != nil {
+		route, _, err := cleanRoute(*in.Points)
+		switch {
+		case err != nil:
+			return err
+		case route != nil && k.Source == trips.SourceRecurring:
+			return invalid("recurring trips always go from home to the destination and back")
+		}
 	}
 	if k.Source == trips.SourceManual {
 		return s.updateManual(ctx, key, k.ID, in)
@@ -228,8 +292,12 @@ func (s *Service) UpdateTrip(ctx context.Context, key string, in TripInput) erro
 				ov.Title = differs(t, src.Title)
 			}
 		}
-		if in.Destination != nil {
-			ov.Destination = differs(trimmed(in.Destination), src.Destination)
+		if in.Destination != nil || in.Points != nil {
+			route, dest, err := in.route(ov.Points, src.Destination)
+			if err != nil {
+				return err
+			}
+			ov.Points, ov.Destination = route, differs(dest, src.Destination)
 		}
 		if in.Date != nil || in.Start != nil || in.End != nil {
 			startAt, endAt, err := s.times(in, curStart, curEnd, 0)
@@ -282,8 +350,8 @@ func (s *Service) updateManual(ctx context.Context, key string, id int64, in Tri
 		if in.Title != nil {
 			m.Title = trimmed(in.Title)
 		}
-		if in.Destination != nil {
-			m.Destination = trimmed(in.Destination)
+		if m.Points, m.Destination, err = in.route(m.Points, m.Destination); err != nil {
+			return err
 		}
 		if m.Title == "" {
 			m.Title = m.Destination

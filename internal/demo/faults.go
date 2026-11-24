@@ -250,9 +250,9 @@ type faultyRouter struct {
 	f *Faults
 }
 
-func (r faultyRouter) Compute(ctx context.Context, origin, destination string, departAt *time.Time) (routes.Route, error) {
+func (r faultyRouter) Compute(ctx context.Context, points []string, departAt *time.Time) ([]routes.Route, error) {
 	if err := r.f.fail(ctx, FaultRoutes); err != nil {
-		return routes.Route{}, err
+		return nil, err
 	}
-	return r.Router.Compute(ctx, origin, destination, departAt)
+	return r.Router.Compute(ctx, points, departAt)
 }

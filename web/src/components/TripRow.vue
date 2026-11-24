@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import type { Trip } from '../api/types'
 import { km, kwh } from '../lib/format'
+import { routeText } from '../lib/route'
 import ToggleSwitch from './ToggleSwitch.vue'
 
 // target: SoC needed when leaving, shown on the first trip of a departure.
@@ -21,10 +22,13 @@ const source = computed(() => {
   if (t.source === 'calendar') return `Calendar: ${t.sourceLabel}`
   return 'Manual'
 })
-// One line that wraps between words: "Leave 07:48 · until 08:20 · School · Recurring: …".
+// One line that wraps between words:
+// "Leave 07:48 · until 08:20 · Home → School → Home · Recurring: …".
+// A one-way trip has no end time.
 const details = computed(() => {
   const t = props.trip
-  return [`Leave ${t.departLocal}`, `until ${t.endLocal}`, t.placeName || t.destination, source.value]
+  const route = t.points?.length ? routeText(t.points) : t.placeName || t.destination
+  return [`Leave ${t.departLocal}`, t.oneWay ? '' : `until ${t.endLocal}`, route, source.value]
     .filter(Boolean)
     .join(' · ')
 })

@@ -160,9 +160,12 @@ func (s *Service) dateText(date string) string {
 // ---- recorded values ----
 
 // tripRecord is a trip as the activity log shows it: what a user can change.
+// Route is only set for a trip with its own route (not home → destination →
+// home).
 type tripRecord struct {
 	Title            string   `json:"title"`
 	Destination      string   `json:"destination"`
+	Route            string   `json:"route,omitempty"`
 	ArriveBy         string   `json:"arriveBy"`
 	Until            string   `json:"until"`
 	Enabled          bool     `json:"enabled"`
@@ -171,20 +174,23 @@ type tripRecord struct {
 }
 
 var tripLabels = map[string]string{
-	"title": "title", "destination": "destination", "arriveBy": "arrive-by time", "until": "end time",
+	"title": "title", "destination": "destination", "route": "route", "arriveBy": "arrive-by time", "until": "end time",
 	"enabled": "on/off", "manualDistanceKm": "manual distance", "needsReview": "review",
 }
 
 func (s *Service) tripRecord(t trips.Trip) tripRecord {
 	return tripRecord{
-		Title: t.Title, Destination: t.Destination, ArriveBy: s.localText(t.Start), Until: s.localText(t.End),
+		Title: t.Title, Destination: t.Destination, Route: routeText(t.Route), ArriveBy: s.localText(t.Start), Until: s.localText(t.End),
 		Enabled: t.Enabled, ManualDistanceKm: t.DistanceOverrideKm, NeedsReview: t.NeedsReview,
 	}
 }
 
+// routeText is a trip's own route as one line, e.g. Home → School → Home.
+func routeText(points []string) string { return strings.Join(points, " → ") }
+
 func (s *Service) manualRecord(m model.ManualTrip) tripRecord {
 	return tripRecord{
-		Title: m.Title, Destination: m.Destination, ArriveBy: s.localText(m.Start), Until: s.localText(m.End),
+		Title: m.Title, Destination: m.Destination, Route: routeText(m.Points), ArriveBy: s.localText(m.Start), Until: s.localText(m.End),
 		Enabled: m.Enabled, ManualDistanceKm: m.DistanceOverrideKm,
 	}
 }

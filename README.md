@@ -168,9 +168,11 @@ demand and show **Needs review**.
 4. Set `GOOGLE_MAPS_API_KEY`.
 
 The planner uses traffic-aware routing (billed as Compute Routes Pro, 5,000 free
-calls per month) and caches each route per weekday and half hour for a week, so
-recurring trips reuse their result. Expect a few hundred calls per month. Without
-a key it falls back to labelled stub distances.
+calls per month) and caches each drive per weekday and half hour for a week, so
+recurring trips reuse their result. A trip with stops takes at most two calls:
+the drive out with its stops as waypoints (at most 3, well under the 10 billed at
+the normal rate), and the drive back. Expect a few hundred calls per month.
+Without a key it falls back to labelled stub distances.
 
 ### Daily advice: OpenRouter and KNMI (optional)
 
@@ -317,8 +319,14 @@ to `main` deploy automatically, run `make verify` before pushing.
 - **Times are arrive-by times.** Departure = arrival − travel time − departure
   buffer. The return leg leaves at the trip's end time. Everything is scheduled
   in Europe/Amsterdam, including across daylight-saving changes.
-- **Energy** = round-trip km × consumption. Trips that overlap merge into one
-  away period. A trip whose distance cannot be determined (no location, no
+- **Routes:** a trip goes from home to its destination and back unless it has
+  its own route of 2 to 5 points (calendar and one-off trips; `Home` stands for
+  the home address). With more stops, the arrive-by time is for the first stop
+  and the end time is when the last stop is left. A trip that ends away keeps
+  the car away until a later trip brings it home; one that starts away means the
+  car is away already.
+- **Energy** = the whole route's km × consumption. Trips that overlap, or that
+  are driven without coming home in between, merge into one away period. A trip whose distance cannot be determined (no location, no
   route, or no home address) is shown disabled with the reason until it gets a
   destination or a manual distance.
 - **The car is assumed plugged in whenever it is home.** Each home period

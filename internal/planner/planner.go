@@ -4,7 +4,9 @@
 // Model: the car is plugged in whenever it is home, so every home period is a
 // charging opportunity at the achievable battery power (wall power times
 // charging efficiency), minus a time buffer. Trips that overlap are merged
-// into one away block with no charging in between.
+// into one away block with no charging in between, as are trips the car
+// drives without coming home in between: after a trip that ends away, until
+// a trip brings it home.
 package planner
 
 import (
@@ -21,17 +23,25 @@ type Params struct {
 	EfficiencyPct          float64 // wall to battery
 	ChargePowerKW          float64 // at the wall
 	ChargeBuffer           time.Duration
+	// Horizon is the end of the plan: a car that doesn't come back home
+	// is away until then.
+	Horizon time.Time
 }
 
 // BatteryPowerKW is the power reaching the battery.
 func (p Params) BatteryPowerKW() float64 { return p.ChargePowerKW * p.EfficiencyPct / 100 }
 
-// Trip is one round trip from home.
+// Trip is one journey, by default a round trip from home.
 type Trip struct {
 	Key        string
 	DepartAt   time.Time
-	ReturnAt   time.Time // back home
-	DistanceKm float64   // whole round trip
+	ReturnAt   time.Time // back home, or at its end when EndsAway
+	DistanceKm float64   // the whole trip
+	// StartsAway: the trip leaves from somewhere other than home, so the
+	// car is already away. EndsAway: it ends somewhere other than home, so
+	// the car stays away until a later trip brings it home.
+	StartsAway bool
+	EndsAway   bool
 }
 
 // SoC is the latest known state of charge.
@@ -66,6 +76,9 @@ type Block struct {
 	RequiredSoC    float64 // also covering later blocks, capped at 100
 	Status         Status
 	Overlap        bool
+	// EndsAway: the car isn't home again within the plan (ReturnAt is the
+	// horizon, or the arrival without one).
+	EndsAway bool
 
 	// Projection; nil or zero when the SoC is unknown or the block is past.
 	ChargeFrom        *time.Time
@@ -106,17 +119,30 @@ func Plan(now time.Time, p Params, soc SoC, input []Trip) Result {
 
 	var blocks []Block
 	for _, t := range trips {
-		if n := len(blocks); n > 0 && t.DepartAt.Before(blocks[n-1].ReturnAt) {
+		if n := len(blocks); n > 0 {
 			b := &blocks[n-1]
-			b.TripKeys = append(b.TripKeys, t.Key)
-			b.DistanceKm += t.DistanceKm
-			if t.ReturnAt.After(b.ReturnAt) {
-				b.ReturnAt = t.ReturnAt
+			overlap := t.DepartAt.Before(b.ReturnAt)
+			if overlap || b.EndsAway || t.StartsAway {
+				b.TripKeys = append(b.TripKeys, t.Key)
+				b.DistanceKm += t.DistanceKm
+				if !t.ReturnAt.Before(b.ReturnAt) {
+					b.ReturnAt, b.EndsAway = t.ReturnAt, t.EndsAway
+				}
+				b.Overlap = b.Overlap || overlap
+				continue
 			}
-			b.Overlap = true
-			continue
 		}
-		blocks = append(blocks, Block{TripKeys: []string{t.Key}, DepartAt: t.DepartAt, ReturnAt: t.ReturnAt, DistanceKm: t.DistanceKm})
+		blocks = append(blocks, Block{
+			TripKeys: []string{t.Key}, DepartAt: t.DepartAt, ReturnAt: t.ReturnAt, DistanceKm: t.DistanceKm, EndsAway: t.EndsAway,
+		})
+	}
+	// A first trip that starts away means the car is away already.
+	if len(blocks) > 0 && trips[0].StartsAway && blocks[0].DepartAt.After(now) {
+		blocks[0].DepartAt = now
+	}
+	// A car that doesn't come home is away until the end of the plan.
+	if n := len(blocks); n > 0 && blocks[n-1].EndsAway && blocks[n-1].ReturnAt.Before(p.Horizon) {
+		blocks[n-1].ReturnAt = p.Horizon
 	}
 
 	res := Result{Next: -1}

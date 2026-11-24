@@ -50,6 +50,7 @@ export function subjectLabel(e: AuditEvent) {
 const fieldLabels: Record<string, string> = {
   title: 'Title',
   destination: 'Destination',
+  route: 'Route',
   arriveBy: 'Arrive by',
   until: 'Until',
   enabled: 'On',

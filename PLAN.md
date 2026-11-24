@@ -64,6 +64,7 @@ Background EVCC preferences: cheap-grid charging and solar/export-price priority
 - Trip edits/disabled states stay local and survive calendar syncs. Recalculate demand immediately.
 - Every trip time is an **arrive-by time**: the calendar event start, or the time on a manual/recurring trip (school drop-off 08:15 means at school by 08:15). Departure = arrival time minus travel time and buffer.
 - Include return legs and earlier trips. Every trip, whatever its source, has a start (arrive-by) and an end time; the **return leg starts at the end time**. New manual/recurring trips default to a 15-minute stay.
+- Trip routes (2026-11-24): calendar and manual trips may have their own route of 2 to 5 points (default home → destination → home; recurring trips keep it). The arrive-by time is for the first stop and the end time is when the last stop is left. A trip ending away keeps the car away (no charging) until a later trip brings it home. Routing uses at most two Routes API calls per trip: the drive out with stops as waypoints, and the drive back; each leg is cached on its own.
 - Assume the car is **plugged in whenever it is home**: every home period is a charging opportunity at achievable power.
 - Configure consumption, usable capacity, and arrival reserve. Include charging losses, achievable power, and a time buffer.
 - Keep the full departure SoC target. Solar changes timing; count only surplus after household use, before departure, while the car is home.

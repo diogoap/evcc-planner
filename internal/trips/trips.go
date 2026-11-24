@@ -29,15 +29,17 @@ const (
 	SourceCalendar  Source = "calendar"
 )
 
-// Trip is one dated journey: leave home, arrive by Start, stay until End,
-// then return home.
+// Trip is one dated journey along its route: by default leave home, arrive
+// by Start, stay until End, then return home. With more stops, Start is the
+// arrival at the first stop and End is when the last stop is left; a
+// one-way trip (two points) arrives at its end by Start.
 type Trip struct {
 	Key                string
 	Source             Source
 	SourceLabel        string
 	SourceID           int64
 	Title              string
-	Destination        string // as entered or from the calendar
+	Destination        string // the first stop, as entered or from the calendar
 	Address            string // resolved for routing
 	PlaceName          string // saved place, when the destination is one
 	Start              time.Time
@@ -46,7 +48,28 @@ type Trip struct {
 	NeedsReview        bool
 	DistanceOverrideKm *float64
 	Overridden         []string
+	// Route is the trip's own list of points as entered; nil means home →
+	// Destination → home. Points is the route resolved, from start to end.
+	Route  []string
+	Points []Point
 }
+
+// Point is one place on a trip's route.
+type Point struct {
+	Name      string // as entered: Home, a saved place, or an address
+	Address   string // resolved for routing; empty when unknown
+	PlaceName string // the saved place, or Home
+	Home      bool
+}
+
+// OneWay reports a trip without stops between its start and end.
+func (t Trip) OneWay() bool { return len(t.Points) == 2 }
+
+// StartsAway reports a trip that doesn't start at home.
+func (t Trip) StartsAway() bool { return len(t.Points) > 0 && !t.Points[0].Home }
+
+// EndsAway reports a trip that doesn't end at home: the car stays there.
+func (t Trip) EndsAway() bool { return len(t.Points) > 0 && !t.Points[len(t.Points)-1].Home }
 
 // Ignored is a calendar event that is not a car trip.
 type Ignored struct {
@@ -79,7 +102,7 @@ func Build(in Input) ([]Trip, []Ignored) {
 		t := Trip{
 			Key: ManualKey(m.ID), Source: SourceManual, SourceLabel: "Manual", SourceID: m.ID,
 			Title: m.Title, Destination: m.Destination, Start: m.Start, End: m.End,
-			Enabled: m.Enabled, DistanceOverrideKm: m.DistanceOverrideKm,
+			Enabled: m.Enabled, DistanceOverrideKm: m.DistanceOverrideKm, Route: m.Points,
 		}
 		list = append(list, t)
 	}
@@ -128,7 +151,8 @@ func Build(in Input) ([]Trip, []Ignored) {
 			t.End = t.Start
 		}
 		if t.Start.Before(in.To) && !t.End.Before(in.From) {
-			t.Address, t.PlaceName = ResolveDestination(t.Destination, in.Places)
+			t.Points = ResolveRoute(t.Route, t.Destination, in.Home, in.Places)
+			t.Address, t.PlaceName = t.Points[1].Address, t.Points[1].PlaceName
 			out = append(out, t)
 		}
 	}
@@ -170,6 +194,9 @@ func ApplyOverride(t Trip, o model.Override) Trip {
 	if o.DistanceOverrideKm != nil {
 		t.DistanceOverrideKm = o.DistanceOverrideKm
 	}
+	if o.Points != nil {
+		t.Route = o.Points
+	}
 	if o.Reviewed != nil && *o.Reviewed {
 		t.NeedsReview = false
 	}
@@ -210,6 +237,49 @@ func Occurrences(t model.Template, loc *time.Location, from, to time.Time) []Occ
 		out = append(out, Occurrence{Date: date, Start: start, End: end, Exception: t.ExceptionFor(date)})
 	}
 	return out
+}
+
+// DefaultRoute is the route of a trip without its own: home, the
+// destination, home.
+func DefaultRoute(destination string) []string {
+	return []string{model.RouteHome, destination, model.RouteHome}
+}
+
+// IsDefaultRoute reports whether a route is home → one stop → home.
+func IsDefaultRoute(points []string) bool {
+	return len(points) == 3 && IsHome(points[0]) && IsHome(points[2]) && !IsHome(points[1])
+}
+
+// IsHome reports whether a point is Home, which stands for the home address.
+func IsHome(point string) bool { return strings.EqualFold(strings.TrimSpace(point), model.RouteHome) }
+
+// ResolveRoute resolves a trip's route: its own points, or home →
+// destination → home.
+func ResolveRoute(route []string, destination, home string, places []model.Place) []Point {
+	if len(route) < model.MinRoutePoints {
+		route = DefaultRoute(destination)
+	}
+	out := make([]Point, len(route))
+	for i, name := range route {
+		out[i] = ResolvePoint(name, home, places)
+	}
+	return out
+}
+
+// ResolvePoint maps Home to the home address and a saved place's name to
+// its address. A point whose address is the home address is home too.
+func ResolvePoint(name, home string, places []model.Place) Point {
+	n := strings.TrimSpace(name)
+	h := strings.TrimSpace(home)
+	if IsHome(n) {
+		return Point{Name: model.RouteHome, Address: h, PlaceName: model.RouteHome, Home: true}
+	}
+	addr, place := ResolveDestination(n, places)
+	same := h != "" && strings.EqualFold(strings.Join(strings.Fields(addr), " "), strings.Join(strings.Fields(h), " "))
+	if same && place == "" {
+		place = model.RouteHome
+	}
+	return Point{Name: n, Address: addr, PlaceName: place, Home: same}
 }
 
 // ResolveDestination maps a saved place name to its address.

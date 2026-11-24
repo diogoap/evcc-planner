@@ -235,3 +235,60 @@ func TestCoverUntilDrivesSeveralBlocksOnOneCharge(t *testing.T) {
 		t.Error("no next departure, no cover")
 	}
 }
+
+func TestOneWayTripsKeepTheCarAway(t *testing.T) {
+	soc := SoC{Percent: 80, Known: true, ObservedAt: now}
+	p := params
+	p.Horizon = at(16, 0, 0)
+
+	// Out to the airport on Tuesday, back on Friday: one away block, no
+	// charging in between, with the trips around it planned as usual.
+	res := Plan(now, p, soc, []Trip{
+		{Key: "school", DepartAt: at(10, 7, 48), ReturnAt: at(10, 8, 32), DistanceKm: 12},
+		{Key: "out", DepartAt: at(10, 12, 0), ReturnAt: at(10, 13, 0), DistanceKm: 60, EndsAway: true},
+		{Key: "back", DepartAt: at(13, 17, 0), ReturnAt: at(13, 18, 0), DistanceKm: 60, StartsAway: true},
+		{Key: "shop", DepartAt: at(14, 10, 0), ReturnAt: at(14, 11, 0), DistanceKm: 8},
+	})
+	if len(res.Blocks) != 3 {
+		t.Fatalf("blocks = %+v", res.Blocks)
+	}
+	away := res.Blocks[1]
+	if len(away.TripKeys) != 2 || !away.ReturnAt.Equal(at(13, 18, 0)) || away.EndsAway || away.Overlap || away.DistanceKm != 120 {
+		t.Errorf("away block = %+v", away)
+	}
+	if !res.Blocks[2].ChargeFrom.Equal(at(13, 18, 0)) {
+		t.Errorf("charging resumes when back: %v", res.Blocks[2].ChargeFrom)
+	}
+
+	// Without a trip home, the car is away until the end of the plan.
+	res = Plan(now, p, soc, []Trip{{Key: "out", DepartAt: at(10, 12, 0), ReturnAt: at(10, 13, 0), DistanceKm: 60, EndsAway: true}})
+	if b := res.Blocks[0]; !b.EndsAway || !b.ReturnAt.Equal(p.Horizon) {
+		t.Errorf("one way = %+v", b)
+	}
+	// Even a trip from home merges: the plan has the car away.
+	res = Plan(now, p, soc, []Trip{
+		{Key: "out", DepartAt: at(10, 12, 0), ReturnAt: at(10, 13, 0), DistanceKm: 60, EndsAway: true},
+		{Key: "school", DepartAt: at(11, 7, 48), ReturnAt: at(11, 8, 32), DistanceKm: 12},
+	})
+	if len(res.Blocks) != 1 || res.Blocks[0].EndsAway || !res.Blocks[0].ReturnAt.Equal(at(11, 8, 32)) {
+		t.Errorf("blocks = %+v", res.Blocks)
+	}
+}
+
+func TestTripFromAwayFirst(t *testing.T) {
+	// The car was left at the office (before the plan): it is away now, so
+	// nothing charges before the trip home, and that trip's energy comes off
+	// the SoC the next departure starts from.
+	res := Plan(now, params, SoC{Percent: 50, Known: true, ObservedAt: now.Add(-time.Hour)}, []Trip{
+		{Key: "home", DepartAt: at(10, 17, 0), ReturnAt: at(10, 17, 45), DistanceKm: 38, StartsAway: true},
+		{Key: "school", DepartAt: at(11, 7, 48), ReturnAt: at(11, 8, 32), DistanceKm: 12},
+	})
+	first := res.Blocks[0]
+	if first.Status != StatusInProgress || !first.DepartAt.Equal(now) || res.Next != 1 {
+		t.Fatalf("first = %+v next=%d", first, res.Next)
+	}
+	near(t, "start SoC", res.StartSoC, 50-38*0.18/59*100, 1e-6)
+	if !res.SoCEstimated || !res.Blocks[1].ChargeFrom.Equal(at(10, 17, 45)) {
+		t.Errorf("estimated=%v charge from %v", res.SoCEstimated, res.Blocks[1].ChargeFrom)
+	}
+}

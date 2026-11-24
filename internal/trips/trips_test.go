@@ -1,6 +1,7 @@
 package trips
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -161,3 +162,71 @@ func TestParseKey(t *testing.T) {
 }
 
 func ptr[T any](v T) *T { return &v }
+
+func TestRoutes(t *testing.T) {
+	places := []model.Place{{ID: 1, Name: "School", Address: "Schoolstraat 1, Town"}}
+	home := "Home 1, Town"
+	start := time.Date(2026, 11, 10, 10, 0, 0, 0, ams)
+	in := Input{
+		Location: ams, From: day(2026, 11, 9), To: day(2026, 11, 16), Home: home, Places: places,
+		Manual: []model.ManualTrip{
+			{ID: 1, Title: "Default", Destination: "School", Start: start, End: start.Add(time.Hour), Enabled: true},
+			{ID: 2, Title: "Errands", Destination: "School", Start: start, End: start.Add(time.Hour), Enabled: true,
+				Points: []string{"home", "School", "Shop 3, Town", " Home 1,  town "}},
+			{ID: 3, Title: "Airport", Destination: "Airport 1", Start: start, End: start, Enabled: true,
+				Points: []string{"Home", "Airport 1"}},
+			{ID: 4, Title: "Back", Destination: "Home", Start: start, End: start, Enabled: true,
+				Points: []string{"Airport 1", "Home"}},
+		},
+		Events: []model.CalendarEvent{{Key: "e1", Calendar: "Family", Title: "Dentist", Location: "Stationsweg 12, Town",
+			Start: start, End: start.Add(time.Hour)}},
+		Overrides: map[string]model.Override{
+			CalendarKey("e1"): {TripKey: CalendarKey("e1"), Points: []string{"Home", "Stationsweg 12, Town", "School", "Home"}},
+		},
+	}
+	list, _ := Build(in)
+	by := map[string]Trip{}
+	for _, tr := range list {
+		by[tr.Key] = tr
+	}
+	names := func(tr Trip) string {
+		var n []string
+		for _, p := range tr.Points {
+			n = append(n, p.Name+"="+p.Address)
+		}
+		return strings.Join(n, " | ")
+	}
+
+	def := by[ManualKey(1)]
+	if names(def) != "Home=Home 1, Town | School=Schoolstraat 1, Town | Home=Home 1, Town" || def.Route != nil {
+		t.Errorf("default route = %s", names(def))
+	}
+	if def.OneWay() || def.StartsAway() || def.EndsAway() || def.Address != "Schoolstraat 1, Town" || def.PlaceName != "School" {
+		t.Errorf("default trip = %+v", def)
+	}
+	// "home" is Home; the home address typed out is home too.
+	errands := by[ManualKey(2)]
+	if len(errands.Points) != 4 || !errands.Points[0].Home || errands.Points[0].Name != "Home" ||
+		!errands.Points[3].Home || errands.Points[3].PlaceName != "Home" || errands.Points[2].Home {
+		t.Errorf("errands = %+v", errands.Points)
+	}
+	if a := by[ManualKey(3)]; !a.OneWay() || a.StartsAway() || !a.EndsAway() {
+		t.Errorf("one way out = %+v", a.Points)
+	}
+	if b := by[ManualKey(4)]; !b.OneWay() || !b.StartsAway() || b.EndsAway() || b.PlaceName != "Home" {
+		t.Errorf("one way back = %+v", b)
+	}
+	cal := by[CalendarKey("e1")]
+	if len(cal.Points) != 4 || cal.Points[2].PlaceName != "School" || strings.Join(cal.Overridden, ",") != "route" {
+		t.Errorf("calendar route = %s %v", names(cal), cal.Overridden)
+	}
+
+	if !IsDefaultRoute([]string{"home", "School", "Home"}) || IsDefaultRoute([]string{"Home", "Home", "Home"}) ||
+		IsDefaultRoute([]string{"Home", "School"}) || IsDefaultRoute([]string{"Office", "School", "Home"}) {
+		t.Error("IsDefaultRoute")
+	}
+	// Without a home address, Home has no address (no route).
+	if p := ResolvePoint("Home", "", places); !p.Home || p.Address != "" {
+		t.Errorf("home without address = %+v", p)
+	}
+}

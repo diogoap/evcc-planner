@@ -60,6 +60,18 @@ const screens: Screen[] = [
   },
   { name: 'charts', open: (page) => page.goto('/charts') },
   { name: 'trips', open: (page) => page.goto('/trips') },
+  {
+    // The route of a manual trip, with a stop being added.
+    name: 'trip-editor',
+    open: async (page) => {
+      // No #day: the same address again wouldn't reload the page.
+      await page.goto('/trips')
+      await page.getByTestId('trip-manual:1').getByRole('button', { name: 'Edit' }).click()
+      const dialog = page.getByRole('dialog', { name: 'Edit trip' })
+      await dialog.getByRole('button', { name: 'Add stop' }).click()
+      await expect(dialog.getByLabel('Stop 2', { exact: true })).toBeFocused()
+    },
+  },
   { name: 'recurring', open: (page) => page.goto('/recurring') },
   { name: 'settings-home', open: settingsTab('Home & vehicle') },
   { name: 'settings-planning', open: settingsTab('Planning') },

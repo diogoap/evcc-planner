@@ -228,6 +228,9 @@ var migrations = []string{
 		data TEXT NOT NULL
 	);
 	CREATE INDEX ai_runs_started ON ai_runs(started_at);`,
+	// A manual trip's own route (JSON list of points), when it isn't home →
+	// destination → home.
+	`ALTER TABLE manual_trips ADD COLUMN points TEXT;`,
 }
 
 // Open opens (creating if needed) the database at path and migrates it.
@@ -573,7 +576,7 @@ func (s *Store) DeleteTemplate(id int64) error {
 
 // ManualTrips lists manual trips overlapping [from, to).
 func (s *Store) ManualTrips(from, to time.Time) ([]model.ManualTrip, error) {
-	rows, err := s.q.Query(`SELECT id, title, destination, start_at, end_at, enabled, distance_override_km
+	rows, err := s.q.Query(`SELECT id, title, destination, start_at, end_at, enabled, distance_override_km, points
 		FROM manual_trips WHERE start_at < ? AND end_at >= ? ORDER BY start_at`, fmtTime(to), fmtTime(from))
 	if err != nil {
 		return nil, err
@@ -592,7 +595,7 @@ func (s *Store) ManualTrips(from, to time.Time) ([]model.ManualTrip, error) {
 
 // ManualTrip returns one manual trip.
 func (s *Store) ManualTrip(id int64) (model.ManualTrip, error) {
-	row := s.q.QueryRow(`SELECT id, title, destination, start_at, end_at, enabled, distance_override_km
+	row := s.q.QueryRow(`SELECT id, title, destination, start_at, end_at, enabled, distance_override_km, points
 		FROM manual_trips WHERE id = ?`, id)
 	m, err := scanManual(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -606,10 +609,16 @@ func scanManual(r scanner) (model.ManualTrip, error) {
 	var start, end string
 	var enabled int
 	var dist sql.NullFloat64
-	if err := r.Scan(&m.ID, &m.Title, &m.Destination, &start, &end, &enabled, &dist); err != nil {
+	var points sql.NullString
+	if err := r.Scan(&m.ID, &m.Title, &m.Destination, &start, &end, &enabled, &dist, &points); err != nil {
 		return m, err
 	}
 	var err error
+	if points.Valid {
+		if err := json.Unmarshal([]byte(points.String), &m.Points); err != nil {
+			return m, fmt.Errorf("decode route of manual trip %d: %w", m.ID, err)
+		}
+	}
 	if m.Start, err = parseTime(start); err != nil {
 		return m, err
 	}
@@ -625,8 +634,12 @@ func scanManual(r scanner) (model.ManualTrip, error) {
 
 // CreateManualTrip inserts a manual trip.
 func (s *Store) CreateManualTrip(m model.ManualTrip) (model.ManualTrip, error) {
-	res, err := s.q.Exec(`INSERT INTO manual_trips (title, destination, start_at, end_at, enabled, distance_override_km)
-		VALUES (?, ?, ?, ?, ?, ?)`, m.Title, m.Destination, fmtTime(m.Start), fmtTime(m.End), boolInt(m.Enabled), m.DistanceOverrideKm)
+	points, err := pointsJSON(m.Points)
+	if err != nil {
+		return m, err
+	}
+	res, err := s.q.Exec(`INSERT INTO manual_trips (title, destination, start_at, end_at, enabled, distance_override_km, points)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`, m.Title, m.Destination, fmtTime(m.Start), fmtTime(m.End), boolInt(m.Enabled), m.DistanceOverrideKm, points)
 	if err != nil {
 		return m, err
 	}
@@ -636,13 +649,26 @@ func (s *Store) CreateManualTrip(m model.ManualTrip) (model.ManualTrip, error) {
 
 // UpdateManualTrip replaces a manual trip.
 func (s *Store) UpdateManualTrip(m model.ManualTrip) error {
+	points, err := pointsJSON(m.Points)
+	if err != nil {
+		return err
+	}
 	res, err := s.q.Exec(`UPDATE manual_trips SET title = ?, destination = ?, start_at = ?, end_at = ?, enabled = ?,
-		distance_override_km = ? WHERE id = ?`,
-		m.Title, m.Destination, fmtTime(m.Start), fmtTime(m.End), boolInt(m.Enabled), m.DistanceOverrideKm, m.ID)
+		distance_override_km = ?, points = ? WHERE id = ?`,
+		m.Title, m.Destination, fmtTime(m.Start), fmtTime(m.End), boolInt(m.Enabled), m.DistanceOverrideKm, points, m.ID)
 	if err != nil {
 		return err
 	}
 	return expectRow(res)
+}
+
+// pointsJSON stores a trip's own route; nil (the default route) is NULL.
+func pointsJSON(points []string) (any, error) {
+	if points == nil {
+		return nil, nil
+	}
+	raw, err := json.Marshal(points)
+	return string(raw), err
 }
 
 // DeleteManualTrip removes a manual trip.
@@ -664,6 +690,7 @@ type overrideJSON struct {
 	Enabled            *bool      `json:"enabled,omitempty"`
 	DistanceOverrideKm *float64   `json:"distanceOverrideKm,omitempty"`
 	Reviewed           *bool      `json:"reviewed,omitempty"`
+	Points             []string   `json:"points,omitempty"`
 }
 
 // Overrides returns all local trip edits keyed by trip key.
@@ -685,7 +712,7 @@ func (s *Store) Overrides() (map[string]model.Override, error) {
 		}
 		out[key] = model.Override{
 			TripKey: key, Title: o.Title, Destination: o.Destination, Start: o.Start, End: o.End,
-			Enabled: o.Enabled, DistanceOverrideKm: o.DistanceOverrideKm, Reviewed: o.Reviewed,
+			Enabled: o.Enabled, DistanceOverrideKm: o.DistanceOverrideKm, Reviewed: o.Reviewed, Points: o.Points,
 		}
 	}
 	return out, rows.Err()
@@ -695,7 +722,7 @@ func (s *Store) Overrides() (map[string]model.Override, error) {
 func (s *Store) SaveOverride(o model.Override) error {
 	data := overrideJSON{
 		Title: o.Title, Destination: o.Destination, Start: o.Start, End: o.End,
-		Enabled: o.Enabled, DistanceOverrideKm: o.DistanceOverrideKm, Reviewed: o.Reviewed,
+		Enabled: o.Enabled, DistanceOverrideKm: o.DistanceOverrideKm, Reviewed: o.Reviewed, Points: o.Points,
 	}
 	raw, err := json.Marshal(data)
 	if err != nil {

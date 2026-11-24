@@ -139,6 +139,18 @@ type plan struct {
 		Overridden  []string `json:"overridden"`
 		DistanceKm  *float64 `json:"distanceKm"`
 		Disabled    string   `json:"disabledReason"`
+		Destination string   `json:"destination"`
+		OneWay      bool     `json:"oneWay"`
+		BlockIndex  *int     `json:"blockIndex"`
+		Points      []struct {
+			Name      string `json:"name"`
+			PlaceName string `json:"placeName"`
+			Home      bool   `json:"home"`
+		} `json:"points"`
+		Legs []struct {
+			DistanceKm float64 `json:"distanceKm"`
+			Minutes    int     `json:"minutes"`
+		} `json:"legs"`
 	} `json:"trips"`
 	Ignored []struct {
 		Reason string `json:"reason"`
@@ -289,6 +301,139 @@ func TestOccurrenceEditsSurviveTemplateChanges(t *testing.T) {
 	ta.json("DELETE", "/api/recurring/1", nil, http.StatusNoContent, nil)
 	if _, ok := ta.plan().trip("recurring:1:2026-11-10"); ok {
 		t.Error("deleted schedule still produces trips")
+	}
+}
+
+func TestTripRoutes(t *testing.T) {
+	ta := newTestApp(t, "")
+	log := &eventLog{ta: ta}
+	log.fresh()
+	get := func(key string) (tr struct {
+		names  string
+		legs   int
+		legKm  float64
+		trip   int
+		parsed plan
+	}) {
+		t.Helper()
+		p := ta.plan()
+		i, ok := p.trip(key)
+		if !ok {
+			t.Fatalf("trip %s not in the plan", key)
+		}
+		var names []string
+		for _, pt := range p.Trips[i].Points {
+			n := pt.Name
+			if pt.Home {
+				n += "*"
+			}
+			names = append(names, n)
+		}
+		for _, l := range p.Trips[i].Legs {
+			tr.legKm += l.DistanceKm
+		}
+		tr.names, tr.legs, tr.trip, tr.parsed = strings.Join(names, " → "), len(p.Trips[i].Legs), i, p
+		return tr
+	}
+
+	// Two stops: one drive out through both, one drive back.
+	var created struct{ Key string }
+	ta.json("POST", "/api/trips", map[string]any{
+		"title": "Errands", "points": []string{"home", "School", " Bouwmarkt 5, Demo Town ", "Home"},
+		"date": "2026-11-15", "start": "10:00", "end": "11:00",
+	}, http.StatusCreated, &created)
+	tr := get(created.Key)
+	trip := tr.parsed.Trips[tr.trip]
+	if tr.names != "Home* → School → Bouwmarkt 5, Demo Town → Home*" || tr.legs != 3 || trip.Destination != "School" || trip.OneWay {
+		t.Fatalf("errands = %s, %d legs, %+v", tr.names, tr.legs, trip)
+	}
+	// Arrive at the school (6 km, 12 min) by 10:00, with the 15 min buffer.
+	if trip.DepartLocal != "09:33" || math.Abs(*trip.DistanceKm-tr.legKm) > 0.2 || tr.legKm < 12 {
+		t.Errorf("errands depart %s, %v km (legs %.1f)", trip.DepartLocal, *trip.DistanceKm, tr.legKm)
+	}
+	e := log.one("trip.create", "ui")
+	if e.After["route"] != "Home → School → Bouwmarkt 5, Demo Town → Home" {
+		t.Errorf("recorded route = %v", e.After["route"])
+	}
+
+	// A new destination alone replaces the first stop.
+	ta.json("PATCH", "/api/trips/"+created.Key, map[string]any{"destination": "Office"}, http.StatusOK, nil)
+	if tr := get(created.Key); tr.names != "Home* → Office → Bouwmarkt 5, Demo Town → Home*" {
+		t.Errorf("after destination = %s", tr.names)
+	}
+	e = log.one("trip.update", "ui")
+	if !strings.Contains(e.Summary, "destination, route") {
+		t.Errorf("summary = %q", e.Summary)
+	}
+	// Back to home → destination → home: no route of its own.
+	ta.json("PATCH", "/api/trips/"+created.Key, map[string]any{"points": []string{"Home", "Station", "Home"}}, http.StatusOK, nil)
+	if tr := get(created.Key); tr.names != "Home* → Station → Home*" || tr.legs != 2 || tr.parsed.Trips[tr.trip].Destination != "Station" {
+		t.Errorf("default again = %s", tr.names)
+	}
+	if e := log.one("trip.update", "ui"); e.After["route"] != nil || e.Before["route"] == nil {
+		t.Errorf("route change = %v → %v", e.Before["route"], e.After["route"])
+	}
+
+	// One way to the airport early on Sunday: the car stays away, so the
+	// later trip from home is driven without charging in between.
+	var oneWay, sunday struct{ Key string }
+	ta.json("POST", "/api/trips", map[string]any{
+		"points": []string{"Home", "Airport 1, Demo Town"}, "date": "2026-11-15", "start": "06:00",
+	}, http.StatusCreated, &oneWay)
+	ta.json("POST", "/api/trips", map[string]any{"destination": "Bakery 2, Demo Town", "date": "2026-11-15", "start": "09:00"},
+		http.StatusCreated, &sunday)
+	tr = get(oneWay.Key)
+	out := tr.parsed.Trips[tr.trip]
+	if !out.OneWay || tr.legs != 1 || out.Title != "Airport 1, Demo Town" || out.BlockIndex == nil {
+		t.Fatalf("one way = %+v", out)
+	}
+	j, _ := tr.parsed.trip(sunday.Key)
+	if b := tr.parsed.Trips[j].BlockIndex; b == nil || *b != *out.BlockIndex {
+		t.Errorf("the later trip should share the away block (%d): %+v", *out.BlockIndex, tr.parsed.Trips[j])
+	}
+	// Coming back on Sunday morning ends it.
+	ta.json("PATCH", "/api/trips/"+sunday.Key, map[string]any{
+		"points": []string{"Airport 1, Demo Town", "Home"}, "start": "08:00",
+	}, http.StatusOK, nil)
+	if tr := get(sunday.Key); !tr.parsed.Trips[tr.trip].OneWay || tr.parsed.Trips[tr.trip].Destination != "Home" {
+		t.Errorf("trip home = %s %+v", tr.names, tr.parsed.Trips[tr.trip])
+	}
+
+	// Routes need 2 to 5 points, none empty, no place twice in a row.
+	for _, bad := range [][]string{
+		{"Home"}, {"Home", "A 1", "B 2", "C 3", "D 4", "Home"}, {"Home", " ", "Home"}, {"Home", "School", "school", "Home"},
+	} {
+		ta.json("PATCH", "/api/trips/"+created.Key, map[string]any{"points": bad}, http.StatusBadRequest, nil)
+	}
+
+	// A calendar trip keeps its own route through syncs, until reset.
+	var dentist string
+	for _, tr := range ta.plan().Trips {
+		if tr.Title == "Dentist" {
+			dentist = tr.Key
+		}
+	}
+	ta.json("PATCH", "/api/trips/"+dentist, map[string]any{
+		"points": []string{"Home", "Stationsweg 12, Demo Town", "Supermarket 4, Demo Town", "Home"},
+	}, http.StatusOK, nil)
+	if err := ta.app.Syncer.SyncAll(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	tr = get(dentist)
+	if tr.legs != 3 || strings.Join(tr.parsed.Trips[tr.trip].Overridden, ",") != "route" {
+		t.Errorf("dentist after sync = %s %v", tr.names, tr.parsed.Trips[tr.trip].Overridden)
+	}
+	ta.json("POST", "/api/trips/"+dentist+"/reset", map[string]any{}, http.StatusNoContent, nil)
+	if tr := get(dentist); tr.names != "Home* → Stationsweg 12, Demo Town → Home*" {
+		t.Errorf("dentist after reset = %s", tr.names)
+	}
+
+	// Recurring trips always go from home and back.
+	ta.json("PATCH", "/api/trips/recurring:1:2026-11-10", map[string]any{"points": []string{"Home", "School", "Office", "Home"}},
+		http.StatusBadRequest, nil)
+	ta.json("PATCH", "/api/trips/recurring:1:2026-11-10", map[string]any{"points": []string{"Home", "Office", "Home"}}, http.StatusOK, nil)
+	if tr := get("recurring:1:2026-11-10"); tr.names != "Home* → Office → Home*" {
+		t.Errorf("recurring = %s", tr.names)
 	}
 }
 

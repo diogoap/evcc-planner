@@ -57,6 +57,16 @@ const trip = (over: Partial<Trip>): Trip => ({
   enabled: true,
   needsReview: false,
   overridden: [],
+  points: [
+    { name: 'Home', placeName: 'Home', home: true },
+    { name: 'School', placeName: 'School', home: false },
+    { name: 'Home', placeName: 'Home', home: true },
+  ],
+  legs: [
+    { distanceKm: 6, minutes: 12 },
+    { distanceKm: 6, minutes: 12 },
+  ],
+  oneWay: false,
   distanceKm: 12,
   distanceOverrideKm: null,
   distanceSource: 'route',
@@ -264,6 +274,25 @@ describe('TripRow', () => {
     expect(w.emitted('toggle')).toEqual([[false]])
     expect(w.text()).not.toContain('Reset')
     expect(w.text()).not.toContain('Delete')
+  })
+
+  it('shows the route, without an end time for one-way trips', () => {
+    expect(mount(TripRow, { props: { trip: trip({}) } }).text()).toContain(
+      'Leave 07:48 · until 08:20 · Home → School → Home · Recurring',
+    )
+    const oneWay = mount(TripRow, {
+      props: {
+        trip: trip({
+          source: 'manual',
+          oneWay: true,
+          points: [
+            { name: 'Home', placeName: 'Home', home: true },
+            { name: 'Airport 1', home: false },
+          ],
+        }),
+      },
+    })
+    expect(oneWay.text()).toContain('Leave 07:48 · Home → Airport 1 · Manual')
   })
 
   it('shows the departure target when given', () => {

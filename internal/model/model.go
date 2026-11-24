@@ -208,15 +208,27 @@ func (t Template) ExceptionFor(date string) *DateRange {
 	return nil
 }
 
+// Trip routes: every trip has 2 to 5 points, from where it starts to where
+// it ends. Without its own route a trip goes from home to its destination
+// and back. RouteHome is the point that stands for the home address.
+const (
+	MinRoutePoints = 2
+	MaxRoutePoints = 5
+	RouteHome      = "Home"
+)
+
 // ManualTrip is a one-off trip entered in the UI.
 type ManualTrip struct {
 	ID                 int64
 	Title              string
-	Destination        string
-	Start              time.Time // arrive-by
-	End                time.Time // return leaves
+	Destination        string    // the first stop
+	Start              time.Time // arrive-by at the first stop
+	End                time.Time // leaves the last stop
 	Enabled            bool
 	DistanceOverrideKm *float64
+	// Points is the trip's own route, from start to end; nil means home →
+	// Destination → home.
+	Points []string
 }
 
 // CalendarEvent is a timed event synced from an iCal feed. Key is stable
@@ -244,6 +256,9 @@ type Override struct {
 	Enabled            *bool
 	DistanceOverrideKm *float64
 	Reviewed           *bool
+	// Points is the trip's own route (see ManualTrip.Points); nil keeps
+	// home → destination → home.
+	Points []string
 }
 
 // Fields lists which fields the override changes, for display.
@@ -254,6 +269,9 @@ func (o Override) Fields() []string {
 	}
 	if o.Destination != nil {
 		f = append(f, "destination")
+	}
+	if o.Points != nil {
+		f = append(f, "route")
 	}
 	if o.Start != nil || o.End != nil {
 		f = append(f, "time")

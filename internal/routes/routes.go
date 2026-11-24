@@ -28,11 +28,17 @@ type Route struct {
 	Duration  time.Duration
 }
 
-// Router computes a single driving route.
+// Router computes a driving route through two or more points, stopping at
+// each point between the first and the last. It returns one Route per leg.
 type Router interface {
 	Name() string
-	Compute(ctx context.Context, origin, destination string, departAt *time.Time) (Route, error)
+	Compute(ctx context.Context, points []string, departAt *time.Time) ([]Route, error)
 }
+
+// MaxPoints is the most points a route may have: Google bills up to 10
+// stops between start and end at the normal rate, and trips have at most 5
+// points.
+const MaxPoints = 12
 
 // ErrNoRoute means the provider found no route between the addresses.
 var ErrNoRoute = errors.New("no route found")
@@ -51,18 +57,29 @@ type Google struct {
 // Name identifies the provider in the cache and UI.
 func (g *Google) Name() string { return "google" }
 
-// Compute requests a driving route. Traffic-aware routing (billed as Compute
+// Compute requests a driving route, with the points between the first and
+// the last as stops (one leg each). Traffic-aware routing (billed as Compute
 // Routes Pro) needs a future departure time; otherwise traffic is ignored.
-func (g *Google) Compute(ctx context.Context, origin, destination string, departAt *time.Time) (Route, error) {
+func (g *Google) Compute(ctx context.Context, points []string, departAt *time.Time) ([]Route, error) {
+	if len(points) < 2 || len(points) > MaxPoints {
+		return nil, fmt.Errorf("a route needs 2 to %d points", MaxPoints)
+	}
 	now := time.Now
 	if g.Now != nil {
 		now = g.Now
 	}
 	body := map[string]any{
-		"origin":      map[string]any{"address": origin},
-		"destination": map[string]any{"address": destination},
+		"origin":      map[string]any{"address": points[0]},
+		"destination": map[string]any{"address": points[len(points)-1]},
 		"travelMode":  "DRIVE",
 		"units":       "METRIC",
+	}
+	if via := points[1 : len(points)-1]; len(via) > 0 {
+		stops := make([]any, len(via))
+		for i, p := range via {
+			stops[i] = map[string]any{"address": p}
+		}
+		body["intermediates"] = stops
 	}
 	if g.TrafficAware && departAt != nil && departAt.After(now().Add(time.Minute)) {
 		body["routingPreference"] = "TRAFFIC_AWARE"
@@ -72,24 +89,24 @@ func (g *Google) Compute(ctx context.Context, origin, destination string, depart
 	}
 	payload, err := json.Marshal(body)
 	if err != nil {
-		return Route{}, err
+		return nil, err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		strings.TrimRight(g.BaseURL, "/")+"/directions/v2:computeRoutes", bytes.NewReader(payload))
 	if err != nil {
-		return Route{}, err
+		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Goog-Api-Key", g.APIKey)
-	req.Header.Set("X-Goog-FieldMask", "routes.distanceMeters,routes.duration")
+	req.Header.Set("X-Goog-FieldMask", "routes.distanceMeters,routes.duration,routes.legs.distanceMeters,routes.legs.duration")
 	resp, err := g.HTTP.Do(req)
 	if err != nil {
-		return Route{}, fmt.Errorf("routes api unreachable: %w", err)
+		return nil, fmt.Errorf("routes api unreachable: %w", err)
 	}
 	defer resp.Body.Close()
 	data, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		return Route{}, err
+		return nil, err
 	}
 	if resp.StatusCode/100 != 2 {
 		var e struct {
@@ -104,27 +121,44 @@ func (g *Google) Compute(ctx context.Context, origin, destination string, depart
 		// Google answers a key that isn't valid with 400.
 		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden ||
 			(resp.StatusCode == http.StatusBadRequest && strings.Contains(strings.ToLower(msg), "api key not valid")) {
-			return Route{}, &rejected.Error{What: "API key", Status: resp.StatusCode, Message: msg}
+			return nil, &rejected.Error{What: "API key", Status: resp.StatusCode, Message: msg}
 		}
-		return Route{}, fmt.Errorf("routes api: %s", msg)
+		return nil, fmt.Errorf("routes api: %s", msg)
+	}
+	type leg struct {
+		DistanceMeters int    `json:"distanceMeters"`
+		Duration       string `json:"duration"`
 	}
 	var out struct {
 		Routes []struct {
-			DistanceMeters int    `json:"distanceMeters"`
-			Duration       string `json:"duration"`
+			leg
+			Legs []leg `json:"legs"`
 		} `json:"routes"`
 	}
 	if err := json.Unmarshal(data, &out); err != nil {
-		return Route{}, fmt.Errorf("decode routes response: %w", err)
+		return nil, fmt.Errorf("decode routes response: %w", err)
 	}
 	if len(out.Routes) == 0 {
-		return Route{}, ErrNoRoute
+		return nil, ErrNoRoute
 	}
-	d, err := time.ParseDuration(out.Routes[0].Duration)
-	if err != nil {
-		return Route{}, fmt.Errorf("decode route duration %q: %w", out.Routes[0].Duration, err)
+	legs := out.Routes[0].Legs
+	if len(legs) == 0 && len(points) == 2 {
+		legs = []leg{out.Routes[0].leg}
 	}
-	return Route{DistanceM: out.Routes[0].DistanceMeters, Duration: d}, nil
+	if len(legs) != len(points)-1 {
+		return nil, fmt.Errorf("routes api: %d legs for %d points", len(legs), len(points))
+	}
+	routes := make([]Route, len(legs))
+	for i, l := range legs {
+		d := time.Duration(0)
+		if l.Duration != "" {
+			if d, err = time.ParseDuration(l.Duration); err != nil {
+				return nil, fmt.Errorf("decode route duration %q: %w", l.Duration, err)
+			}
+		}
+		routes[i] = Route{DistanceM: l.DistanceMeters, Duration: d}
+	}
+	return routes, nil
 }
 
 // ---- stub ----
@@ -136,19 +170,37 @@ type Stub struct{}
 // Name identifies the provider in the cache and UI.
 func (Stub) Name() string { return "stub" }
 
-var stubKnown = map[string]float64{"school": 6, "office": 38, "station": 4, "supermarket": 3}
+// stubKnown are the demo places' distances, matched in this order, the
+// destination before the origin, so a leg between two of them always gets
+// the same distance.
+var stubKnown = []struct {
+	name string
+	km   float64
+}{{"school", 6}, {"office", 38}, {"station", 4}, {"supermarket", 3}}
 
-// Compute returns a deterministic route.
-func (Stub) Compute(ctx context.Context, origin, destination string, departAt *time.Time) (Route, error) {
+// Compute returns a deterministic route, leg by leg.
+func (Stub) Compute(ctx context.Context, points []string, departAt *time.Time) ([]Route, error) {
+	if len(points) < 2 {
+		return nil, fmt.Errorf("a route needs at least 2 points")
+	}
+	out := make([]Route, len(points)-1)
+	for i := range out {
+		out[i] = stubLeg(points[i], points[i+1])
+	}
+	return out, nil
+}
+
+func stubLeg(origin, destination string) Route {
 	key := Normalize(destination)
 	if key == Normalize(origin) {
-		return Route{}, nil
+		return Route{}
 	}
 	km := 0.0
-	for name, d := range stubKnown {
-		if strings.Contains(key, name) || strings.Contains(Normalize(origin), name) {
-			km = d
-			break
+	for _, place := range []string{key, Normalize(origin)} {
+		for _, k := range stubKnown {
+			if km == 0 && strings.Contains(place, k.name) {
+				km = k.km
+			}
 		}
 	}
 	if km == 0 {
@@ -157,7 +209,7 @@ func (Stub) Compute(ctx context.Context, origin, destination string, departAt *t
 		km = 4 + float64(h.Sum32()%400)/10 // 4.0 to 43.9 km
 	}
 	minutes := math.Round(km/45*60) + 4
-	return Route{DistanceM: int(km * 1000), Duration: time.Duration(minutes) * time.Minute}, nil
+	return Route{DistanceM: int(km * 1000), Duration: time.Duration(minutes) * time.Minute}
 }
 
 // ---- resolver with cache ----
@@ -226,48 +278,98 @@ func (r *Resolver) Typical(origin, destination string) (time.Duration, bool) {
 
 // Leg resolves one direction for a departure time.
 func (r *Resolver) Leg(ctx context.Context, origin, destination string, departAt time.Time) (Leg, error) {
-	o, d := Normalize(origin), Normalize(destination)
-	if o == "" || d == "" {
-		return Leg{}, errors.New("missing address")
+	legs, err := r.Route(ctx, []string{origin, destination}, departAt)
+	if err != nil {
+		return Leg{}, err
 	}
-	if o == d {
-		return Leg{Provider: r.Router.Name()}, nil
+	return legs[0], nil
+}
+
+// Route resolves a drive through points (at least two) leaving at
+// departAt, with one Leg per pair of points. Legs are cached one by one
+// under the departure's slot; when any is missing, one provider request
+// covers the whole drive, with the points between as stops. When that
+// request fails, older cached legs are used, marked stale.
+func (r *Resolver) Route(ctx context.Context, points []string, departAt time.Time) ([]Leg, error) {
+	if len(points) < 2 || len(points) > MaxPoints {
+		return nil, fmt.Errorf("a route needs 2 to %d points", MaxPoints)
+	}
+	norm := make([]string, len(points))
+	for i, p := range points {
+		if norm[i] = Normalize(p); norm[i] == "" {
+			return nil, errors.New("missing address")
+		}
 	}
 	provider := r.Router.Name()
 	slot := r.slot(departAt)
 	now := r.Clock.Now()
-	if c, err := r.Cache.Route(o, d, slot, provider); err == nil && c != nil && now.Sub(c.FetchedAt) < r.TTL {
-		return legFrom(c, true, false), nil
+	legs := make([]Leg, len(points)-1)
+	var missing []int
+	for i := range legs {
+		o, d := norm[i], norm[i+1]
+		if o == d {
+			legs[i] = Leg{Provider: provider}
+			continue
+		}
+		if c, err := r.Cache.Route(o, d, slot, provider); err == nil && c != nil && now.Sub(c.FetchedAt) < r.TTL {
+			legs[i] = legFrom(c, true, false)
+			continue
+		}
+		missing = append(missing, i)
+	}
+	if len(missing) == 0 {
+		return legs, nil
 	}
 
+	// The request skips a point that repeats the one before (no leg).
+	req := []string{points[0]}
+	var reqLeg []int // the leg each requested leg fills
+	for i := 1; i < len(points); i++ {
+		if norm[i] != norm[i-1] {
+			req = append(req, points[i])
+			reqLeg = append(reqLeg, i-1)
+		}
+	}
 	timeout := r.Timeout
 	if timeout == 0 {
 		timeout = 10 * time.Second
 	}
 	cctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	cctx = audit.WithCall(cctx, audit.Call{
-		Summary: fmt.Sprintf("Route %s → %s", origin, destination),
-		Detail: map[string]any{
-			"from": origin, "to": destination, "slot": slot,
-			"departAt": departAt.In(r.Location).Format("2006-01-02 15:04"),
-		},
-	})
-	route, err := r.Router.Compute(cctx, origin, destination, &departAt)
+	detail := map[string]any{
+		"from": req[0], "to": req[len(req)-1], "slot": slot,
+		"departAt": departAt.In(r.Location).Format("2006-01-02 15:04"),
+	}
+	if len(req) > 2 {
+		detail["via"] = req[1 : len(req)-1]
+	}
+	cctx = audit.WithCall(cctx, audit.Call{Summary: "Route " + strings.Join(req, " → "), Detail: detail})
+	routes, err := r.Router.Compute(cctx, req, &departAt)
+	if err == nil && len(routes) != len(req)-1 {
+		err = fmt.Errorf("%s returned %d legs for %d points", provider, len(routes), len(req))
+	}
 	r.noteLookup(err, now)
 	if err != nil {
-		if c, cerr := r.Cache.AnyRoute(o, d, provider); cerr == nil && c != nil {
-			return legFrom(c, true, true), nil
+		for _, i := range missing {
+			c, cerr := r.Cache.AnyRoute(norm[i], norm[i+1], provider)
+			if cerr != nil || c == nil {
+				return nil, err
+			}
+			legs[i] = legFrom(c, true, true)
 		}
-		return Leg{}, err
+		return legs, nil
 	}
-	cached := store.CachedRoute{
-		DistanceM: route.DistanceM, DurationS: int(route.Duration.Seconds()), Provider: provider, FetchedAt: now,
+	for j, route := range routes {
+		i := reqLeg[j]
+		cached := store.CachedRoute{
+			DistanceM: route.DistanceM, DurationS: int(route.Duration.Seconds()), Provider: provider, FetchedAt: now,
+		}
+		if err := r.Cache.PutRoute(norm[i], norm[i+1], slot, cached); err != nil {
+			return nil, err
+		}
+		legs[i] = legFrom(&cached, false, false)
 	}
-	if err := r.Cache.PutRoute(o, d, slot, cached); err != nil {
-		return Leg{}, err
-	}
-	return legFrom(&cached, false, false), nil
+	return legs, nil
 }
 
 // Check looks one route up with the provider now, without the cache, to
@@ -284,7 +386,7 @@ func (r *Resolver) Check(ctx context.Context, origin, destination string) error 
 		Summary: fmt.Sprintf("Route %s → %s (check)", origin, destination),
 		Detail:  map[string]any{"from": origin, "to": destination},
 	})
-	_, err := r.Router.Compute(cctx, origin, destination, nil)
+	_, err := r.Router.Compute(cctx, []string{origin, destination}, nil)
 	r.noteLookup(err, r.Clock.Now())
 	return err
 }

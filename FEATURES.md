@@ -11,13 +11,14 @@ notifications is in [AUTOMATION.md](AUTOMATION.md).
 
 - Trips come from three places: Google Calendar (read-only, through each calendar's secret iCal link, synced every hour or at once with **Sync calendar** on the Trips page), recurring trips such as school runs, and one-off trips you add.
 - A trip's time is when you must arrive. The planner works out when to leave from the route and a buffer. The trip home starts at the trip's end time.
+- Each trip shows its route, by default Home → destination → Home. Calendar and one-off trips can have their own route of 2 to 5 points: add, remove, edit, or reorder stops (A → B → C → A), start somewhere other than home, or go one way (A → B). With more stops, the time is when you arrive at the first stop and the end time is when you leave the last one. After a one-way trip the car stays away, without charging, until a later trip brings it home. Recurring trips always go from home and back.
 - Calendar events count as trips when they have a real place other than home. All-day events and video calls are skipped. Unclear events are marked "Needs review".
 - You can turn off, edit, or reset a single trip, or one date of a recurring trip. Your edits survive calendar syncs.
 - Saved places give short names to addresses (for example "School").
 
 ## Planning
 
-- Distance and travel time come from Google Routes (with traffic, cached). Energy comes from the car's consumption.
+- Distance and travel time come from Google Routes (with traffic, cached per drive). A trip takes at most two lookups, the drive out through its stops and the drive back, and the editor shows each drive's distance and time. Energy comes from the car's consumption.
 - Consumption is set in kWh/100 km or km/kWh (both are shown), or read from a Home Assistant sensor in either unit. The sensor's latest valid value is used; zero, unavailable, or implausible readings keep the previous value.
 - For each departure: the battery level needed (state of charge, SoC), with a reserve for arrival, charging losses, and time to charge.
 - The car is assumed to charge whenever it is home. Trips the car can't make in time, or that need more than a full battery, are flagged.

@@ -161,7 +161,7 @@ test('add a manual trip and keep it after reload', async ({ page }) => {
   await page.goto('/trips')
   await page.getByRole('button', { name: 'Add trip', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: 'Add trip' })
-  await dialog.getByLabel('Destination').fill('Bouwmarkt 5, Demo Town')
+  await dialog.getByLabel('Stop 1', { exact: true }).fill('Bouwmarkt 5, Demo Town')
   await dialog.getByLabel('Title').fill('Hardware store')
   await dialog.getByLabel('Date').fill('2026-11-15')
   await dialog.getByLabel('Arrive by').fill('10:00')
@@ -175,6 +175,49 @@ test('add a manual trip and keep it after reload', async ({ page }) => {
   await expect(page.locator('#day-2026-11-15')).toContainText('Hardware store')
   await page.goto('/')
   await expect(page.getByTestId('day-2026-11-15')).not.toContainText('No trips')
+})
+
+test('a trip with more stops, reordered, then one way', async ({ page }) => {
+  await page.goto('/trips')
+  await page.getByRole('button', { name: 'Add trip', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: 'Add trip' })
+  await dialog.getByLabel('Stop 1', { exact: true }).fill('Supermarket 4, Demo Town')
+  await dialog.getByRole('button', { name: 'Add stop' }).click()
+  await dialog.getByLabel('Stop 2', { exact: true }).fill('School')
+  // The school first, then the shop.
+  await dialog.getByRole('button', { name: 'Move Stop 2 up' }).click()
+  await expect(dialog.getByLabel('Stop 1', { exact: true })).toHaveValue('School')
+  await expect(dialog.getByLabel('Arrive by (first stop)')).toBeVisible()
+  await dialog.getByLabel('Title').fill('School and shopping')
+  await dialog.getByLabel('Date').fill('2026-11-15')
+  await dialog.getByLabel('Arrive by').fill('10:00')
+  await dialog.getByLabel('Until').fill('11:00')
+  await dialog.getByRole('button', { name: 'Save trip' }).click()
+  await expect(dialog).toBeHidden()
+
+  const row = page.locator('#day-2026-11-15 li', { hasText: 'School and shopping' })
+  await expect(row).toContainText(
+    'Leave 09:33 · until 11:00 · Home → School → Supermarket 4, Demo Town → Home',
+  )
+  await page.reload()
+  await row.getByRole('button', { name: 'Edit' }).click()
+  const edit = page.getByRole('dialog', { name: 'Edit trip' })
+  // Each drive as calculated: 6 km to the school, 3 km to the shop, 3 km home.
+  await expect(edit.getByTestId('route-leg')).toHaveText([
+    '6.0 km · 12 min',
+    '3.0 km · 8 min',
+    '3.0 km · 8 min',
+  ])
+
+  // One way: drop the stops and the trip home.
+  await edit.getByRole('button', { name: 'Remove End' }).click()
+  await edit.getByRole('button', { name: 'Remove Stop 1' }).click()
+  await expect(edit.getByLabel('Until')).toHaveCount(0)
+  await expect(edit.getByTestId('route-ends-away')).toBeVisible()
+  await expect(edit.getByRole('button', { name: 'Remove End' })).toBeDisabled()
+  await edit.getByRole('button', { name: 'Save trip' }).click()
+  await expect(edit).toBeHidden()
+  await expect(row).toContainText('Leave 09:37 · Home → Supermarket 4, Demo Town · Manual')
 })
 
 test('disable one date of a recurring trip', async ({ page }) => {

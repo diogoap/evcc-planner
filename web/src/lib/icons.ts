@@ -2,6 +2,7 @@
 // AppIcon draws them as SVG, the charts on their canvas.
 export type IconName =
   | 'arrow-down'
+  | 'arrow-up'
   | 'battery'
   | 'bolt'
   | 'calendar'
@@ -33,6 +34,7 @@ export type IconName =
 
 export const iconPaths: Record<IconName, string[]> = {
   'arrow-down': ['M12 5v14', 'M6 13l6 6 6-6'],
+  'arrow-up': ['M12 19V5', 'M6 11l6-6 6 6'],
   battery: ['M4 7h13a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2z', 'M22 11v2'],
   bolt: ['M13 2 4 14h7l-1 8 9-12h-7l1-8z'],
   calendar: [
