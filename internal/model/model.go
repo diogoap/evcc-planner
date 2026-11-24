@@ -753,16 +753,19 @@ func (n NotificationSettings) Validate() error {
 // day they cover), the driving planned that day and the energy it uses, and
 // KNMI's wind and sunshine forecast for it. Nil means unknown.
 type DayStats struct {
-	Date        string    `json:"date"`
-	PriceMin    *float64  `json:"priceMin"`
-	PriceAvg    *float64  `json:"priceAvg"`
-	PriceMax    *float64  `json:"priceMax"`
-	PriceHours  float64   `json:"priceHours"`
-	DistanceKm  *float64  `json:"distanceKm"`
-	EnergyKWh   *float64  `json:"energyKWh"`
-	WindBft     *int      `json:"windBft"`
-	SunshinePct *int      `json:"sunshinePct"`
-	UpdatedAt   time.Time `json:"updatedAt"`
+	Date        string   `json:"date"`
+	PriceMin    *float64 `json:"priceMin"`
+	PriceAvg    *float64 `json:"priceAvg"`
+	PriceMax    *float64 `json:"priceMax"`
+	PriceHours  float64  `json:"priceHours"`
+	DistanceKm  *float64 `json:"distanceKm"`
+	EnergyKWh   *float64 `json:"energyKWh"`
+	WindBft     *int     `json:"windBft"`
+	SunshinePct *int     `json:"sunshinePct"`
+	// SolarKWh is EVCC's solar forecast for the whole day (kWh), when its
+	// forecast covered the day.
+	SolarKWh  *float64  `json:"solarKWh"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 // Notification kinds, states, and button verbs.

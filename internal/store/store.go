@@ -231,6 +231,8 @@ var migrations = []string{
 	// A manual trip's own route (JSON list of points), when it isn't home →
 	// destination → home.
 	`ALTER TABLE manual_trips ADD COLUMN points TEXT;`,
+	// EVCC's solar forecast for each day (kWh) in the history.
+	`ALTER TABLE day_stats ADD COLUMN solar_kwh REAL;`,
 }
 
 // Open opens (creating if needed) the database at path and migrates it.

@@ -2,6 +2,7 @@ package evcc
 
 import (
 	"context"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -260,6 +261,35 @@ func TestParseSolarForecast(t *testing.T) {
 	scaled, _ := ParseState([]byte(`{"solarAdjusted":true,"forecast":{"solar":{"scale":0.5,"timeseries":[[1794222000,1000],[1794225600,1000]]}}}`))
 	if e := scaled.Solar.EnergyKWh(scaled.Solar.Points[0].Time, scaled.Solar.Points[1].Time); e != 0.5 {
 		t.Errorf("adjusted energy = %.3f, want 0.5", e)
+	}
+}
+
+func TestSolarDayKWh(t *testing.T) {
+	day := time.Date(2026, 11, 10, 0, 0, 0, 0, time.UTC)
+	at := func(h int) time.Time { return day.Add(time.Duration(h) * time.Hour) }
+	sunny := []SolarPoint{{at(8), 0}, {at(10), 2000}, {at(12), 2000}, {at(16), 0}, {at(26), 0}}
+	cases := []struct {
+		name   string
+		points []SolarPoint
+		ok     bool
+		kwh    float64
+	}{
+		{"from midnight", append([]SolarPoint{{at(0), 0}}, sunny...), true, 2 + 4 + 4},
+		{"from the night before the sun", sunny, true, 10},
+		{"from daylight", sunny[1:], false, 0},
+		{"after the last sun", []SolarPoint{{at(23), 0}, {at(26), 0}}, false, 0},
+		{"not to the end of the day", sunny[:4], false, 0},
+	}
+	for _, c := range cases {
+		f := &SolarForecast{Points: c.points, Scale: 1}
+		kwh, ok := f.DayKWh(day, at(24))
+		if ok != c.ok || math.Abs(kwh-c.kwh) > 1e-9 {
+			t.Errorf("%s: %.3f kWh %v, want %.3f %v", c.name, kwh, ok, c.kwh, c.ok)
+		}
+	}
+	var none *SolarForecast
+	if _, ok := none.DayKWh(day, at(24)); ok {
+		t.Error("no forecast covers nothing")
 	}
 }
 

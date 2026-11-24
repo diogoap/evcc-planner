@@ -1,8 +1,8 @@
 import type { DayStats } from '../api/types'
 import { dayMonth, km, kwh, price, shortDate } from './format'
 
-// The price history: one saved row per day (prices, driving, wind, sun),
-// shown over a chosen period.
+// The price history: one saved row per day (prices, driving, wind, sun, the
+// solar forecast), shown over a chosen period.
 
 export type Period = 'week' | 'month' | 'quarter' | 'year' | 'all'
 
@@ -15,7 +15,7 @@ export const periods: { key: Period; label: string }[] = [
 ]
 
 /** The series the chart can show. */
-export type HistorySeries = 'range' | 'average' | 'wind' | 'sun' | 'driving' | 'energy'
+export type HistorySeries = 'range' | 'average' | 'wind' | 'sun' | 'driving' | 'energy' | 'solar'
 
 const dayMs = 86_400_000
 const toMs = (date: string) => Date.parse(`${date}T00:00:00Z`)
@@ -125,9 +125,9 @@ export function dayTitle(date: string, today: string) {
 }
 
 /** The chart's series drawn with points (driving is drawn as bars). */
-export type PointSeries = 'high' | 'low' | 'average' | 'wind' | 'sun' | 'energy'
+export type PointSeries = 'high' | 'low' | 'average' | 'wind' | 'sun' | 'energy' | 'solar'
 
-/** The hint for a point on the chart: Average €0.25/kWh, Wind Bft 3, Energy 4.3 kWh. */
+/** The hint for a point on the chart: Average €0.25/kWh, Wind Bft 3, Energy 4.3 kWh, Solar forecast 6.2 kWh. */
 export function pointHint(series: PointSeries, value: number) {
   switch (series) {
     case 'high':
@@ -142,10 +142,15 @@ export function pointHint(series: PointSeries, value: number) {
       return `Sun ${value}%`
     case 'energy':
       return `Energy ${kwh(value)}`
+    case 'solar':
+      return `Solar forecast ${kwh(value)}`
   }
 }
 
-/** The readout for one day: Today · average €0.25/kWh · €0.18–€0.39 · wind Bft 3 · sun 20% · 100 km, 18.0 kWh */
+/**
+ * The readout for one day:
+ * Today · average €0.25/kWh · €0.18–€0.39 · wind Bft 3 · sun 20% · solar forecast 6.2 kWh · 100 km, 18.0 kWh
+ */
 export function dayLine(day: DayStats | null, date: string, today: string) {
   const when = dayTitle(date, today)
   if (!day) return `${when} · not recorded`
@@ -157,6 +162,7 @@ export function dayLine(day: DayStats | null, date: string, today: string) {
     partial && `prices for ${Math.round(day.priceHours)} h`,
     day.windBft != null && `wind Bft ${day.windBft}`,
     day.sunshinePct != null && `sun ${day.sunshinePct}%`,
+    day.solarKWh != null && `solar forecast ${kwh(day.solarKWh)}`,
     day.distanceKm != null &&
       `${km(day.distanceKm)}${day.energyKWh != null ? `, ${kwh(day.energyKWh)}` : ''}`,
   ]

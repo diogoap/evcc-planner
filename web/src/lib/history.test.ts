@@ -24,6 +24,7 @@ const day = (date: string, s: Partial<DayStats> = {}): DayStats => ({
   energyKWh: 4.3,
   windBft: 3,
   sunshinePct: 20,
+  solarKWh: null,
   updatedAt: `${date}T22:50:00Z`,
   ...s,
 })
@@ -123,6 +124,9 @@ describe('price history', () => {
       ),
     ).toBe('Fri 6 Nov · no prices · wind Bft 3 · sun 20% · 24 km, 4.3 kWh')
     expect(dayLine(null, '2026-11-05', today)).toBe('Thu 5 Nov · not recorded')
+    expect(dayLine(day(today, { solarKWh: 6.2 }), today, today)).toBe(
+      'Today · average €0.25/kWh · €0.18–€0.39 · wind Bft 3 · sun 20% · solar forecast 6.2 kWh · 24 km, 4.3 kWh',
+    )
   })
 
   it('names the day and the value of a point on the chart', () => {
@@ -134,5 +138,6 @@ describe('price history', () => {
     expect(pointHint('wind', 3)).toBe('Wind Bft 3')
     expect(pointHint('sun', 20)).toBe('Sun 20%')
     expect(pointHint('energy', 4.3)).toBe('Energy 4.3 kWh')
+    expect(pointHint('solar', 6.2)).toBe('Solar forecast 6.2 kWh')
   })
 })

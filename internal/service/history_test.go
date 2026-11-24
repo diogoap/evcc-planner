@@ -37,7 +37,7 @@ func TestMergeStatsKeepsWhatIsKnown(t *testing.T) {
 	n := func(v int) *int { return &v }
 	saved := &model.DayStats{
 		Date: "2026-11-10", PriceMin: f(0.15), PriceAvg: f(0.25), PriceMax: f(0.4), PriceHours: 24,
-		DistanceKm: f(12.8), EnergyKWh: f(2.3), WindBft: n(5), SunshinePct: n(30),
+		DistanceKm: f(12.8), EnergyKWh: f(2.3), WindBft: n(5), SunshinePct: n(30), SolarKWh: f(4.2),
 	}
 	// After midnight EVCC lists only the rest of the day, and KNMI is down.
 	later := model.DayStats{
@@ -51,8 +51,8 @@ func TestMergeStatsKeepsWhatIsKnown(t *testing.T) {
 	if *got.DistanceKm != 40 || *got.EnergyKWh != 7.2 {
 		t.Fatalf("new driving figures should win: %+v", got)
 	}
-	if *got.WindBft != 5 || *got.SunshinePct != 30 {
-		t.Fatalf("unknown weather replaced the saved values: %+v", got)
+	if *got.WindBft != 5 || *got.SunshinePct != 30 || *got.SolarKWh != 4.2 {
+		t.Fatalf("unknown weather or solar replaced the saved values: %+v", got)
 	}
 	// Complete prices again (e.g. corrected): the newest wins.
 	later.PriceHours, later.WindBft = 24, n(6)

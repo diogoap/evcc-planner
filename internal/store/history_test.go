@@ -17,7 +17,7 @@ func TestDayStatsRoundTripAndKeptForever(t *testing.T) {
 	n := func(v int) *int { return &v }
 	full := model.DayStats{
 		Date: "2024-03-01", PriceMin: f(0.18), PriceAvg: f(0.2512), PriceMax: f(0.39), PriceHours: 24,
-		DistanceKm: f(12.8), EnergyKWh: f(2.3), WindBft: n(4), SunshinePct: n(35), UpdatedAt: at,
+		DistanceKm: f(12.8), EnergyKWh: f(2.3), WindBft: n(4), SunshinePct: n(35), SolarKWh: f(3.4), UpdatedAt: at,
 	}
 	for _, d := range []model.DayStats{
 		full,
@@ -34,10 +34,10 @@ func TestDayStatsRoundTripAndKeptForever(t *testing.T) {
 	}
 	got := all[0]
 	if *got.PriceMin != 0.18 || *got.PriceAvg != 0.2512 || *got.PriceMax != 0.39 || got.PriceHours != 24 ||
-		*got.DistanceKm != 12.8 || *got.EnergyKWh != 2.3 || *got.WindBft != 4 || *got.SunshinePct != 35 || !got.UpdatedAt.Equal(at) {
+		*got.DistanceKm != 12.8 || *got.EnergyKWh != 2.3 || *got.WindBft != 4 || *got.SunshinePct != 35 || *got.SolarKWh != 3.4 || !got.UpdatedAt.Equal(at) {
 		t.Fatalf("round trip = %+v", got)
 	}
-	if d := all[1]; d.PriceAvg != nil || d.WindBft != nil || d.SunshinePct != nil || d.DistanceKm == nil || *d.DistanceKm != 0 {
+	if d := all[1]; d.PriceAvg != nil || d.WindBft != nil || d.SunshinePct != nil || d.SolarKWh != nil || d.DistanceKm == nil || *d.DistanceKm != 0 {
 		t.Fatalf("unknown values must stay unknown and zero stay zero: %+v", d)
 	}
 	if r, _ := s.DayStats("2024-03-02", ""); len(r) != 2 || r[0].Date != "2024-03-02" {

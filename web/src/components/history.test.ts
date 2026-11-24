@@ -25,6 +25,7 @@ const day = (date: string): DayStats => ({
   energyKWh: 4.3,
   windBft: 3,
   sunshinePct: 20,
+  solarKWh: 6.2,
   updatedAt: `${date}T18:00:00Z`,
 })
 const history = (days: DayStats[]): History => ({ today: '2026-11-09', first: days[0]?.date, days })
@@ -41,6 +42,7 @@ describe('PriceHistoryCard', () => {
       sun: false,
       driving: false,
       energy: false,
+      solar: false,
     })
   })
 
@@ -80,6 +82,7 @@ describe('PriceHistoryCard', () => {
       sun: false,
       driving: false,
       energy: false,
+      solar: false,
     })
   })
 
@@ -99,6 +102,18 @@ describe('PriceHistoryCard', () => {
     await energy.trigger('click')
     expect(w.get('[data-testid=history-chart]').text()).toBe('1 2026-11-09 range,average,driving,energy')
     expect(w.text()).toContain('driving (km) and energy (kWh the trips need) from the day')
+  })
+
+  it('shows the solar forecast on request (off by default)', async () => {
+    api.history.mockResolvedValue(history([day('2026-11-09')]))
+    const w = mount(PriceHistoryCard, { props: { now } })
+    await flushPromises()
+    const solar = w.get('[data-testid=history-legend-solar]')
+    expect(solar.text()).toBe('Solar forecast')
+    expect(solar.attributes('aria-pressed')).toBe('false')
+    await solar.trigger('click')
+    expect(w.get('[data-testid=history-chart]').text()).toBe('1 2026-11-09 range,average,solar')
+    expect(w.text()).toContain('the solar forecast (kWh for the whole day, as it starts) from EVCC')
   })
 
   it('reloads every hour (the planner saves each day twice)', async () => {

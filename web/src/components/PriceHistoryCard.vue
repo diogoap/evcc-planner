@@ -9,7 +9,7 @@ import ErrorBanner from './ErrorBanner.vue'
 import HistoryChart from './HistoryChart.vue'
 
 // Each day's prices over a chosen period (a month by default), with wind,
-// sun, driving, and the trips' energy on request. The planner saves each day as it starts and again at
+// sun, driving, the trips' energy, and the solar forecast on request. The planner saves each day as it starts and again at
 // 23:45, so an hourly reload (and one when the period changes) is plenty.
 const props = defineProps<{ now: string }>()
 
@@ -40,6 +40,7 @@ const legend: { key: HistorySeries; label: string }[] = [
   { key: 'sun', label: 'Sun' },
   { key: 'driving', label: 'Driving' },
   { key: 'energy', label: 'Energy' },
+  { key: 'solar', label: 'Solar forecast' },
 ]
 </script>
 
@@ -65,8 +66,8 @@ const legend: { key: HistorySeries; label: string }[] = [
     />
     <span v-else-if="!history" class="skeleton history-skeleton" aria-hidden="true" />
     <p v-else-if="!history.days.length" class="muted small m-0" data-testid="history-empty">
-      Nothing recorded for this period yet. The planner saves each day's prices, driving, wind, and sun as the
-      day starts and again at 23:45, from today on.
+      Nothing recorded for this period yet. The planner saves each day's prices, driving, wind, sun, and solar
+      forecast as the day starts and again at 23:45, from today on.
     </p>
     <template v-else>
       <HistoryChart :days="history.days" :today="history.today" :show="historyChoice.show" />
@@ -86,7 +87,8 @@ const legend: { key: HistorySeries; label: string }[] = [
       <p class="small muted m-0 mt-3">
         One value per day, saved since {{ dayMonth(history.first ?? history.days[0]!.date) }}. Prices from
         EVCC; wind (Beaufort) and sun (share of the possible sunshine) from KNMI's forecast for the day;
-        driving (km) and energy (kWh the trips need) from the day's trips.
+        driving (km) and energy (kWh the trips need) from the day's trips; the solar forecast (kWh for the
+        whole day, as it starts) from EVCC.
       </p>
     </template>
   </section>
@@ -140,5 +142,10 @@ const legend: { key: HistorySeries; label: string }[] = [
 .swatch-energy {
   background: var(--chart-required);
   height: 2px;
+}
+
+.swatch-solar {
+  background: var(--chart-solar);
+  opacity: 0.45;
 }
 </style>

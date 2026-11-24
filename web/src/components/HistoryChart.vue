@@ -19,7 +19,8 @@ import {
 
 // Each day's prices as a band from the lowest to the highest slot, with the
 // average as a line; wind (Beaufort), sun (% of possible sunshine), driving
-// (km, as bars), and the trips' energy (kWh) on their own axes when shown
+// (km, as bars), and the trips' energy and the solar forecast (sharing a kWh
+// axis, to compare) on their own axes when shown
 // (shorter labels on phones, where the readout gives each day's values). Days not recorded are gaps. A readout above
 // follows the pointer or finger (today, otherwise); a dashed line marks
 // today. Pointing at a dot shows a hint with its day, series, and value.
@@ -44,7 +45,7 @@ const summary = computed(() => {
 
 // The series of the datasets drawn with points, in the datasets' order;
 // driving (bars) comes after them and gets no hint.
-const pointSeries: PointSeries[] = ['high', 'low', 'average', 'wind', 'sun', 'energy']
+const pointSeries: PointSeries[] = ['high', 'low', 'average', 'wind', 'sun', 'energy', 'solar']
 
 const point = (pick: (d: DayStats) => number | null) =>
   series.value.map((s, i) => ({ x: i, y: s.day ? pick(s.day) : null }))
@@ -115,6 +116,7 @@ function render() {
     wind,
     sun,
     energy,
+    solar: sun,
   }
   chart = new Chart(canvas.value, {
     type: 'line',
@@ -179,6 +181,19 @@ function render() {
           borderWidth: 1.5,
           pointRadius: dot ? 2 : 0,
           hidden: !show.energy,
+        },
+        {
+          // A soft area, unlike sun's dashed line in the same colour.
+          label: 'Solar forecast',
+          data: point((d) => d.solarKWh),
+          yAxisID: 'kwh',
+          borderColor: sun,
+          backgroundColor: alpha(sun, 0.15),
+          pointBackgroundColor: sun,
+          fill: 'origin',
+          borderWidth: 1.5,
+          pointRadius: dot ? 2 : 0,
+          hidden: !show.solar,
         },
         {
           // Behind the price lines (a higher order is drawn first).
@@ -293,10 +308,15 @@ function render() {
         kwh: {
           type: 'linear',
           position: 'right',
-          display: show.energy,
+          display: show.energy || show.solar,
           min: 0,
           suggestedMax: 10,
-          ticks: { maxTicksLimit: 4, callback: (v) => (compact ? `${v}` : `${v} kWh`), color: energy },
+          ticks: {
+            maxTicksLimit: 4,
+            callback: (v) => (compact ? `${v}` : `${v} kWh`),
+            // In the series' colour while it is the only one on the axis.
+            color: show.energy && show.solar ? text : show.solar ? sun : energy,
+          },
           grid: { display: false },
           border: { display: false },
         },

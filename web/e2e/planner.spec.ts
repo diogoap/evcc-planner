@@ -115,7 +115,7 @@ test('the price history shows each recorded day over the period chosen', async (
   await expect(card.getByTestId('history-period')).toHaveValue('month')
   // Recording starts today; nothing is filled in for past days.
   await expect(card.getByTestId('history-readout')).toHaveText(
-    /^Today · average €0\.\d\d\/kWh · €0\.\d\d–€0\.\d\d · wind Bft 3 · sun 20% · \d+ km, \d+\.\d kWh$/,
+    /^Today · average €0\.\d\d\/kWh · €0\.\d\d–€0\.\d\d · wind Bft 3 · sun 20% · solar forecast \d+\.\d kWh · \d+ km, \d+\.\d kWh$/,
   )
   await expect(card.getByTestId('history-summary')).toHaveText(/· 1 day$/)
   await expect(card.getByRole('img')).toHaveAttribute(
@@ -124,8 +124,8 @@ test('the price history shows each recorded day over the period chosen', async (
   )
   await expect(card).toContainText('saved since Mon 9 Nov')
 
-  // Wind, sun, driving, and energy on request; the choices are remembered
-  // on this device.
+  // Wind, sun, driving, energy, and the solar forecast on request; the
+  // choices are remembered on this device.
   const wind = card.getByTestId('history-legend-wind')
   const driving = card.getByTestId('history-legend-driving')
   await expect(wind).toHaveAttribute('aria-pressed', 'false')
@@ -134,6 +134,7 @@ test('the price history shows each recorded day over the period chosen', async (
   await wind.click()
   await card.getByTestId('history-legend-sun').click()
   await driving.click()
+  await card.getByTestId('history-legend-solar').click()
   await card.getByTestId('history-period').selectOption('week')
   await shot(page, 'price-history')
   await page.reload()
@@ -143,6 +144,7 @@ test('the price history shows each recorded day over the period chosen', async (
   await expect(card.getByTestId('history-legend-sun')).toHaveAttribute('aria-pressed', 'true')
   await expect(driving).toHaveAttribute('aria-pressed', 'true')
   await expect(card.getByTestId('history-legend-energy')).toHaveAttribute('aria-pressed', 'false')
+  await expect(card.getByTestId('history-legend-solar')).toHaveAttribute('aria-pressed', 'true')
 })
 
 test('sync the calendar from the Trips page', async ({ page }) => {

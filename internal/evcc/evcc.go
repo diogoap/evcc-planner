@@ -119,6 +119,32 @@ func (f *SolarForecast) EnergyKWh(from, to time.Time) float64 {
 	return wh * scale / 1000
 }
 
+// DayKWh is the forecast energy over [from, to), such as a day, and whether
+// the forecast covers all of it that has sun: it reaches `to`, and starts at
+// `from` or at night before that period's first sun. A forecast that starts
+// in daylight, or after the period's last sun, only knows part of it.
+func (f *SolarForecast) DayKWh(from, to time.Time) (float64, bool) {
+	if !f.Covers(to) {
+		return 0, false
+	}
+	if first := f.Points[0]; first.Time.After(from) {
+		if first.PowerW > 0 {
+			return 0, false
+		}
+		sun := false
+		for _, p := range f.Points[1:] {
+			if p.Time.Before(to) && p.PowerW > 0 {
+				sun = true
+				break
+			}
+		}
+		if !sun {
+			return 0, false
+		}
+	}
+	return f.EnergyKWh(from, to), true
+}
+
 // Loadpoint is one charge point.
 type Loadpoint struct {
 	Title              string

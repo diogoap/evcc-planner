@@ -82,6 +82,16 @@ func TestHistorySavesEachDayAsItStartsAndInTheEvening(t *testing.T) {
 	if *mon.SunshinePct != 20 || *mon.WindBft != 3 {
 		t.Fatalf("weather = %d%% Bft %d", *mon.SunshinePct, *mon.WindBft)
 	}
+	// EVCC's solar forecast for the whole day.
+	st, err := ta.app.Stub.State(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	monStart := time.Date(2026, 11, 9, 0, 0, 0, 0, ams)
+	solar := math.Round(st.Solar.EnergyKWh(monStart, monStart.AddDate(0, 0, 1))*10) / 10
+	if mon.SolarKWh == nil || *mon.SolarKWh != solar || solar <= 0 {
+		t.Fatalf("solar = %v, want %v kWh", mon.SolarKWh, solar)
+	}
 
 	// A trip added in the evening changes nothing until 23:45.
 	var created struct{ Key string }
@@ -99,9 +109,15 @@ func TestHistorySavesEachDayAsItStartsAndInTheEvening(t *testing.T) {
 	if again := save(); !reflect.DeepEqual(again.Days, got.Days) {
 		t.Fatalf("saved again before the evening: %+v", again.Days)
 	}
+	// The solar forecast is the morning's: the evening save leaves it.
+	morning, marker := got.Days[0], 1.5
+	morning.SolarKWh = &marker
+	if err := ta.app.Store.SaveDayStats(morning); err != nil {
+		t.Fatal(err)
+	}
 	ta.at(time.Date(2026, 11, 9, 23, 45, 0, 0, ams))
 	evening := save().Days[0]
-	if *evening.DistanceKm != 24+visit || *evening.PriceAvg != avg || evening.PriceHours != 24 ||
+	if *evening.DistanceKm != 24+visit || *evening.PriceAvg != avg || evening.PriceHours != 24 || *evening.SolarKWh != 1.5 ||
 		!evening.UpdatedAt.Equal(time.Date(2026, 11, 9, 23, 45, 0, 0, ams)) {
 		t.Fatalf("evening save = %+v, want %v km", evening, 24+visit)
 	}
@@ -116,7 +132,8 @@ func TestHistorySavesEachDayAsItStartsAndInTheEvening(t *testing.T) {
 	if next.Today != "2026-11-10" || len(next.Days) != 2 || !reflect.DeepEqual(next.Days[0], evening) {
 		t.Fatalf("after midnight: today %s, days %+v", next.Today, next.Days)
 	}
-	if tue := next.Days[1]; tue.Date != "2026-11-10" || tue.PriceHours != 24 || *tue.WindBft != 5 || *tue.DistanceKm != 100 {
+	if tue := next.Days[1]; tue.Date != "2026-11-10" || tue.PriceHours != 24 || *tue.WindBft != 5 || *tue.DistanceKm != 100 ||
+		tue.SolarKWh == nil {
 		t.Fatalf("Tuesday = %+v (school runs and the office visit: 100 km; windy)", tue)
 	}
 	if fromTue := ta.history("?from=2026-11-10&to=2026-11-30"); len(fromTue.Days) != 1 || fromTue.First != "2026-11-09" {

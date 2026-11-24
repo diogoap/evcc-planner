@@ -61,9 +61,9 @@ notifications is in [AUTOMATION.md](AUTOMATION.md).
 
 ## Price history
 
-- One row per day, kept indefinitely: the lowest, average, and highest price; the km of the day's trips (trips already driven included) and the energy they need; wind (Beaufort); and sun (share of the possible sunshine).
+- One row per day, kept indefinitely: the lowest, average, and highest price; the km of the day's trips (trips already driven included) and the energy they need; wind (Beaufort); sun (share of the possible sunshine); and EVCC's solar forecast for the whole day (kWh), saved as the day starts only (by the evening the sun has passed).
 - Saved twice a day: as the day starts, and again at 23:45 to include trips that changed during the day. Past days never change. Recording starts the day the feature is installed; earlier days are not filled in.
-- A chart below the week's charts shows the prices as a band (lowest to highest) with the average as a line. Wind, sun, driving (km, as bars), and the energy the trips need can be added (all off by default). Periods: 1 week, 1 month (default), 3 months, 1 year, or everything. Your choices are remembered on the device. Up to a month, each day has dots: point at one to see its day and value.
+- A chart below the week's charts shows the prices as a band (lowest to highest) with the average as a line. Wind, sun, driving (km, as bars), the energy the trips need, and the solar forecast (on the same kWh axis as the energy, to compare) can be added (all off by default). Periods: 1 week, 1 month (default), 3 months, 1 year, or everything. Your choices are remembered on the device. Up to a month, each day has dots: point at one to see its day and value.
 - The history is meant for later comparisons, such as today's prices against past prices.
 
 ## Phone notifications

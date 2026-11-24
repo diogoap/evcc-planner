@@ -573,6 +573,8 @@ export interface DayStats {
   energyKWh: number | null
   windBft: number | null
   sunshinePct: number | null
+  /** EVCC's solar forecast for the whole day, in kWh. */
+  solarKWh: number | null
   updatedAt: string
 }
 

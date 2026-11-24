@@ -9,17 +9,17 @@ import (
 // ---- day history ----
 
 const dayStatsColumns = `date, price_min, price_avg, price_max, price_hours, distance_km, energy_kwh,
-	wind_bft, sunshine_pct, updated_at`
+	wind_bft, sunshine_pct, solar_kwh, updated_at`
 
 // SaveDayStats inserts or replaces a day's figures.
 func (s *Store) SaveDayStats(d model.DayStats) error {
-	_, err := s.q.Exec(`INSERT INTO day_stats (`+dayStatsColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	_, err := s.q.Exec(`INSERT INTO day_stats (`+dayStatsColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(date) DO UPDATE SET price_min = excluded.price_min, price_avg = excluded.price_avg,
 		price_max = excluded.price_max, price_hours = excluded.price_hours, distance_km = excluded.distance_km,
 		energy_kwh = excluded.energy_kwh, wind_bft = excluded.wind_bft, sunshine_pct = excluded.sunshine_pct,
-		updated_at = excluded.updated_at`,
+		solar_kwh = excluded.solar_kwh, updated_at = excluded.updated_at`,
 		d.Date, d.PriceMin, d.PriceAvg, d.PriceMax, d.PriceHours, d.DistanceKm, d.EnergyKWh,
-		d.WindBft, d.SunshinePct, fmtTime(d.UpdatedAt))
+		d.WindBft, d.SunshinePct, d.SolarKWh, fmtTime(d.UpdatedAt))
 	return err
 }
 
@@ -44,14 +44,14 @@ func (s *Store) DayStats(from, to string) ([]model.DayStats, error) {
 	out := []model.DayStats{}
 	for rows.Next() {
 		var d model.DayStats
-		var minP, avgP, maxP, dist, energy sql.NullFloat64
+		var minP, avgP, maxP, dist, energy, solar sql.NullFloat64
 		var wind, sun sql.NullInt64
 		var updated string
-		if err := rows.Scan(&d.Date, &minP, &avgP, &maxP, &d.PriceHours, &dist, &energy, &wind, &sun, &updated); err != nil {
+		if err := rows.Scan(&d.Date, &minP, &avgP, &maxP, &d.PriceHours, &dist, &energy, &wind, &sun, &solar, &updated); err != nil {
 			return nil, err
 		}
 		d.PriceMin, d.PriceAvg, d.PriceMax = nullFloat(minP), nullFloat(avgP), nullFloat(maxP)
-		d.DistanceKm, d.EnergyKWh = nullFloat(dist), nullFloat(energy)
+		d.DistanceKm, d.EnergyKWh, d.SolarKWh = nullFloat(dist), nullFloat(energy), nullFloat(solar)
 		d.WindBft, d.SunshinePct = nullInt(wind), nullInt(sun)
 		if d.UpdatedAt, err = parseTime(updated); err != nil {
 			return nil, err

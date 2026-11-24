@@ -91,9 +91,10 @@ func (s *Service) pastLows(date string) (*advice.History, error) {
 // check after midnight, or after a start later that day) and again from
 // 23:45, with the trips changed during the day. It saves the lowest,
 // average, and highest published price; the km of the day's trips (those
-// already driven included) and their energy; and KNMI's wind and sunshine
-// for the day. The evening save keeps the first save's prices if EVCC no
-// longer lists the whole day. Past days never change. After a start it
+// already driven included) and their energy; KNMI's wind and sunshine for
+// the day; and, at the first save only, EVCC's solar forecast for the whole
+// day (by the evening the day's sun has passed). The evening save keeps the
+// first save's prices if EVCC no longer lists the whole day. Past days never change. After a start it
 // waits for the first EVCC check, so the prices are loaded. Recording is not
 // an action, so it is not in the activity log (like SoC readings).
 func (s *Service) RecordHistory(ctx context.Context) error {
@@ -131,6 +132,14 @@ func (s *Service) RecordHistory(ctx context.Context) error {
 	if weather != nil {
 		if wd := weather.Day(date); wd != nil {
 			day.WindBft, day.SunshinePct = wd.WindBft, wd.SunshinePct
+		}
+	}
+	// The solar forecast as the day starts; a first save after a start
+	// later in the day saves none unless the forecast still has the whole
+	// day's sun.
+	if saved == nil && snap.state != nil {
+		if kwh, ok := snap.state.Solar.DayKWh(start, localtime.AddDays(start, 1)); ok {
+			day.SolarKWh = ptr(round(kwh, 1))
 		}
 	}
 	return s.Store.SaveDayStats(mergeStats(saved, day))
@@ -201,6 +210,9 @@ func mergeStats(saved *model.DayStats, d model.DayStats) model.DayStats {
 	}
 	if d.SunshinePct == nil {
 		d.SunshinePct = saved.SunshinePct
+	}
+	if d.SolarKWh == nil {
+		d.SolarKWh = saved.SolarKWh
 	}
 	return d
 }
