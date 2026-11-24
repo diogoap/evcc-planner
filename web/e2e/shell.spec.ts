@@ -92,6 +92,10 @@ test('dialogs open as sheets from the bottom on phones and lock the page', async
     // is big enough that a tap doesn't zoom in either.
     await expect(dialog).toBeFocused()
     expect(await dialog.getByLabel('Title').evaluate((el) => getComputedStyle(el).fontSize)).toBe('16px')
+    // The sheet scrolls up and down only, and nothing in it is wider.
+    expect(
+      await dialog.evaluate((el) => [getComputedStyle(el).overflowX, el.scrollWidth <= el.clientWidth]),
+    ).toEqual(['hidden', true])
   } else {
     await expect(dialog.getByLabel('Start', { exact: true })).toBeFocused()
   }

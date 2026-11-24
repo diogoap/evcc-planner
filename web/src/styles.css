@@ -516,8 +516,13 @@ input[type='radio'] {
 .form-grid {
   display: grid;
   gap: var(--space-4) var(--space-5);
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
   align-items: start;
+}
+
+/* Fields shrink with their column instead of widening it. */
+.form-grid > * {
+  min-width: 0;
 }
 
 .field-hint {
@@ -1206,9 +1211,12 @@ details summary {
     overflow: hidden;
   }
 
+  /* The sheet scrolls up and down only: scrolling one way would otherwise
+     let a control a few pixels too wide scroll it sideways. */
   .modal {
     width: 100%;
     max-height: calc(100dvh - env(safe-area-inset-top) - var(--space-6));
+    overflow-x: hidden;
     overflow-y: auto;
     overscroll-behavior: contain;
     border-bottom: none;
@@ -1260,6 +1268,19 @@ details summary {
   select,
   textarea {
     font-size: max(16px, 1em) !important;
+  }
+
+  /* iPhones draw date and time fields as native buttons with a width of
+     their own, wider than their column: drawn as plain fields they keep
+     the column's width, with the value on the left like other fields. */
+  input[type='date'],
+  input[type='time'] {
+    -webkit-appearance: none;
+    appearance: none;
+  }
+
+  input::-webkit-date-and-time-value {
+    text-align: start;
   }
 
   .btn {

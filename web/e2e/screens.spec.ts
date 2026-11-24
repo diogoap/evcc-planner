@@ -161,6 +161,13 @@ for (const screen of screens) {
 
         const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)
         expect.soft(overflow, 'scrolls sideways').toBe(false)
+        // An open dialog doesn't scroll sideways either.
+        const sideways = await page.evaluate(() =>
+          [...document.querySelectorAll<HTMLElement>('.modal')].some(
+            (m) => m.scrollWidth > m.clientWidth && getComputedStyle(m).overflowX !== 'hidden',
+          ),
+        )
+        expect.soft(sideways, 'a dialog scrolls sideways').toBe(false)
         if (isMobile) expect.soft(await smallTargets(page), 'touch targets under 44 px').toEqual([])
 
         const { violations } = await new AxeBuilder({ page }).analyze()
