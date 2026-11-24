@@ -681,6 +681,7 @@ gantt
 | **Plug in for charge extra** | Today's or tomorrow's advice (the first whose cheap hours are still ahead) is to [charge extra](#charge-extra-daily-advice) with a plan (offered, or created by hand or automatically), the car is home and unplugged, from 30 minutes before its cheap hours start until 30 minutes before they end, outside quiet hours. When that start falls in quiet hours, such as a cheap night, it comes from 15 minutes before quiet hours instead. Once a day; cleared when the car is plugged in or the cheap hours are over. Without the plan yet it also asks to create it, or says that automatic plans create it when the day starts. Not while a trip that leaves before the cheap hours is still ahead or under way (by the car location sensor, if set, it is over once the car is home): the car leaves again first, so it comes once the car is back from the last of them, if that is before quiet hours (later, the back-home reminder still asks). Buttons: **Remind in 30 min**, **View plan**. | "Plug in for charge extra: Charge extra to 71%: 18:30–00:00 averages €0.28, 30% or more below this week's lowest prices (€0.40). Plug in so the plan can charge." |
 | **New prices: plug in** | Automatic and AI mode: tomorrow's prices (around 14:00) change the target for the next departure, or bring charge extra (today's or tomorrow's; not while a trip before its cheap hours is still ahead), while the car is unplugged. Once per publication, outside quiet hours; cleared when the car is plugged in. Button: **View plan**. | "New prices: plug in: The plan for School drop-off is now 64% by Tue 07:48 (was 42%), also for School pickup. Plug in so it can charge." |
 | **Extra plan created** | Advice auto-apply created an extra plan, outside quiet hours (in them, only the activity log has it). Information only. Button: **View plan**. | "Extra plan created: Charge extra to 71%: 18:30–00:00 … The plan asks EVCC for 71% by Mon 00:00 and ends then." |
+| **Plan sent** | On plug-in, Automatic, or AI mode sent EVCC a plan for the next departure by itself (for example right after plugging in), outside quiet hours. Once per departure: later changes to that departure's plan stay quiet; one sent in quiet hours is told at its first change after them. Plans you send yourself and extra plans don't count. Information only. Button: **View plan**. | "Plan sent: EVCC charges to 42% by Tue 07:48 for School drop-off." |
 
 Each is sent once per trip (unplugged early: once per unplug; not in Smart
 mode: once per mode; plug in for the sun: once per day). Charging stopped, not
@@ -792,6 +793,7 @@ Settings → **Notifications**:
 | Charge extra reminders | On (plug in for charge extra, and extra plans created automatically) |
 | Back home reminders | On (needs the car location sensor), also in quiet hours (a check under it, separate from urgent reminders) |
 | Plan changes after new prices | On (Automatic and AI mode) |
+| Plans sent | On (On plug-in, Automatic, and AI mode; once per departure) |
 
 ## Activity log entries
 

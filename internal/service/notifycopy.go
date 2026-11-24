@@ -92,6 +92,9 @@ func NotificationCopies() []NotificationCopy {
 			},
 			Note: "At the evening reminder time, when charging is planned for tonight. When both apply, they come in one message. " +
 				extraPlanWhat},
+		{Setting: "planSent", Kind: model.NotifyPlanSent, Title: "Plan sent", Buttons: view, ai: true,
+			Messages: []string{"EVCC charges to {target}% by {time} for {trip}[, with {later trip} charged ahead]."},
+			Note:     "Once per departure: later changes to its plan come without a message."},
 		{Setting: "arrival", Kind: model.NotifyArrived, Title: "Back home: plug in", ai: true,
 			Buttons: []string{model.VerbSnooze, model.VerbView},
 			Messages: []string{

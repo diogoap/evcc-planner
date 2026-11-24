@@ -39,6 +39,7 @@ const defaults: NotificationSettings = {
   prices: true,
   evening: false,
   eveningAt: '19:30',
+  planSent: true,
 }
 
 const copy: NotificationCopy[] = [

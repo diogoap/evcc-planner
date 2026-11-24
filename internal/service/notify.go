@@ -31,7 +31,7 @@ var notificationLabels = map[string]string{
 	"snoozeMin": "snooze", "problems": "charging problems", "questions": "questions", "ready": "ready messages",
 	"solar": "solar reminders", "extra": "charge extra reminders", "arrival": "back home reminders",
 	"arrivalInQuiet": "back home reminders in quiet hours", "prices": "plan changes after new prices",
-	"evening": "evening reminder", "eveningAt": "evening reminder time",
+	"evening": "evening reminder", "eveningAt": "evening reminder time", "planSent": "plans sent",
 }
 
 // SaveNotificationSettings validates and stores the notification settings.
@@ -127,6 +127,40 @@ func (s *Service) notifyAutoExtra(ctx context.Context, a *model.Adjustment, day 
 	return err
 }
 
+// notifyPlanSent tells the phones that the planner sent EVCC a plan for a
+// departure by itself (Settings → Notifications: Plans sent), once per
+// departure: later changes to that departure's plan stay quiet. Outside
+// quiet hours; one sent in them is not told later, unless the departure's
+// plan changes after them. It is information only, and a failure to send
+// it doesn't fail the plan.
+func (s *Service) notifyPlanSent(ctx context.Context, in SendPlanInput, at time.Time) {
+	settings, err := s.NotificationSettings()
+	if err != nil || !settings.Enabled || !settings.PlanSent || len(settings.Phones) == 0 || s.Clients().Notify == nil ||
+		in.TripKey == "" || in.about == "" {
+		return
+	}
+	if (&reminders{s: s, settings: settings}).quiet(s.now()) {
+		return
+	}
+	key := "plan_sent:" + in.TripKey
+	if old, err := s.Store.NotificationByKey(key); err != nil || old != nil {
+		return
+	}
+	n := &model.Notification{
+		Key: key, Kind: model.NotifyPlanSent, Title: "Plan sent", Subject: in.TripKey,
+		Message: fmt.Sprintf("EVCC charges to %d%% by %s for %s.", in.SoC, s.clockText(at), in.about),
+		Verbs:   []string{model.VerbView},
+	}
+	if err := s.deliver(ctx, n, settings); err != nil {
+		s.Log.Warn("plan sent notification failed", "err", err)
+		return
+	}
+	n.State, n.Note = model.NotifyDone, "Information"
+	if _, err := s.Store.SaveNotification(*n); err != nil {
+		s.Log.Warn("save plan sent notification", "err", err)
+	}
+}
+
 func verbTitle(verb string, settings model.NotificationSettings) string {
 	switch verb {
 	case model.VerbSnooze:
@@ -156,7 +190,7 @@ var notifyEmoji = map[string]string{
 	model.NotifyStopped: "⚠️", model.NotifyUnplugged: "⚠️", model.NotifyMode: "⚠️", model.NotifyMissed: "❌",
 	model.NotifyQuestion: "❓", model.NotifyReady: "✅", model.NotifySolar: "☀️", model.NotifyExtra: "🔋",
 	model.NotifyExtraPlan: "🔌", model.NotifyArrived: "🏠", model.NotifyPrices: "💶", model.NotifyInfo: "⏭️",
-	model.NotifyEvening: "🌙",
+	model.NotifyEvening: "🌙", model.NotifyPlanSent: "📤",
 }
 
 // unlabelled kinds are not about how the car charges, so they don't say
@@ -184,7 +218,7 @@ var retryAfter = []time.Duration{2 * time.Minute, 5 * time.Minute, 15 * time.Min
 // infoKinds are information only: done once they reach the phones.
 var infoKinds = map[string]bool{
 	model.NotifyTest: true, model.NotifyUnplugged: true, model.NotifyMissed: true, model.NotifyReady: true,
-	model.NotifyExtraPlan: true, model.NotifyInfo: true,
+	model.NotifyExtraPlan: true, model.NotifyInfo: true, model.NotifyPlanSent: true,
 }
 
 // notifyEvent is the activity log entry about sending a notification.

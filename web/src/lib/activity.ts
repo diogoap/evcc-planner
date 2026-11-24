@@ -98,6 +98,7 @@ const fieldLabels: Record<string, string> = {
   arrivalInQuiet: 'Back home reminders in quiet hours',
   evening: 'Evening reminder',
   eveningAt: 'Evening reminder at',
+  planSent: 'Plans sent',
   message: 'Message',
   autoApply: 'Automatic plans',
   autoMinConfidence: 'Minimum confidence',

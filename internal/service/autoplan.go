@@ -248,7 +248,7 @@ func (s *Service) planOnPlugIn(ctx context.Context, st *evcc.State, lp *evcc.Loa
 		extra := s.activeExtraPlan(s.now()) != nil
 		_, err := s.SendPlan(ctx, SendPlanInput{
 			SoC: target.SoC, Time: target.ReadyBy, TripKey: target.TripKey, Confirm: true,
-			Reason: "Car plugged in", auto: true,
+			Reason: "Car plugged in", auto: true, about: targetTrips(target),
 		})
 		if err == nil && extra {
 			s.keepAfterPlanWrite(ctx)
@@ -388,7 +388,7 @@ func (s *Service) reconcile(ctx context.Context, st *evcc.State, lp *evcc.Loadpo
 		SoC: int(math.Round(want.SoC)), Time: want.Time, Confirm: true, Reason: reason, auto: true, control: &ctl,
 	}
 	if target != nil {
-		in.TripKey = target.TripKey
+		in.TripKey, in.about = target.TripKey, targetTrips(target)
 	}
 	s.Log.Info("automatic plan", "soc", in.SoC, "time", in.Time, "reason", reason)
 	_, err = s.SendPlan(ctx, in)

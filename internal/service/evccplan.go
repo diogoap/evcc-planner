@@ -251,9 +251,11 @@ type SendPlanInput struct {
 	// Reason prefixes the activity entry of an automatic send.
 	Reason string `json:"-"`
 	// auto marks a send by the trip plan automation; control, if set, is
-	// saved with the plan record.
+	// saved with the plan record; about names the trips it is for, for
+	// the phone message on a new departure's plan.
 	auto    bool
 	control *model.PlanControl
+	about   string
 }
 
 // SendPlan writes the vehicle's one-off SoC plan to EVCC. EVCC keeps one
@@ -337,6 +339,9 @@ func (s *Service) SendPlan(ctx context.Context, in SendPlanInput) (*EVCCPlanView
 		s.keepAfterPlanWrite(ctx)
 	}
 	s.Log.Info("plan sent to evcc", "vehicle", veh.Name, "soc", in.SoC, "time", at)
+	if in.auto {
+		s.notifyPlanSent(ctx, in, at)
+	}
 	if err := s.PollEVCC(ctx); err != nil {
 		s.Log.Warn("evcc refresh after plan write failed", "err", err)
 	}

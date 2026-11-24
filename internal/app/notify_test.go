@@ -18,11 +18,13 @@ func (ta *testApp) phone() *homeassistant.NotifyStub {
 }
 
 // notifications turns notifications on for the demo phone, with changes.
+// Plans sent are off unless a change turns them on: each automatic plan
+// would bring one.
 func (ta *testApp) notifications(change func(map[string]any)) {
 	ta.t.Helper()
 	var s map[string]any
 	ta.json("GET", "/api/settings/notifications", nil, http.StatusOK, &s)
-	s["enabled"], s["phones"] = true, []string{homeassistant.StubPhone}
+	s["enabled"], s["phones"], s["planSent"] = true, []string{homeassistant.StubPhone}, false
 	if change != nil {
 		change(s)
 	}
@@ -36,7 +38,7 @@ func TestNotificationSettingsAndTest(t *testing.T) {
 	var s model.NotificationSettings
 	ta.json("GET", "/api/settings/notifications", nil, http.StatusOK, &s)
 	if s.Enabled || len(s.Phones) != 0 || s.QuietFrom != "23:00" || s.QuietTo != "07:00" || s.SnoozeMin != 30 ||
-		!s.Early || s.Ready || !s.UrgentInQuiet || s.Evening || s.EveningAt != "19:30" {
+		!s.Early || s.Ready || !s.UrgentInQuiet || s.Evening || s.EveningAt != "19:30" || !s.PlanSent {
 		t.Fatalf("defaults = %+v", s)
 	}
 	var phones []string
@@ -62,7 +64,7 @@ func TestNotificationSettingsAndTest(t *testing.T) {
 	}
 	log.none("invalid settings")
 
-	ta.notifications(func(s map[string]any) { s["linkUrl"] = "http://planner.test:7201/" })
+	ta.notifications(func(s map[string]any) { s["linkUrl"], s["planSent"] = "http://planner.test:7201/", true })
 	if e := log.one("settings.update", model.SourceUI); e.Summary != "Changed notification settings: notifications, link address, phones" {
 		t.Errorf("event = %+v", e)
 	}
@@ -213,4 +215,62 @@ func TestButtonsNeedAnAdminToken(t *testing.T) {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
+}
+
+func TestPlanSentOncePerDeparture(t *testing.T) {
+	ta := newTestApp(t, "") // Monday 19:00, unplugged; Automatic mode
+	ta.json("POST", "/api/demo/reset", map[string]any{}, http.StatusNoContent, nil)
+	ta.notifications(func(s map[string]any) {
+		s["planSent"], s["questions"], s["quietFrom"], s["quietTo"] = true, false, "18:00", "20:00"
+	})
+	ta.check()
+	ta.phone().Take()
+	consumption := func(kwh float64) {
+		t.Helper()
+		var s map[string]any
+		ta.json("GET", "/api/settings", nil, http.StatusOK, &s)
+		s["consumptionKWhPer100Km"] = kwh
+		ta.json("PUT", "/api/settings", s, http.StatusOK, nil)
+	}
+	lastSoC := func() int {
+		t.Helper()
+		w, err := ta.app.Store.LastPlanWrite()
+		if err != nil || w == nil {
+			t.Fatalf("no plan written: %v", err)
+		}
+		return w.SoC
+	}
+	key := "plan_sent:recurring:1:2026-11-10"
+
+	// Plugged in during quiet hours: the plan for Tuesday's school run goes
+	// to EVCC without a message.
+	ta.app.Stub.SetVehicle(true, 30)
+	ta.check()
+	first := lastSoC()
+	ta.expectSent()
+	if n, _ := ta.app.Store.NotificationByKey(key); n != nil {
+		t.Fatalf("told in quiet hours: %+v", n)
+	}
+
+	// After quiet hours, the departure's plan changes: one message, then
+	// no more for that departure.
+	ta.at(time.Date(2026, 11, 9, 20, 5, 0, 0, ams))
+	consumption(22)
+	ta.check()
+	second := lastSoC()
+	if second <= first {
+		t.Fatalf("plan not raised: %d%% then %d%%", first, second)
+	}
+	ta.expectSent("Plan sent")
+	n := ta.notification(key)
+	if n.Message != "EVCC charges to "+itoa(int64(second))+"% by Tue 07:48 for School drop-off." ||
+		n.State != model.NotifyDone || len(n.Verbs) != 1 || n.Verbs[0] != model.VerbView {
+		t.Errorf("plan sent = %+v", n)
+	}
+	consumption(26)
+	ta.check()
+	if lastSoC() <= second {
+		t.Fatalf("plan not raised again: %d%%", lastSoC())
+	}
+	ta.expectSent()
 }

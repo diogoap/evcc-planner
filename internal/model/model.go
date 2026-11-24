@@ -675,6 +675,9 @@ type NotificationSettings struct {
 	// the usual reminders.
 	Evening   bool   `json:"evening"`
 	EveningAt string `json:"eveningAt"`
+	// PlanSent says when the planner sends EVCC a plan for a departure by
+	// itself (On plug-in, Automatic, and AI mode), once per departure.
+	PlanSent bool `json:"planSent"`
 }
 
 // DefaultNotificationSettings are off, with the reminder rules ready.
@@ -682,7 +685,7 @@ func DefaultNotificationSettings() NotificationSettings {
 	return NotificationSettings{
 		Phones: []string{}, Early: true, EarlyLeadMin: 30, UrgentLeadMin: 30, QuietFrom: "23:00", QuietTo: "07:00",
 		UrgentInQuiet: true, SnoozeMin: 30, Problems: true, Questions: true, Solar: true, Extra: true, Arrival: true,
-		ArrivalInQuiet: true, Prices: true, EveningAt: "19:30",
+		ArrivalInQuiet: true, Prices: true, EveningAt: "19:30", PlanSent: true,
 	}
 }
 
@@ -786,6 +789,7 @@ const (
 	NotifyArrived   = "arrived"    // back home from the day's last trip: plug in
 	NotifyPrices    = "prices"     // new prices changed the plan while unplugged
 	NotifyEvening   = "evening"    // charging is planned tonight: an extra reminder in the evening
+	NotifyPlanSent  = "plan_sent"  // a trip plan was sent to EVCC automatically, once per departure
 	NotifyInfo      = "info"       // a follow-up, e.g. after Skip trip
 
 	NotifySent     = "sent"

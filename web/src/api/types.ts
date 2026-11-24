@@ -933,6 +933,8 @@ export interface NotificationSettings {
   evening: boolean
   /** Local HH:MM, outside quiet hours. */
   eveningAt: string
+  /** A message when the planner sends EVCC a plan for a departure by itself, once per departure. */
+  planSent: boolean
 }
 
 /** What a kind of notification says: {…} is filled in when sent, […] only when it applies. */
