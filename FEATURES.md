@@ -82,7 +82,7 @@ notifications is in [AUTOMATION.md](AUTOMATION.md).
 
 ## Screens
 
-- **Overview:** a "will the car be ready?" card, the week (tiles or a list, 3–7 days), the day's advice, and the charts (SoC over prices, published prices, price history).
+- **Overview:** a "will the car be ready?" card, the week (tiles or a list, 3–7 days), the day's advice, and the charts (published prices, SoC over prices, price history).
 - A warning line at the top of the Overview while a connection has a problem (EVCC, Home Assistant, a calendar, Google Routes, a forecast, phone notifications): what went wrong, when it last worked, and a link to Settings → Connections. Google Routes reports how its last lookup went. Only in the app, never on the phone.
 - When a service refuses its key, token, or calendar address (Google Routes, OpenRouter, KNMI, Home Assistant, a calendar), its connection is marked **Rejected** and says which environment variable to renew.
 - Each source's data has an age limit (EVCC 3 checks, Home Assistant 3 checks, calendars 3 syncs, forecasts 2 days). Older EVCC data stops automatic changes and the ready card says so; the others show on the warning line. If the planner's background checks stop, the warning line says to restart it, and the container shows as unhealthy.

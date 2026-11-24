@@ -7,7 +7,7 @@ import PlanChart from './PlanChart.vue'
 import PriceChart from './PriceChart.vue'
 import PriceHistoryCard from './PriceHistoryCard.vue'
 
-// The charts: SoC over prices for the week, the published prices in detail,
+// The charts: the published prices in detail, SoC over prices for the week,
 // and the price history. On the Overview, or on their own page on phones
 // when they would not fit.
 // The SoC and prices chart covers the first `shownDays` days (all seven by
@@ -30,6 +30,21 @@ const adviceDays = computed(() => (props.plan.advice.enabled ? props.plan.advice
 
 <template>
   <div class="stack">
+    <section v-if="status?.priceSlots.length" class="card" aria-labelledby="prices-title">
+      <div id="prices-title" class="card-title">
+        Published prices <span class="normal-case">incl. VAT</span>
+      </div>
+      <PriceChart
+        :slots="status.priceSlots"
+        :planned="expected"
+        planned-label="Expected charging"
+        :now="plan.now"
+        :blocks="plan.blocks"
+        :height="200"
+      />
+      <p class="small muted m-0 mt-2">From EVCC; tomorrow's prices appear around 14:00.</p>
+    </section>
+
     <section class="card" aria-labelledby="chart-title" data-testid="chart-card">
       <div id="chart-title" class="card-title">SoC and prices <span class="normal-case">incl. VAT</span></div>
       <PlanChart
@@ -53,21 +68,6 @@ const adviceDays = computed(() => (props.plan.advice.enabled ? props.plan.advice
         prices are the planner's estimate of when the target charges (cheapest slots, solar first); EVCC picks
         the actual slots.
       </p>
-    </section>
-
-    <section v-if="status?.priceSlots.length" class="card" aria-labelledby="prices-title">
-      <div id="prices-title" class="card-title">
-        Published prices <span class="normal-case">incl. VAT</span>
-      </div>
-      <PriceChart
-        :slots="status.priceSlots"
-        :planned="expected"
-        planned-label="Expected charging"
-        :now="plan.now"
-        :blocks="plan.blocks"
-        :height="200"
-      />
-      <p class="small muted m-0 mt-2">From EVCC; tomorrow's prices appear around 14:00.</p>
     </section>
 
     <PriceHistoryCard :now="plan.now" />
