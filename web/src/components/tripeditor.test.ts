@@ -85,6 +85,9 @@ describe('TripEditor route', () => {
     expect(add.attributes('disabled')).toBeDefined()
     expect(w.text()).toContain('5 of 5 points')
     await button(w, 'Remove Stop 3').trigger('click')
+    await flushPromises()
+    // Focus stays on a button where the point was, not on a field.
+    expect(document.activeElement).toBe(button(w, 'Remove End').element)
     await w.get('form').trigger('submit')
     await flushPromises()
     expect(api.updateTrip).toHaveBeenCalledWith(
@@ -99,12 +102,17 @@ describe('TripEditor route', () => {
     const w = open()
     await w.findAll('[data-testid=route-points] input')[1].setValue('Airport 1')
     await button(w, 'Remove End').trigger('click')
+    await flushPromises()
+    expect(document.activeElement?.textContent?.trim()).toBe('Add stop')
     expect(names(w)).toEqual(['Home', 'Airport 1'])
     expect(labels(w)).toEqual(['Start', 'End'])
     expect(w.text()).not.toContain('Until')
     expect(w.find('[data-testid=route-ends-away]').exists()).toBe(true)
     expect(button(w, 'Remove End').attributes('disabled')).toBeDefined()
     await button(w, 'Move End up').trigger('click')
+    await flushPromises()
+    // At the top it can only move down again.
+    expect(document.activeElement).toBe(button(w, 'Move Start down').element)
     expect(names(w)).toEqual(['Airport 1', 'Home'])
     expect(w.find('[data-testid=route-starts-away]').exists()).toBe(true)
     expect(w.find('[data-testid=route-ends-away]').exists()).toBe(false)

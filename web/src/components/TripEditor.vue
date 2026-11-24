@@ -71,13 +71,19 @@ const scopeNote = computed(() => {
   return ''
 })
 
+// Focus stays with the point that changed: the first of the selectors that
+// isn't disabled, else Add stop. Only a new stop focuses its field, as on a
+// phone a field brings up the keyboard.
 const routeList = ref<HTMLOListElement>()
-function focusIn(id: number, selector: string) {
+const addButton = ref<HTMLButtonElement>()
+function focusIn(id: number, ...selectors: string[]) {
   nextTick(() => {
     const row = routeList.value?.querySelector<HTMLElement>(`[data-point="${id}"]`)
-    const el = row?.querySelector<HTMLElement>(selector)
-    if (el && !(el as HTMLButtonElement).disabled) el.focus()
-    else row?.querySelector<HTMLElement>('input')?.focus()
+    for (const selector of selectors) {
+      const el = row?.querySelector<HTMLButtonElement>(selector)
+      if (el && !el.disabled) return el.focus()
+    }
+    addButton.value?.focus()
   })
 }
 
@@ -91,13 +97,15 @@ function addStop() {
 function remove(index: number) {
   if (count.value <= MIN_POINTS) return
   form.points.splice(index, 1)
-  focusIn(form.points[Math.min(index, count.value - 1)].id, 'input')
+  focusIn(form.points[Math.min(index, count.value - 1)].id, '[data-remove]')
 }
 
 function move(index: number, by: -1 | 1) {
   const id = form.points[index].id
   form.points = moved(form.points, index, index + by)
-  focusIn(id, by < 0 ? '[data-move=up]' : '[data-move=down]')
+  const [same, other] =
+    by < 0 ? ['[data-move=up]', '[data-move=down]'] : ['[data-move=down]', '[data-move=up]']
+  focusIn(id, same, other)
 }
 
 async function save() {
@@ -190,6 +198,7 @@ async function save() {
               <button
                 class="btn sm ghost icon-only"
                 type="button"
+                data-remove
                 :disabled="count <= MIN_POINTS"
                 :aria-label="`Remove ${pointLabel(i, count)}`"
                 @click="remove(i)"
@@ -203,7 +212,13 @@ async function save() {
           </li>
         </ol>
         <div class="row">
-          <button class="btn sm" type="button" :disabled="count >= MAX_POINTS" @click="addStop">
+          <button
+            ref="addButton"
+            class="btn sm"
+            type="button"
+            :disabled="count >= MAX_POINTS"
+            @click="addStop"
+          >
             <AppIcon name="plus" />Add stop
           </button>
           <span class="small muted">{{ count }} of {{ MAX_POINTS }} points</span>

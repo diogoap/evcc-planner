@@ -1,4 +1,5 @@
 import { nextTick, onMounted, onUnmounted, type Ref } from 'vue'
+import { opensKeyboard } from './keyboard'
 
 // Open dialogs and panels, the topmost last: only it reacts to Escape and Tab,
 // so a dialog opened from the day panel closes on its own.
@@ -7,10 +8,16 @@ const open: symbol[] = []
 const focusable =
   'a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea, summary'
 
+// On touch screens a field focused on opening would bring up the keyboard,
+// and iPhones zoom in on it.
+const touch = () => !!window.matchMedia?.('(pointer: coarse)').matches
+const typesIn = (el: Element | null) => opensKeyboard(el) || el instanceof HTMLSelectElement
+
 /**
  * Modal behaviour for a dialog or panel: focus moves in when it opens (to the
- * first element matching `first`) and back when it closes, Tab stays inside,
- * Escape closes, and the page behind doesn't scroll while any is open.
+ * first element matching `first`, or on touch screens to the dialog itself
+ * when that is a field) and back when it closes, Tab stays inside, Escape
+ * closes, and the page behind doesn't scroll while any is open.
  */
 export function useDialog(root: Ref<HTMLElement | null>, close: () => void, first = 'input, select, button') {
   const id = Symbol('dialog')
@@ -44,7 +51,12 @@ export function useDialog(root: Ref<HTMLElement | null>, close: () => void, firs
     document.addEventListener('keydown', onKey)
     document.documentElement.classList.add('modal-open')
     await nextTick()
-    root.value?.querySelector<HTMLElement>(first)?.focus()
+    const el = root.value
+    const target = el?.querySelector<HTMLElement>(first)
+    if (el && (!target || (touch() && typesIn(target)))) {
+      if (!el.hasAttribute('tabindex')) el.setAttribute('tabindex', '-1')
+      el.focus({ preventScroll: true })
+    } else target?.focus()
   })
 
   onUnmounted(() => {

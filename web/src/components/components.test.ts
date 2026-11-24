@@ -545,6 +545,35 @@ describe('ModalDialog', () => {
     opener.remove()
   })
 
+  it('on touch screens, focuses the dialog itself rather than a field (no keyboard, no zoom)', async () => {
+    const media = (query: string) => ({ matches: query === '(pointer: coarse)' }) as MediaQueryList
+    const original = window.matchMedia
+    window.matchMedia = media
+    try {
+      const field = mount(ModalDialog, {
+        props: { title: 'Edit trip' },
+        slots: { default: '<input /><button>Save</button>' },
+        attachTo: document.body,
+      })
+      await flushPromises()
+      const dialog = field.get('[role=dialog]').element
+      expect(document.activeElement).toBe(dialog)
+      expect(dialog.getAttribute('tabindex')).toBe('-1')
+      field.unmount()
+      // A button first is still focused.
+      const button = mount(ModalDialog, {
+        props: { title: 'Confirm' },
+        slots: { default: '<button data-testid="ok">OK</button><input />' },
+        attachTo: document.body,
+      })
+      await flushPromises()
+      expect(document.activeElement).toBe(button.get('[data-testid=ok]').element)
+      button.unmount()
+    } finally {
+      window.matchMedia = original
+    }
+  })
+
   it('stacks: Escape closes only the top one, and the page stays locked until the last closes', () => {
     const below = mount(ModalDialog, { props: { title: 'Day' }, attachTo: document.body })
     const top = mount(ModalDialog, { props: { title: 'Edit trip' }, attachTo: document.body })

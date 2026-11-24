@@ -87,7 +87,23 @@ test('dialogs open as sheets from the bottom on phones and lock the page', async
     expect(box.width).toBeLessThan(screen.width / 2)
   }
 
+  if (isMobile) {
+    // No field gets focus on opening (no keyboard, no zoom), and field text
+    // is big enough that a tap doesn't zoom in either.
+    await expect(dialog).toBeFocused()
+    expect(await dialog.getByLabel('Title').evaluate((el) => getComputedStyle(el).fontSize)).toBe('16px')
+  } else {
+    await expect(dialog.getByLabel('Start', { exact: true })).toBeFocused()
+  }
+
   await page.keyboard.press('Escape')
   await expect(dialog).toBeHidden()
   await expect(page.locator('html')).not.toHaveClass(/modal-open/)
+
+  // The same for creating a plan.
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Send plan to EVCC' }).click()
+  const send = page.getByRole('dialog')
+  if (isMobile) await expect(send).toBeFocused()
+  else await expect(send.getByTestId('plan-soc')).toBeFocused()
 })

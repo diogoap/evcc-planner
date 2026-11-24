@@ -864,6 +864,10 @@ html.modal-open {
   box-shadow: var(--shadow-lg);
 }
 
+.modal[tabindex='-1']:focus {
+  outline: none;
+}
+
 .modal h2 {
   font-size: var(--text-lg);
   margin-bottom: 14px;
@@ -1248,6 +1252,14 @@ details summary {
   select,
   textarea {
     min-height: var(--touch);
+  }
+
+  /* iPhones zoom in on a field with smaller text when it gets focus; this
+     also wins over smaller field text set by a component. */
+  input:not([type='checkbox'], [type='radio']),
+  select,
+  textarea {
+    font-size: max(16px, 1em) !important;
   }
 
   .btn {
