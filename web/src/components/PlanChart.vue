@@ -11,6 +11,8 @@ import {
   driveTitles,
   priceSpans,
   readout,
+  socAxis,
+  socValues,
   type ChartData,
   type EstimateSpan,
   type TitleSpan,
@@ -284,6 +286,16 @@ function socChart(canvas: HTMLCanvasElement) {
   const c = common('soc', text, grid)
   const soc = cssVar('--chart-soc')
   const required = cssVar('--chart-required')
+  // Zoomed in on the SoC shown when it varies little.
+  const axis = socAxis(
+    socValues(
+      props.timeline,
+      departures.value.filter((b) => Date.parse(b.departAt) <= to.value).map((b) => b.requiredSoc),
+      props.reserve,
+      from.value,
+      to.value,
+    ),
+  )
   const datasets: ChartDataset<'line' | 'scatter', { x: number; y: number | null }[]>[] = [
     {
       type: 'line',
@@ -325,9 +337,9 @@ function socChart(canvas: HTMLCanvasElement) {
       scales: {
         ...c.scales,
         y: {
-          min: 0,
-          max: 100,
-          ticks: { stepSize: 25, callback: (v) => `${v}%`, color: text },
+          min: axis.min,
+          max: axis.max,
+          ticks: { stepSize: axis.step, callback: (v) => `${v}%`, color: text },
           grid: { color: grid },
           border: { display: false },
           afterFit: (s) => void (s.width = AXIS_LEFT),

@@ -11,6 +11,8 @@ import {
   priceStats,
   readout,
   socAt,
+  socAxis,
+  socValues,
   solarAt,
   weatherTitles,
   type ChartData,
@@ -205,5 +207,37 @@ describe('text', () => {
         'Expected charging from Tue 10 00:00. Later days show estimated day prices. No price data for Fri 13. ' +
         'KNMI outlook: sun 40% and wind 5 Bft on Tue 10, wind 3 Bft on Wed 11.',
     )
+  })
+})
+
+describe('SoC axis', () => {
+  it('stays 0–100% when the SoC spans half of it or more', () => {
+    expect(socAxis([20, 100, 15])).toEqual({ min: 0, max: 100, step: 25 })
+    expect(socAxis([20, 80])).toEqual({ min: 0, max: 100, step: 25 })
+    expect(socAxis([])).toEqual({ min: 0, max: 100, step: 25 })
+  })
+
+  it('zooms in on a SoC that varies little, with room around it', () => {
+    // The reserve (15%) and a SoC between 15 and 28%.
+    expect(socAxis([25, 22, 15, 28, 15])).toEqual({ min: 10, max: 40, step: 10 })
+    // At least 30 points tall.
+    expect(socAxis([50, 52])).toEqual({ min: 30, max: 60, step: 10 })
+    expect(socAxis([1, 3])).toEqual({ min: 0, max: 30, step: 10 })
+    // Taller than 40: ticks every 20, on multiples of 20.
+    expect(socAxis([20, 60])).toEqual({ min: 0, max: 80, step: 20 })
+    expect(socAxis([60, 95])).toEqual({ min: 40, max: 100, step: 20 })
+  })
+
+  it('takes the SoC shown: inside the range and at both ends, the targets, and the reserve', () => {
+    const tl: TimelinePoint[] = [
+      { at: '2026-11-09T18:00:00Z', soc: 90, kind: 'now' },
+      { at: '2026-11-10T06:00:00Z', soc: 30, kind: 'charge_start' },
+      { at: '2026-11-10T12:00:00Z', soc: 40, kind: 'charge_end' },
+      { at: '2026-11-11T12:00:00Z', soc: 10, kind: 'depart' },
+    ]
+    const v = socValues(tl, [35], 15, t('2026-11-10T06:00:00Z'), t('2026-11-11T00:00:00Z'))
+    expect(v.slice(0, 3)).toEqual([30, 40, 30])
+    expect(v[3]).toBeCloseTo(40 - 30 * (12 / 24))
+    expect(v.slice(4)).toEqual([35, 15])
   })
 })

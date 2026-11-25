@@ -38,6 +38,42 @@ export function socAt(timeline: TimelinePoint[], t: number) {
   )
 }
 
+/**
+ * The SoC axis for the values drawn on it: 0–100%, or zoomed in when they
+ * span less than half of it, with room around them, in steps of 10 and at
+ * least 30 points tall (ticks every 10 points, or 20 when taller than 40).
+ */
+export function socAxis(values: number[]) {
+  const v = values.filter(Number.isFinite)
+  if (!v.length) return { min: 0, max: 100, step: 25 }
+  const low = Math.min(...v)
+  const high = Math.max(...v)
+  if (high - low >= 50) return { min: 0, max: 100, step: 25 }
+  let min = Math.max(0, Math.floor((low - 5) / 10) * 10)
+  let max = Math.min(100, Math.ceil((high + 5) / 10) * 10)
+  while (max - min < 30) {
+    if (min > 0) min -= 10
+    else max += 10
+  }
+  if (max - min <= 40) return { min, max, step: 10 }
+  min = Math.floor(min / 20) * 20
+  max = Math.min(100, Math.ceil(max / 20) * 20)
+  return { min, max, step: 20 }
+}
+
+/** The SoC values shown between from and to: the projected SoC (also at both ends), the departures' targets, and the reserve. */
+export function socValues(
+  timeline: TimelinePoint[],
+  required: number[],
+  reserve: number,
+  from: number,
+  to: number,
+) {
+  const inside = timeline.filter((p) => ms(p.at) >= from && ms(p.at) <= to).map((p) => p.soc)
+  const ends = timeline.length ? [socAt(timeline, from), socAt(timeline, to)] : []
+  return [...inside, ...ends.filter((s): s is number => s != null), ...required, reserve]
+}
+
 /** Forecast solar power (kW) at t; null outside the forecast. */
 export function solarAt(points: SolarPoint[], t: number) {
   return interpolate(
