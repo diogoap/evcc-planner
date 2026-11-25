@@ -32,6 +32,7 @@ var notificationLabels = map[string]string{
 	"solar": "solar reminders", "extra": "charge extra reminders", "arrival": "back home reminders",
 	"arrivalInQuiet": "back home reminders in quiet hours", "prices": "plan changes after new prices",
 	"evening": "evening reminder", "eveningAt": "evening reminder time", "planSent": "plans sent",
+	"extraPlan": "extra plans created",
 }
 
 // SaveNotificationSettings validates and stores the notification settings.
@@ -103,26 +104,33 @@ func parseAction(action string) (string, int64, bool) {
 func notifyTag(n model.Notification) string { return "evcc-planner-" + strconv.FormatInt(n.ID, 10) }
 
 // notifyAutoExtra tells the phones about an extra plan created
-// automatically from charge extra (Settings → Notifications: Charge
-// extra), outside quiet hours. It is information only.
+// automatically from charge extra (Settings → Notifications: Extra plans
+// created), outside quiet hours. It is information only, sent with the
+// other plan messages (queuePlanMessage).
 func (s *Service) notifyAutoExtra(ctx context.Context, a *model.Adjustment, day *DayAdviceView) error {
 	settings, err := s.NotificationSettings()
-	if err != nil || !settings.Enabled || !settings.Extra || len(settings.Phones) == 0 || s.Clients().Notify == nil || a.Plan == nil {
+	if err != nil || !settings.Enabled || !settings.ExtraPlan || len(settings.Phones) == 0 || s.Clients().Notify == nil || a.Plan == nil {
 		return err
 	}
 	if (&reminders{s: s, settings: settings}).quiet(s.now()) {
 		return nil
 	}
-	n := &model.Notification{
-		Key: fmt.Sprintf("extra_plan:%d", a.ID), Kind: model.NotifyExtraPlan, Title: "Extra plan created",
-		Message: fmt.Sprintf("%s The plan asks EVCC for %d%% by %s and ends then.", day.Summary,
-			int(math.Round(a.Plan.SoC)), s.clockText(a.Plan.Time)),
-		Verbs: []string{model.VerbView},
-	}
-	if err := s.deliver(ctx, n, settings); err != nil {
-		return err
-	}
-	n.State, n.Note = model.NotifyDone, "Information"
+	soc := int(math.Round(a.Plan.SoC))
+	return s.queuePlanMessage(&model.Notification{
+		Key: fmt.Sprintf("extra_plan:%d", a.ID), Kind: model.NotifyExtraPlan, Title: "Extra plan created", PlanSoC: soc,
+		Message: fmt.Sprintf("%s The plan asks EVCC for %d%% by %s and ends then.", day.Summary, soc, s.clockText(a.Plan.Time)),
+		Verbs:   []string{model.VerbView},
+	})
+}
+
+// queuePlanMessage keeps a message about a plan the planner made by itself
+// until the end of the check (reminders.planMessages): of those made at the
+// same time, such as a trip's plan after plugging in and the extra plan
+// the AI plan then brings, only the one with the highest target is sent.
+func (s *Service) queuePlanMessage(n *model.Notification) error {
+	p, err := s.Settings()
+	n.Title = phoneTitle(n.Kind, n.Title, err == nil && p.TripPlans == model.TripPlansAI)
+	n.State, n.CreatedAt = model.NotifyPending, s.now()
 	_, err = s.Store.SaveNotification(*n)
 	return err
 }
@@ -131,8 +139,8 @@ func (s *Service) notifyAutoExtra(ctx context.Context, a *model.Adjustment, day 
 // departure by itself (Settings → Notifications: Plans sent), once per
 // departure: later changes to that departure's plan stay quiet. Outside
 // quiet hours; one sent in them is not told later, unless the departure's
-// plan changes after them. It is information only, and a failure to send
-// it doesn't fail the plan.
+// plan changes after them. It is information only, sent with the other
+// plan messages (queuePlanMessage), and a failure doesn't fail the plan.
 func (s *Service) notifyPlanSent(ctx context.Context, in SendPlanInput, at time.Time) {
 	settings, err := s.NotificationSettings()
 	if err != nil || !settings.Enabled || !settings.PlanSent || len(settings.Phones) == 0 || s.Clients().Notify == nil ||
@@ -146,18 +154,12 @@ func (s *Service) notifyPlanSent(ctx context.Context, in SendPlanInput, at time.
 	if old, err := s.Store.NotificationByKey(key); err != nil || old != nil {
 		return
 	}
-	n := &model.Notification{
-		Key: key, Kind: model.NotifyPlanSent, Title: "Plan sent", Subject: in.TripKey,
+	if err := s.queuePlanMessage(&model.Notification{
+		Key: key, Kind: model.NotifyPlanSent, Title: "Plan sent", Subject: in.TripKey, PlanSoC: in.SoC,
 		Message: fmt.Sprintf("EVCC charges to %d%% by %s for %s.", in.SoC, s.clockText(at), in.about),
 		Verbs:   []string{model.VerbView},
-	}
-	if err := s.deliver(ctx, n, settings); err != nil {
-		s.Log.Warn("plan sent notification failed", "err", err)
-		return
-	}
-	n.State, n.Note = model.NotifyDone, "Information"
-	if _, err := s.Store.SaveNotification(*n); err != nil {
-		s.Log.Warn("save plan sent notification", "err", err)
+	}); err != nil {
+		s.Log.Warn("plan sent notification", "err", err)
 	}
 }
 

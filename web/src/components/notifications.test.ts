@@ -40,6 +40,7 @@ const defaults: NotificationSettings = {
   evening: false,
   eveningAt: '19:30',
   planSent: true,
+  extraPlan: true,
 }
 
 const copy: NotificationCopy[] = [

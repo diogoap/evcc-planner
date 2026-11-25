@@ -23,6 +23,9 @@ const extraPlanWhat = `{about the plan}: “The extra plan was created automatic
 	`“The plan is created automatically when the day starts.”, or “Create the plan in the planner.”`
 
 // NotificationCopies lists every notification the planner sends.
+// planAtOnce is how plan messages made at the same time are sent.
+const planAtOnce = "When a plan is sent for a trip and an extra plan is created at the same time, only the message with the higher target comes."
+
 func NotificationCopies() []NotificationCopy {
 	charge := []string{model.VerbSnooze, model.VerbSkip, model.VerbView}
 	view := []string{model.VerbView}
@@ -75,8 +78,9 @@ func NotificationCopies() []NotificationCopy {
 				"{advice} Create the plan in the planner and plug in.",
 			},
 			Note: "{advice}: the day's charge extra advice, such as “Charge extra to 60%: about 4 h between 00:15 and 05:45 …”."},
-		{Setting: "extra", Kind: model.NotifyExtraPlan, Title: "Extra plan created", Buttons: view, ai: true,
-			Messages: []string{"{advice} The plan asks EVCC for {target}% by {time} and ends then."}},
+		{Setting: "extraPlan", Kind: model.NotifyExtraPlan, Title: "Extra plan created", Buttons: view, ai: true,
+			Messages: []string{"{advice} The plan asks EVCC for {target}% by {time} and ends then."},
+			Note:     planAtOnce},
 		{Setting: "prices", Kind: model.NotifyPrices, Title: "New prices: plug in", Buttons: view, ai: true,
 			Messages: []string{
 				"The plan for {trip} is now {target}% by {time}[ (was {target}%)][, also for {later trip}]. Plug in so it can charge.",
@@ -94,7 +98,7 @@ func NotificationCopies() []NotificationCopy {
 				extraPlanWhat},
 		{Setting: "planSent", Kind: model.NotifyPlanSent, Title: "Plan sent", Buttons: view, ai: true,
 			Messages: []string{"EVCC charges to {target}% by {time} for {trip}[, with {later trip} charged ahead]."},
-			Note:     "Once per departure: later changes to its plan come without a message."},
+			Note:     "Once per departure: later changes to its plan come without a message. " + planAtOnce},
 		{Setting: "arrival", Kind: model.NotifyArrived, Title: "Back home: plug in", ai: true,
 			Buttons: []string{model.VerbSnooze, model.VerbView},
 			Messages: []string{

@@ -74,7 +74,7 @@ func TestNotificationCopyCoversEveryKind(t *testing.T) {
 	var list []service.NotificationCopy
 	ta.json("GET", "/api/notifications/copy", nil, http.StatusOK, &list)
 	kinds := map[string]bool{}
-	settings := []string{"test", "early", "urgent", "problems", "questions", "ready", "solar", "extra", "prices", "arrival", "evening", "planSent"}
+	settings := []string{"test", "early", "urgent", "problems", "questions", "ready", "solar", "extra", "prices", "arrival", "evening", "planSent", "extraPlan"}
 	verbs := []string{model.VerbSnooze, model.VerbSkip, model.VerbView, model.VerbCount, model.VerbNoTrip}
 	for _, c := range list {
 		kinds[c.Kind] = true

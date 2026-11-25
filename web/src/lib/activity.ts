@@ -99,6 +99,7 @@ const fieldLabels: Record<string, string> = {
   evening: 'Evening reminder',
   eveningAt: 'Evening reminder at',
   planSent: 'Plans sent',
+  extraPlan: 'Extra plans created',
   message: 'Message',
   autoApply: 'Automatic plans',
   autoMinConfidence: 'Minimum confidence',

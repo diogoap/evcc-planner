@@ -101,6 +101,7 @@ func (s *Service) CheckNotifications(ctx context.Context) error {
 	if !on {
 		return r.err()
 	}
+	r.planMessages()
 	r.problems(cur)
 	r.ready(cur)
 	r.cleanUp()
@@ -226,6 +227,52 @@ func (r *reminders) send(n model.Notification) {
 		_, err := r.s.Store.SaveNotification(n)
 		r.fail(err)
 	}
+}
+
+// planMessageMaxAge is how long a message about a plan may wait for a
+// check (EVCC unreachable meanwhile) before it is too old to send.
+const planMessageMaxAge = 15 * time.Minute
+
+// planMessages sends the messages about plans the planner made by itself
+// since the last check (Plan sent, Extra plan created): only the one with
+// the highest target, so plans made at the same time come as one message.
+// The others are done without being sent; that departure or extra plan
+// counts as told.
+func (r *reminders) planMessages() {
+	list, err := r.s.Store.PendingNotifications()
+	if err != nil || len(list) == 0 {
+		r.fail(err)
+		return
+	}
+	best := -1
+	for i, n := range list {
+		if r.now.Sub(n.CreatedAt) <= planMessageMaxAge && (best < 0 || n.PlanSoC >= list[best].PlanSoC) {
+			best = i
+		}
+	}
+	for i := range list {
+		if i == best {
+			continue
+		}
+		n := &list[i]
+		n.State, n.ResolvedAt, n.Note = model.NotifyDone, &r.now, "Not sent: too old"
+		if best >= 0 {
+			n.Note = fmt.Sprintf("Not sent: the message about a %d%% plan came at the same time", list[best].PlanSoC)
+		}
+		_, err := r.s.Store.SaveNotification(*n)
+		r.fail(err)
+	}
+	if best < 0 {
+		return
+	}
+	n := list[best]
+	if err := r.s.deliver(r.ctx, &n, r.settings); err != nil {
+		r.fail(err)
+		return
+	}
+	n.State, n.Note = model.NotifyDone, "Information"
+	_, err = r.s.Store.SaveNotification(n)
+	r.fail(err)
 }
 
 // endOpen resolves the open notifications that match.

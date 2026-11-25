@@ -669,6 +669,9 @@ func TestAIWindowAfterTheDaysTrips(t *testing.T) {
 	if err := ta.app.Service.AutoApply(context.Background()); err != nil {
 		t.Fatal(err)
 	}
+	if err := ta.app.Service.CheckNotifications(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 	ta.expectSent("Extra plan created (🤖 AI mode)")
 	if n := ta.notification("extra_plan:1"); !strings.HasSuffix(n.Message, "The plan asks EVCC for 75% by Tue 05:00 and ends then.") {
 		t.Errorf("extra plan created = %q", n.Message)

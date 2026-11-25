@@ -30,7 +30,8 @@ const testing = ref(false)
 const error = ref('')
 
 const toggles: {
-  key: 'problems' | 'questions' | 'ready' | 'solar' | 'extra' | 'arrival' | 'prices' | 'planSent'
+  key:
+    'problems' | 'questions' | 'ready' | 'solar' | 'extra' | 'arrival' | 'prices' | 'planSent' | 'extraPlan'
   label: string
   hint: string
 }[] = [
@@ -57,12 +58,17 @@ const toggles: {
   {
     key: 'extra',
     label: 'Charge extra reminders',
-    hint: "Asks you to plug in before charge extra's cheap hours when the car is home, and tells you when an extra plan is created automatically.",
+    hint: "Asks you to plug in before charge extra's cheap hours when the car is home.",
   },
   {
     key: 'planSent',
     label: 'Plans sent',
-    hint: 'On plug-in, Automatic, and AI mode: tells you when the planner sends EVCC a plan for the next departure, once per departure (later changes to it come without a message). Outside quiet hours.',
+    hint: 'On plug-in, Automatic, and AI mode: tells you when the planner sends EVCC a plan for the next departure, once per departure (later changes to it come without a message). Outside quiet hours. With an extra plan created at the same time, only the higher target is told.',
+  },
+  {
+    key: 'extraPlan',
+    label: 'Extra plans created',
+    hint: 'Tells you when an extra plan is created automatically from the advice (with automatic plans on). Outside quiet hours. With a plan sent for a trip at the same time, only the higher target is told.',
   },
   {
     key: 'prices',
@@ -85,6 +91,7 @@ const verbTitles: Record<NotificationVerb, string> = {
 }
 
 const stateText: Record<PhoneNotification['state'], string> = {
+  pending: 'Waiting',
   sent: 'On the phone',
   snoozed: 'Snoozed',
   retrying: 'Trying again',

@@ -157,6 +157,13 @@ func TestPlugInForChargeExtraAndAutomaticPlans(t *testing.T) {
 	if plan := ta.evccPlan(); plan == nil || plan.Soc != float64(sun.TargetSoC) {
 		t.Fatalf("EVCC plan = %+v, want %d%%", plan, sun.TargetSoC)
 	}
+	// Announced with the next notification check.
+	if titles := ta.sent(); len(titles) != 0 {
+		t.Fatalf("sent before the check: %v", titles)
+	}
+	if err := ta.app.Service.CheckNotifications(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 	if titles := ta.sent(); len(titles) != 1 || titles[0] != "Extra plan created" {
 		t.Fatalf("sent %v", titles)
 	}
@@ -174,10 +181,11 @@ func TestPlugInForChargeExtraAndAutomaticPlans(t *testing.T) {
 	}
 }
 
-// The reminder can be turned off; so can the announcement.
+// The reminder can be turned off; so can the announcement, with its own
+// setting.
 func TestNoChargeExtraNotificationsWhenOff(t *testing.T) {
 	ta, _ := cheapSunday(t)
-	ta.notifications(func(s map[string]any) { s["extra"] = false })
+	ta.notifications(func(s map[string]any) { s["extra"], s["extraPlan"] = false, false })
 	ta.at(time.Date(2026, 11, 15, 18, 30, 0, 0, ams))
 	ta.check()
 	var s map[string]any
@@ -187,7 +195,8 @@ func TestNoChargeExtraNotificationsWhenOff(t *testing.T) {
 	if err := ta.app.Service.AutoApply(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range []string{"extra:2026-11-15"} {
+	ta.check()
+	for _, key := range []string{"extra:2026-11-15", "extra_plan:1"} {
 		if n, _ := ta.app.Store.NotificationByKey(key); n != nil {
 			t.Errorf("sent with charge extra reminders off: %+v", n)
 		}

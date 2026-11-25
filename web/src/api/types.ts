@@ -921,8 +921,10 @@ export interface NotificationSettings {
   ready: boolean
   /** Plug in for the sun: today's advice is to charge extra from solar. */
   solar: boolean
-  /** Plug in for charge extra's plan, and a message when one is created automatically. */
+  /** Plug in for charge extra's plan. */
   extra: boolean
+  /** A message when an extra plan is created automatically. */
+  extraPlan: boolean
   /** Plug in when the car gets back home from the day's last trip and still needs charging. */
   arrival: boolean
   /** That back-home reminder may come in quiet hours too. */
@@ -984,7 +986,8 @@ export interface PhoneNotification {
   verbs: NotificationVerb[]
   urgent: boolean
   /** retrying: the send failed and is tried again at retryAt. */
-  state: 'sent' | 'snoozed' | 'retrying' | 'done' | 'failed'
+  /** pending: a message about a plan, sent at the end of the check. */
+  state: 'pending' | 'sent' | 'snoozed' | 'retrying' | 'done' | 'failed'
   note?: string
   latest?: string
   createdAt: string

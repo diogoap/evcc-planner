@@ -659,9 +659,10 @@ type NotificationSettings struct {
 	// sun and the car is home but unplugged.
 	Solar bool `json:"solar"`
 	// Extra asks to plug in when today's advice is to charge extra with a
-	// plan and the car is home but unplugged, and says when an extra plan
-	// is created automatically.
+	// plan and the car is home but unplugged.
 	Extra bool `json:"extra"`
+	// ExtraPlan says when an extra plan is created automatically.
+	ExtraPlan bool `json:"extraPlan"`
 	// Arrival asks to plug in when the car gets back home from the day's
 	// last trip (by the location sensor) and still needs charging.
 	Arrival bool `json:"arrival"`
@@ -685,7 +686,7 @@ func DefaultNotificationSettings() NotificationSettings {
 	return NotificationSettings{
 		Phones: []string{}, Early: true, EarlyLeadMin: 30, UrgentLeadMin: 30, QuietFrom: "23:00", QuietTo: "07:00",
 		UrgentInQuiet: true, SnoozeMin: 30, Problems: true, Questions: true, Solar: true, Extra: true, Arrival: true,
-		ArrivalInQuiet: true, Prices: true, EveningAt: "19:30", PlanSent: true,
+		ArrivalInQuiet: true, Prices: true, EveningAt: "19:30", PlanSent: true, ExtraPlan: true,
 	}
 }
 
@@ -792,6 +793,7 @@ const (
 	NotifyPlanSent  = "plan_sent"  // a trip plan was sent to EVCC automatically, once per departure
 	NotifyInfo      = "info"       // a follow-up, e.g. after Skip trip
 
+	NotifyPending  = "pending" // a message about a plan, sent at the end of the check (only the highest)
 	NotifySent     = "sent"
 	NotifySnoozed  = "snoozed"
 	NotifyRetrying = "retrying" // the send failed; it is tried again
@@ -829,6 +831,10 @@ type Notification struct {
 	// RetryAt is when a retrying notification is tried again.
 	Tries   int        `json:"tries,omitempty"`
 	RetryAt *time.Time `json:"retryAt,omitempty"`
+	// PlanSoC is the target of the plan a message is about (Plan sent,
+	// Extra plan created): of those made at the same time, only the
+	// highest is sent.
+	PlanSoC int `json:"planSoc,omitempty"`
 }
 
 // Open reports whether the notification still asks for something: also

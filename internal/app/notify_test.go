@@ -274,3 +274,54 @@ func TestPlanSentOncePerDeparture(t *testing.T) {
 	}
 	ta.expectSent()
 }
+
+func TestPlanMessagesAtTheSameTimeSendTheHighest(t *testing.T) {
+	ta := newTestApp(t, "") // Monday 19:00
+	ta.json("POST", "/api/demo/reset", map[string]any{}, http.StatusNoContent, nil)
+	ta.notifications(func(s map[string]any) { s["questions"] = false })
+	ta.check()
+	ta.phone().Take()
+	now := ta.app.Service.Clock.Now()
+	// As queued when the plans are made (the copy check reads them).
+	queue := func(key, kind, _ string, soc int, at time.Time) {
+		t.Helper()
+		n := model.Notification{
+			Key: key, Kind: kind, Title: "[EVCC Planner] 📤 Plan sent", PlanSoC: soc,
+			Message: "EVCC charges to " + itoa(int64(soc)) + "% by Tue 15:00 for School pickup.",
+			Verbs:   []string{model.VerbView}, State: model.NotifyPending, CreatedAt: at,
+		}
+		if kind == model.NotifyExtraPlan {
+			n.Title = "[EVCC Planner] 🔌 Extra plan created"
+			n.Message = "Charge extra to " + itoa(int64(soc)) + "%: 02:00–05:45. The plan asks EVCC for " +
+				itoa(int64(soc)) + "% by Tue 05:45 and ends then."
+		}
+		if _, err := ta.app.Store.SaveNotification(n); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// A trip's plan and an extra plan in the same check: only the higher
+	// target is sent; the other counts as told.
+	queue("plan_sent:recurring:2:2026-11-10", model.NotifyPlanSent, "Plan sent", 23, now)
+	queue("extra_plan:7", model.NotifyExtraPlan, "Extra plan created", 52, now)
+	ta.check()
+	ta.expectSent("Extra plan created")
+	if n := ta.notification("extra_plan:7"); n.State != model.NotifyDone || n.Note != "Information" {
+		t.Errorf("sent = %+v", n)
+	}
+	if n := ta.notification("plan_sent:recurring:2:2026-11-10"); n.State != model.NotifyDone ||
+		n.Note != "Not sent: the message about a 52% plan came at the same time" || n.SentAt != nil {
+		t.Errorf("left out = %+v", n)
+	}
+
+	// Alone, a message is sent; one waiting too long (EVCC unreachable) is not.
+	queue("plan_sent:recurring:1:2026-11-11", model.NotifyPlanSent, "Plan sent", 40, now.Add(-20*time.Minute))
+	ta.check()
+	ta.expectSent()
+	if n := ta.notification("plan_sent:recurring:1:2026-11-11"); n.State != model.NotifyDone || n.Note != "Not sent: too old" {
+		t.Errorf("too old = %+v", n)
+	}
+	queue("plan_sent:recurring:1:2026-11-12", model.NotifyPlanSent, "Plan sent", 19, now)
+	ta.check()
+	ta.expectSent("Plan sent")
+}

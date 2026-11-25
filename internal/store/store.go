@@ -1370,6 +1370,12 @@ func (s *Store) OpenNotifications() ([]model.Notification, error) {
 	return s.notifications(`WHERE state IN (?, ?, ?) ORDER BY id`, model.NotifySent, model.NotifySnoozed, model.NotifyRetrying)
 }
 
+// PendingNotifications lists the messages about plans waiting to be sent,
+// oldest first.
+func (s *Store) PendingNotifications() ([]model.Notification, error) {
+	return s.notifications(`WHERE state = ? ORDER BY id`, model.NotifyPending)
+}
+
 // RecentNotifications lists the newest notifications.
 func (s *Store) RecentNotifications(limit int) ([]model.Notification, error) {
 	return s.notifications(`ORDER BY id DESC LIMIT ?`, limit)
