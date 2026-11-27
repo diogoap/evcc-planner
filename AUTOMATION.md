@@ -165,6 +165,15 @@ stateDiagram-v2
 EVCC holds one plan per vehicle, so an active extra plan and the trip target
 share it:
 
+- **Ready by the next departure:** an extra plan is ready when the next
+  departure leaves, not when the advice's cheap hours end, so EVCC picks the
+  cheapest slots before that trip; usually those cheap hours, but also later
+  ones when they are cheaper. It is no later than the last published price:
+  EVCC only plans within its prices, and waits instead while there is enough
+  time after them, which would skip today's cheap hours. Without an upcoming
+  departure it is ready when the cheap hours end. It expires at the same
+  time. Example: charge extra to 75% for 23:00–05:00 with a trip at 07:45:
+  the plan is 75% by 07:45.
 - **Merge:** the planner writes the higher SoC with the earlier ready-by time.
   When the extra plan already covers the trip target by the departure, nothing
   is written.
@@ -172,10 +181,10 @@ share it:
   departure (an AI window that starts after the evening's trips) waits. Until
   that trip has left, EVCC gets the trip's own plan when it needs charge, so
   the extra charge isn't pulled before it; after it, the extra plan. Example:
-  charge extra to 70% from 23:00 to 05:00, with trips at 15:00 and 20:00: the
-  plan is made right away as 70% by 05:00; plugged in below the 15:00 trip's
-  target, EVCC gets that trip's plan; plugged in after the 20:00 trip, 70% by
-  05:00.
+  charge extra to 70% from 23:00 to 05:00, with trips at 15:00 and 20:00 and
+  the next at 07:30: the plan is made right away as 70% by 07:30; plugged in
+  below the 15:00 trip's target, EVCC gets that trip's plan; plugged in after
+  the 20:00 trip, 70% by 07:30.
 - **Already reached:** an extra plan the car's charge already reaches is not
   written (EVCC drops a reached plan); it comes back when a trip has used
   the charge.
@@ -337,7 +346,8 @@ flowchart TD
   about 6%, so the advice is "Charge extra to 46%". With an unknown SoC the
   advice shows the step's target and says so.
 - **Charge extra** offers **Create extra plan** with that target (confidence
-  2 or 3), ready when its cheap blocks end (or by the next departure) and
+  2 or 3), ready by the next departure (see
+  [Extra plans from daily advice](#extra-plans-from-daily-advice)) and
   ending then, so the previous plan comes back. Auto-apply uses the same. The advice lists the blocks: "Charge extra to 60%: about 4 h between
   00:15 and 05:45 average €0.17, 45% or more below this week's lowest prices
   (€0.40)."
@@ -458,9 +468,11 @@ flowchart TD
   minimum confidence and Also postpone) follows the one under Automatic
   rules. After each AI plan, auto-apply runs before the plan check, so when
   the AI moves charge from charge ahead to charge extra, the extra plan
-  replaces the planner's plan in EVCC directly. The extra plan is ready when
-  the AI's window ends. When that window starts after the next departure,
-  the plan keeps the first departure after the window starts, and the trips
+  replaces the planner's plan in EVCC directly. The extra plan is ready by
+  the next departure, not when the AI's window ends, so EVCC can still pick
+  cheaper slots outside it. When that window starts after the next departure,
+  the plan keeps the first departure after the window starts, and is ready
+  by that one; the trips
   before it keep their own plans first (see
   [Extra plans from daily advice](#extra-plans-from-daily-advice)); it is
   still made right away. The AI is told whether its
@@ -658,6 +670,16 @@ gantt
 - **After a back-home reminder** the early, sun, and charge extra reminders
   wait 30 minutes, so they don't arrive right after it; a later plug-in
   reminder replaces it on the phone. It also ends when the car leaves again.
+- **One message for the trip and charge extra:** when the early or urgent
+  reminder and the [charge extra reminder](#charging-problems-questions-and-ready-messages)
+  are due in the same check (often just before quiet hours, for a cheap
+  night), they come as one message with the trip's title, followed by charge
+  extra's advice: "Plug in to charge cheaply: Charging is cheapest from Tue
+  03:00 (€0.16/kWh); School drop-off needs 42% by Tue 07:48. Charge extra to
+  60%: about 4 h between 00:15 and 05:45 … Create the plan in the planner."
+  Charge extra's reminder counts as told.
+  The message then follows the trip reminder's rules: it is cleared when the
+  car is plugged in or the trip no longer needs it.
 - **No duplicates:** each reminder has one key (kind + trip + time), saved in
   the database, so a restart doesn't resend it. When its details change, the
   same phone notification is updated.
@@ -678,9 +700,9 @@ gantt
 | **Question** | A calendar event marked Needs review, within the seven days. Buttons: **Count it** (confirm) and **Not a trip** (turn off). | "Is 'Dinner' (Thu 19:00) a car trip?" |
 | **Ready** (off by default) | Plugged in and the target reached before the departure. | "Ready for Utrecht: 64%." |
 | **Plug in for the sun** | Today's advice is to [charge extra from solar](#charge-extra-daily-advice), the car is home (no trip in progress; at home by the car location sensor, if set) and unplugged, from 30 minutes before the solar surplus starts until 30 minutes before it ends, outside quiet hours. Any confidence: plugging in changes nothing in EVCC by itself. Buttons: **Remind in 30 min** (never after the sun's end), **View plan**. | "Plug in for the sun: Sunshine until about 14:30 charges the car at about €0.16/kWh (€0.05 without the tax on own solar), no more than tomorrow's lowest price. Plug in to use it." |
-| **Plug in for charge extra** | Today's or tomorrow's advice (the first whose cheap hours are still ahead) is to [charge extra](#charge-extra-daily-advice) with a plan (offered, or created by hand or automatically), the car is home and unplugged, from 30 minutes before its cheap hours start until 30 minutes before they end, outside quiet hours. When that start falls in quiet hours, such as a cheap night, it comes from 15 minutes before quiet hours instead. Once a day; cleared when the car is plugged in or the cheap hours are over. Without the plan yet it also asks to create it, or says that automatic plans create it when the day starts. Not while a trip that leaves before the cheap hours is still ahead or under way (by the car location sensor, if set, it is over once the car is home): the car leaves again first, so it comes once the car is back from the last of them, if that is before quiet hours (later, the back-home reminder still asks). Buttons: **Remind in 30 min**, **View plan**. | "Plug in for charge extra: Charge extra to 71%: 18:30–00:00 averages €0.28, 30% or more below this week's lowest prices (€0.40). Plug in so the plan can charge." |
+| **Plug in for charge extra** | Today's or tomorrow's advice (the first whose cheap hours are still ahead) is to [charge extra](#charge-extra-daily-advice) with a plan (offered, or created by hand or automatically), the car is home and unplugged, from 30 minutes before its cheap hours start until 30 minutes before they end, outside quiet hours. When that start falls in quiet hours, such as a cheap night, it comes from 15 minutes before quiet hours instead. Once a day; cleared when the car is plugged in or the cheap hours are over. Without the plan yet it also asks to create it, or says that automatic plans create it when the day starts. When the trip's early or urgent reminder is due at the same time, it comes in that message instead (see [Plug-in reminders](#plug-in-reminders)). Not while a trip that leaves before the cheap hours is still ahead or under way (by the car location sensor, if set, it is over once the car is home): the car leaves again first, so it comes once the car is back from the last of them, if that is before quiet hours (later, the back-home reminder still asks). Buttons: **Remind in 30 min**, **View plan**. | "Plug in for charge extra: Charge extra to 71%: 18:30–00:00 averages €0.28, 30% or more below this week's lowest prices (€0.40). Plug in so the plan can charge." |
 | **New prices: plug in** | Automatic and AI mode: tomorrow's prices (around 14:00) change the target for the next departure, or bring charge extra (today's or tomorrow's; not while a trip before its cheap hours is still ahead), while the car is unplugged. Once per publication, outside quiet hours; cleared when the car is plugged in. Button: **View plan**. | "New prices: plug in: The plan for School drop-off is now 64% by Tue 07:48 (was 42%), also for School pickup. Plug in so it can charge." |
-| **Extra plan created** | Advice auto-apply created an extra plan, outside quiet hours (in them, only the activity log has it). Its own setting, **Extra plans created**. Sent with the notification check after the plan is made: when a **Plan sent** comes at the same time, only the one with the higher target is sent and the other counts as told. Information only. Button: **View plan**. | "Extra plan created: Charge extra to 71%: 18:30–00:00 … The plan asks EVCC for 71% by Mon 00:00 and ends then." |
+| **Extra plan created** | Advice auto-apply created an extra plan, outside quiet hours (in them, only the activity log has it). Its own setting, **Extra plans created**. Sent with the notification check after the plan is made: when a **Plan sent** comes at the same time, only the one with the higher target is sent and the other counts as told. Information only. Button: **View plan**. | "Extra plan created: Charge extra to 71%: 18:30–00:00 … The plan asks EVCC for 71% by Tue 07:45 and ends then." |
 | **Plan sent** | On plug-in, Automatic, or AI mode sent EVCC a plan for the next departure by itself (for example right after plugging in), outside quiet hours. Once per departure: later changes to that departure's plan stay quiet; one sent in quiet hours is told at its first change after them. Plans you send yourself and extra plans don't count. Sent with the notification check after the plan is sent: with an **Extra plan created** at the same time, only the one with the higher target. Information only. Button: **View plan**. | "Plan sent: EVCC charges to 42% by Tue 07:48 for School drop-off." |
 
 Each is sent once per trip (unplugged early: once per unplug; not in Smart
@@ -751,7 +773,7 @@ Settings → **Advice → Automatic rules** (greyed out in AI mode):
 | --- | --- | --- |
 | Daily advice | On | Shows a recommendation for each published day. AI mode always shows the AI's. |
 | Charge extra steps | See [Charge extra](#charge-extra-daily-advice) | Per indication of cheaper days ahead: on/off and three steps (% cheaper → target SoC). |
-| Automatically create plans from daily advice | Off | Once on today's advice (again after new prices in Automatic mode): charge extra's target, ready when its cheap hours end (or by the next departure), and ended then. On plug-in and Automatic mode only (AI mode has its own, under AI). The next trip's plan and charge ahead come from the trip plan mode, not from here. |
+| Automatically create plans from daily advice | Off | Once on today's advice (again after new prices in Automatic mode): charge extra's target, ready by the next departure (no later than the last published price), and ended then. On plug-in and Automatic mode only (AI mode has its own, under AI). The next trip's plan and charge ahead come from the trip plan mode, not from here. |
 | Minimum confidence | 3 | 2 also acts against the weekly outlook or a week of price history. |
 | Also postpone | Off | Pauses cheap-grid charging when today's advice is to defer. |
 
@@ -766,7 +788,7 @@ where **Preview with today's data** still works):
 | Model | ~anthropic/claude-haiku-latest | A list of 19, sorted by name: Anthropic's Fable, Haiku, Opus, Sonnet; OpenAI's Astra, Luna, Sol, Terra, gpt-oss-120b; DeepSeek Flash, Gemini 3.5 Flash-Lite, Meta Muse Ember, MiniMax M3.1 Flash, Mistral Small, Qwen3.8 Flash, Grok, MiMo-V2.6-Flash, GLM Flash, GLM (OpenRouter's ~…-latest aliases where they exist), all with strict structured outputs; or choose Other model… to type another. Each shows its cost per typical run (about 7,000 tokens in, 4,500 out) at OpenRouter's prices of 18 Nov 2026, and the chosen one, right below the list, an estimate per month at the automatic runs per day (a run × runs per day × 30), then its price per million tokens; Fable and Astra (≈ $0.23 a run) and Opus (≈ $0.12) cost far more than the rest. A model typed in shows only its ID. |
 | Goals | the planner's rules | What `{{goals}}` holds; edit to steer the AI (e.g. battery care against price). **Default goals** puts the generated text back. |
 | Prompt | the default | Placeholders are filled with the data. |
-| Automatically create plans from the AI's advice | as Automatic rules' | Like the Automatic rules' switch, but on today's AI advice (an extra plan with the AI's target, ready when its window ends). Until changed here, this and the next two follow the Automatic rules' settings. |
+| Automatically create plans from the AI's advice | as Automatic rules' | Like the Automatic rules' switch, but on today's AI advice (an extra plan with the AI's target, ready by the next departure). Until changed here, this and the next two follow the Automatic rules' settings. |
 | Minimum confidence | 3 | 2 also acts on the AI's medium-confidence advice. |
 | Also postpone | Off | Pauses cheap-grid charging when the AI asks for it (today only). |
 

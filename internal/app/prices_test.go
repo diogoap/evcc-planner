@@ -71,7 +71,9 @@ func TestNewPricesUpdateExtraPlansMadeAutomatically(t *testing.T) {
 		note    string
 	}{
 		{"Tuesday is cheaper still: ended", 0.05, 0, "New prices: the advice no longer charges extra. "},
-		{"a deeper discount: replaced", 0.25, 66, "New prices: the advice now charges extra to 66% by Tue 00:00. "},
+		// Ready by midnight, the last published price, before; by Tuesday's
+		// 07:48 departure once Tuesday's prices are published.
+		{"a deeper discount: replaced", 0.25, 66, "New prices: the advice now charges extra to 66% by Tue 07:48. "},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			ta := newTestApp(t, "")
@@ -221,9 +223,10 @@ func TestNewPricesNotifyWhileUnplugged(t *testing.T) {
 	ta.pastWeek(0.40)
 	ta.notifications(func(s map[string]any) { s["questions"] = false })
 	p := newPublishing(ta, 0.10, 0.05)
-	// Monday evening: charge extra tonight against the outlook.
+	// Monday evening: charge extra tonight against the outlook, in the same
+	// message as the trip's plug-in reminder.
 	ta.check()
-	ta.expectSent("Plug in to charge cheaply", "Plug in for charge extra")
+	ta.expectSent("Plug in to charge cheaply")
 	ta.check()
 	ta.expectSent()
 
@@ -231,7 +234,8 @@ func TestNewPricesNotifyWhileUnplugged(t *testing.T) {
 	// charge extra to plug in for.
 	p.published = true
 	ta.check()
-	ta.expectSent("-Plug in for charge extra", "New prices: plug in")
+	// Monday's plug-in reminder stays: the school run still needs charge.
+	ta.expectSent("New prices: plug in")
 	n := ta.notification("prices:" + itoa(time.Date(2026, 11, 11, 0, 0, 0, 0, ams).Unix()))
 	if n.Kind != model.NotifyPrices || !strings.Contains(n.Message, "Charge extra to") ||
 		!strings.HasSuffix(n.Message, "Create the plan in the planner. Plug in so it can charge.") {
@@ -261,8 +265,15 @@ func TestNewPricesRaiseAnExtraPlanMadeByHand(t *testing.T) {
 	ta.pastWeek(0.40)
 	p := newPublishing(ta, 0.10, 0.25)
 	// An extra plan made by hand from Monday's advice, lower than it says.
+	// Tuesday's prices aren't published yet, so it is ready by midnight,
+	// where they end, not by the 07:48 departure: EVCC doesn't plan past
+	// its prices.
 	var prop service.ProposalView
 	ta.json("GET", "/api/advice/2026-11-09/proposal?kind=extra_plan", nil, http.StatusOK, &prop)
+	if midnight := time.Date(2026, 11, 10, 0, 0, 0, 0, ams); !prop.Available || !prop.ReadyBy.Equal(midnight) ||
+		!strings.Contains(strings.Join(prop.Notes, " "), "Ready by Tue 10 Nov, 00:00, when EVCC's published prices end, rather than when School drop-off leaves (Tue 10 Nov, 07:48)") {
+		t.Fatalf("proposal before Tuesday's prices = %+v", prop)
+	}
 	body := map[string]any{"kind": "extra_plan", "date": "2026-11-09", "soc": 50, "readyBy": prop.ReadyBy,
 		"expiresAt": prop.ExpiresAt, "confirm": true}
 	var a adjustment
@@ -276,7 +287,8 @@ func TestNewPricesRaiseAnExtraPlanMadeByHand(t *testing.T) {
 		t.Fatalf("plan = %+v, want 66%% by %s", plan, prop.ReadyBy)
 	}
 	e := log.one("adjustment.update", model.SourceAutomation)
-	if !strings.HasPrefix(e.Summary, "New prices: raised the extra plan to 66% by Mon 9 Nov, ") {
+	// A plan you made keeps its ready-by time.
+	if !strings.HasPrefix(e.Summary, "New prices: raised the extra plan to 66% by Tue 10 Nov, 00:00") {
 		t.Errorf("event = %+v", e)
 	}
 	if adj := ta.advice().Advice.Adjustments[0]; adj.Status != model.AdjustActive || adj.Plan.SoC != 66 || adj.Source != "ui" {

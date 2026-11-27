@@ -657,17 +657,30 @@ func (r *reminders) tripBefore(t time.Time) bool {
 // end. Without the plan yet, it also asks to create it, unless advice
 // auto-apply will when tomorrow starts.
 func (r *reminders) extra() {
+	if n, _ := r.extraReminder(); n != nil {
+		r.send(*n)
+	}
+}
+
+// extraReminder is charge extra's plug-in reminder (extra) with its advice
+// when it is due now and was not sent yet, else nil.
+func (r *reminders) extraReminder() (*model.Notification, *DayAdviceView) {
 	if !r.settings.Extra || r.lp.Connected || r.onTheRoad() || r.carAway() {
-		return
+		return nil, nil
 	}
 	a := r.extraAdvice()
 	if a == nil {
-		return
+		return nil, nil
 	}
 	from, until := a.Blocks[0].From, a.Blocks[len(a.Blocks)-1].Until
 	due := r.remindAt(from, 30*time.Minute)
 	if r.now.Before(due) || !r.now.Before(until.Add(-30*time.Minute)) || !r.allowed(false) || r.arrivedRecently() {
-		return
+		return nil, nil
+	}
+	key := "extra:" + a.Date
+	if old, err := r.s.Store.NotificationByKey(key); err != nil || old != nil {
+		r.fail(err)
+		return nil, nil
 	}
 	then := " Plug in so the plan can charge."
 	switch {
@@ -677,11 +690,39 @@ func (r *reminders) extra() {
 	default:
 		then = " Create the plan in the planner and plug in."
 	}
-	r.send(model.Notification{
-		Key: "extra:" + a.Date, Kind: model.NotifyExtra, Subject: "extra:" + a.Date, Latest: &until,
+	return &model.Notification{
+		Key: key, Kind: model.NotifyExtra, Subject: key, Latest: &until,
 		Title: "Plug in for charge extra", Message: a.Summary + then,
 		Verbs: []string{model.VerbSnooze, model.VerbView},
-	})
+	}, a
+}
+
+// sendWithExtra sends a plug-in reminder for the next departure, with
+// charge extra's in the same message when that is due now too, so the
+// phone gets one message asking to plug in. Charge extra's is then kept as
+// not sent and counts as told.
+func (r *reminders) sendWithExtra(n model.Notification) {
+	if old, err := r.s.Store.NotificationByKey(n.Key); err != nil || old != nil {
+		r.fail(err)
+		return
+	}
+	x, a := r.extraReminder()
+	if x != nil {
+		n.Message += " " + a.Summary + r.extraPlanNote(a)
+		if n.Latest == nil || x.Latest.After(*n.Latest) {
+			n.Latest = x.Latest
+		}
+	}
+	title := n.Title
+	r.send(n)
+	if x == nil {
+		return
+	}
+	x.Title = phoneTitle(x.Kind, x.Title, r.view.Settings.TripPlans == model.TripPlansAI)
+	x.State, x.CreatedAt, x.ResolvedAt = model.NotifyDone, r.now, &r.now
+	x.Note = fmt.Sprintf("Not sent: said in “%s” at the same time", title)
+	_, err := r.s.Store.SaveNotification(*x)
+	r.fail(err)
 }
 
 // autoExtra reports whether advice auto-apply will create the day's extra
@@ -792,7 +833,7 @@ func (r *reminders) plugIn() {
 		if !r.allowed(true) {
 			return
 		}
-		r.send(model.Notification{
+		r.sendWithExtra(model.Notification{
 			Key: "urgent:" + key, Kind: model.NotifyUrgent, Subject: key, Urgent: true, Latest: latest,
 			Title:   "Plug in by " + r.s.clockText(*latest),
 			Message: fmt.Sprintf("%s needs %d%% by %s.", r.title(next), next.TargetSoC, r.s.clockText(next.DepartAt)),
@@ -810,7 +851,7 @@ func (r *reminders) plugIn() {
 	if r.now.Before(due) || !r.now.Before(last.End) || !r.allowed(false) || r.arrivedRecently() {
 		return
 	}
-	r.send(model.Notification{
+	r.sendWithExtra(model.Notification{
 		Key: "early:" + key, Kind: model.NotifyEarly, Subject: key, Latest: latest, Title: "Plug in to charge cheaply",
 		Message: r.earlyText(target, first), Verbs: verbs,
 	})

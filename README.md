@@ -428,7 +428,7 @@ to `main` deploy automatically, run `make verify` before pushing.
   and no-data advice offer no plan action. Every rule, with a diagram:
   [AUTOMATION.md](AUTOMATION.md#charge-extra-daily-advice).
 - **Create extra plan** opens an editable proposal (charge extra's target in %
-  or kWh; ready-by and expiry, by default when its cheap hours end) with an
+  or kWh; ready-by and expiry, by default the next departure) with an
   EVCC preview. It replaces EVCC's one plan until it
   expires: the target is at least the next departure's and ready before it
   leaves. **Review postponement** (today only) pauses EVCC's cheap-grid
@@ -440,8 +440,8 @@ to `main` deploy automatically, run `make verify` before pushing.
   was changed in EVCC in the meantime; then your change is kept.
 - **Automatically create plans from daily advice** (Settings → Advice) is off by
   default. It acts once a day on today's advice with enough confidence: an
-  extra plan with charge extra's target, ready when its cheap hours end and
-  ended then. It keeps trip targets and skips plans you set in EVCC. With
+  extra plan with charge extra's target, ready by the next departure (no
+  later than the last published price) and ended then. It keeps trip targets and skips plans you set in EVCC. With
   **Charge extra reminders** on (Settings → Notifications), the phones are
   told when it creates a plan, and asked to plug in before charge extra's
   cheap hours when the car is home but unplugged. For cheap hours in quiet

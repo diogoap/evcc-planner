@@ -22,10 +22,14 @@ type NotificationCopy struct {
 const extraPlanWhat = `{about the plan}: “The extra plan was created automatically.”, ` +
 	`“The plan is created automatically when the day starts.”, or “Create the plan in the planner.”`
 
-// NotificationCopies lists every notification the planner sends.
 // planAtOnce is how plan messages made at the same time are sent.
 const planAtOnce = "When a plan is sent for a trip and an extra plan is created at the same time, only the message with the higher target comes."
 
+// extraAtOnce is how a trip's plug-in reminder and charge extra's, due at
+// the same time, are sent.
+const extraAtOnce = "When charge extra's plug-in reminder is due at the same time, it comes in this message."
+
+// NotificationCopies lists every notification the planner sends.
 func NotificationCopies() []NotificationCopy {
 	charge := []string{model.VerbSnooze, model.VerbSkip, model.VerbView}
 	view := []string{model.VerbView}
@@ -35,11 +39,13 @@ func NotificationCopies() []NotificationCopy {
 			Note: "Sent by Send test notification."},
 		{Setting: "early", Kind: model.NotifyEarly, Title: "Plug in to charge cheaply", Buttons: charge, ai: true,
 			Messages: []string{
-				"Charging is cheapest from {time, or now} ({price}/kWh); {trip} needs {target}% by {time}.",
-				"Charging is cheapest from {time, or now} ({price}/kWh); the plan charges {target}% by {time}, also for {later trip}.",
-			}},
+				"Charging is cheapest from {time, or now} ({price}/kWh); {trip} needs {target}% by {time}.[ {advice}[ {about the plan}]]",
+				"Charging is cheapest from {time, or now} ({price}/kWh); the plan charges {target}% by {time}, also for {later trip}.[ {advice}[ {about the plan}]]",
+			},
+			Note: extraAtOnce + " " + extraPlanWhat},
 		{Setting: "urgent", Kind: model.NotifyUrgent, Title: "Plug in by {latest plug-in time}", Buttons: charge, ai: true,
-			Messages: []string{"{trip} needs {target}% by {departure}."}},
+			Messages: []string{"{trip} needs {target}% by {departure}.[ {advice}[ {about the plan}]]"},
+			Note:     extraAtOnce + " " + extraPlanWhat},
 		{Setting: "urgent", Kind: model.NotifyLate, Title: "Plug in now", ai: true,
 			Buttons:  []string{model.VerbSkip, model.VerbView},
 			Messages: []string{"Plugging in now gives about {SoC}% by {departure} ({trip} needs {target}%)."},
@@ -77,7 +83,8 @@ func NotificationCopies() []NotificationCopy {
 				"{advice} The plan is created automatically when the day starts; plug in so it can charge.",
 				"{advice} Create the plan in the planner and plug in.",
 			},
-			Note: "{advice}: the day's charge extra advice, such as “Charge extra to 60%: about 4 h between 00:15 and 05:45 …”."},
+			Note: "{advice}: the day's charge extra advice, such as “Charge extra to 60%: about 4 h between 00:15 and 05:45 …”. " +
+				"When a plug-in reminder for the next trip is due at the same time, it comes in that message instead."},
 		{Setting: "extraPlan", Kind: model.NotifyExtraPlan, Title: "Extra plan created", Buttons: view, ai: true,
 			Messages: []string{"{advice} The plan asks EVCC for {target}% by {time} and ends then."},
 			Note:     planAtOnce},

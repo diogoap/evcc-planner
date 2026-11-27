@@ -279,20 +279,20 @@ func TestAdviceChangesAreRecordedWithTheirSource(t *testing.T) {
 		"kind": "extra_plan", "date": "2026-11-10", "soc": 70, "readyBy": p.ReadyBy, "expiresAt": p.ExpiresAt, "confirm": true,
 	}, http.StatusCreated, &a)
 	e := log.one("adjustment.create", model.SourceUI)
-	// Ready when charge extra's cheap night ends.
-	changed(t, e, "evccPlan", "50% by 2026-11-11 07:00", "70% by 2026-11-10 05:45")
+	// Ready by the next departure, so EVCC picks the cheapest slots before it.
+	changed(t, e, "evccPlan", "50% by 2026-11-11 07:00", "70% by 2026-11-10 07:48")
 	if e.SubjectID != itoa(a.ID) || e.Related != "plan" || e.Detail["recommendation"] != "charge_extra" {
 		t.Errorf("extra plan = %+v", e)
 	}
 
 	// The scheduled job restores the previous plan at expiry.
-	ta.at(time.Date(2026, 11, 10, 5, 0, 0, 0, ams))
+	ta.at(time.Date(2026, 11, 10, 7, 0, 0, 0, ams))
 	ta.poll()
 	log.none("checking before expiry")
-	ta.at(time.Date(2026, 11, 10, 5, 45, 0, 0, ams))
+	ta.at(time.Date(2026, 11, 10, 7, 48, 0, 0, ams))
 	ta.poll()
 	e = log.one("adjustment.end", model.SourceJob)
-	changed(t, e, "evccPlan", "70% by 2026-11-10 05:45", "50% by 2026-11-11 07:00")
+	changed(t, e, "evccPlan", "70% by 2026-11-10 07:48", "50% by 2026-11-11 07:00")
 	if !strings.HasPrefix(e.Summary, "Extra plan ended: Restored the previous plan") || e.Detail["status"] != "restored" {
 		t.Errorf("restore = %+v", e)
 	}

@@ -82,7 +82,7 @@ func Schema() map[string]any {
 				"description": "charge_extra, solar, defer, or none."},
 			"target_soc":  nullable("integer", "charge_extra: the SoC (%) to charge to; else null."),
 			"from":        nullable("string", "charge_extra and solar: when the window starts. "+when),
-			"until":       nullable("string", "charge_extra and solar: when it ends (charge_extra: ready by then). "+when),
+			"until":       nullable("string", "charge_extra and solar: when it ends (charge_extra: the plan is ready by the next departure after the window starts, so EVCC may also use cheaper slots before that departure). "+when),
 			"defer_until": nullable("string", "defer: YYYY-MM-DD of the cheaper day; else null."),
 			"postpone":    map[string]any{"type": "boolean", "description": "defer, today only: pause EVCC's cheap-grid charging until defer_until."},
 			"confidence":  map[string]any{"type": "integer", "enum": []int{1, 2, 3}, "description": "1 low, 2 medium, 3 high."},

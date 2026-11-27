@@ -61,7 +61,8 @@ type adjustment struct {
 	Note      string `json:"note"`
 	ExpiresAt string `json:"expiresAt"`
 	Plan      *struct {
-		SoC float64 `json:"soc"`
+		SoC  float64   `json:"soc"`
+		Time time.Time `json:"time"`
 	} `json:"plan"`
 }
 
@@ -213,9 +214,10 @@ func TestExtraPlanNeedsConfirmationAndRestores(t *testing.T) {
 		Notes     []string
 	}
 	ta.json("GET", "/api/advice/2026-11-10/proposal?kind=extra_plan", nil, http.StatusOK, &p)
-	// The target is charge extra's: 60% from Tuesday's cheap night, ready
-	// when it ends (before the 07:48 departure).
-	if !p.Available || p.MinSoC != 42 || p.SoC != 60 || !strings.HasPrefix(p.ReadyBy, "2026-11-10T05:45:00") ||
+	// The target is charge extra's: 60% from Tuesday's cheap night (until
+	// 05:45), ready by the 07:48 departure so EVCC picks the cheapest slots
+	// before it.
+	if !p.Available || p.MinSoC != 42 || p.SoC != 60 || !strings.HasPrefix(p.ReadyBy, "2026-11-10T07:48:00") ||
 		p.ExpiresAt != p.ReadyBy {
 		t.Fatalf("proposal = %+v", p)
 	}
@@ -260,13 +262,13 @@ func TestExtraPlanNeedsConfirmationAndRestores(t *testing.T) {
 	}
 	ta.json("POST", "/api/adjustments", body, http.StatusBadRequest, nil) // only one at a time
 
-	// Before expiry nothing changes; at expiry (05:45) the trip plan comes back.
-	ta.at(time.Date(2026, 11, 10, 5, 0, 0, 0, ams))
+	// Before expiry nothing changes; at expiry (07:48) the earlier plan comes back.
+	ta.at(time.Date(2026, 11, 10, 7, 0, 0, 0, ams))
 	ta.poll()
 	if plan := ta.evccPlan(); plan.Soc != 70 {
 		t.Fatalf("restored too early: %+v", plan)
 	}
-	ta.at(time.Date(2026, 11, 10, 5, 45, 0, 0, ams))
+	ta.at(time.Date(2026, 11, 10, 7, 48, 0, 0, ams))
 	ta.poll()
 	if plan := ta.evccPlan(); plan == nil || plan.Soc != 50 {
 		t.Fatalf("previous plan not restored: %+v", plan)
@@ -546,7 +548,7 @@ func TestAdviceSettingsAndAutoApply(t *testing.T) {
 	}
 
 	// Tuesday just after midnight: charge extra with the advice's target,
-	// ready when its cheap blocks end (before the 07:48 departure), and
+	// ready by the 07:48 departure (not when its cheap blocks end), and
 	// restored then. The past week is Monday's and the six days before.
 	ta.at(time.Date(2026, 11, 10, 0, 30, 0, 0, ams))
 	ta.pastWeek(0.40)
@@ -562,11 +564,13 @@ func TestAdviceSettingsAndAutoApply(t *testing.T) {
 	}
 	tue := ta.advice().day("2026-11-10")
 	want := tue.TargetSoC
+	depart := "2026-11-10T07:48:00+01:00"
 	if want == 0 || len(tue.Blocks) == 0 || extra == nil || extra.Source != "auto" || extra.Plan.SoC != float64(want) ||
-		!sameInstant(extra.ExpiresAt, tue.Blocks[len(tue.Blocks)-1].Until) {
-		t.Fatalf("auto extra plan = %+v, want %d%% until the cheap blocks end (%+v)", extra, want, tue.Blocks)
+		!sameInstant(extra.Plan.Time.Format(time.RFC3339), depart) || !sameInstant(extra.ExpiresAt, depart) ||
+		sameInstant(tue.Blocks[len(tue.Blocks)-1].Until, depart) {
+		t.Fatalf("auto extra plan = %+v, want %d%% by the 07:48 departure (cheap blocks %+v)", extra, want, tue.Blocks)
 	}
-	if plan := ta.evccPlan(); plan == nil || plan.Soc != float64(want) {
+	if plan := ta.evccPlan(); plan == nil || plan.Soc != float64(want) || !sameInstant(plan.Time.Format(time.RFC3339), depart) {
 		t.Errorf("EVCC plan = %+v", plan)
 	}
 }

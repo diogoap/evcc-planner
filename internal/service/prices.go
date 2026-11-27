@@ -75,7 +75,7 @@ func (s *Service) ReviewNewPrices(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	errs := []error{s.reviewAdjustments(ctx, settings)}
+	errs := []error{s.reviewAdjustments(ctx, settings, end)}
 	if settings.KeepsPlan() {
 		errs = append(errs, s.raiseChosenPlan(ctx))
 	}
@@ -85,8 +85,9 @@ func (s *Service) ReviewNewPrices(ctx context.Context) error {
 // reviewAdjustments makes the active temporary EVCC changes follow the new
 // advice: one created automatically is replaced when the advice changed and
 // ended when it no longer supports it; an extra plan you created is raised
-// to a higher charge extra target (automatic and AI mode only).
-func (s *Service) reviewAdjustments(ctx context.Context, settings model.Settings) error {
+// to a higher charge extra target (automatic and AI mode only). pricesUntil
+// is the end of the new prices.
+func (s *Service) reviewAdjustments(ctx context.Context, settings model.Settings, pricesUntil time.Time) error {
 	list, err := s.Store.Adjustments(localtime.Date(s.now(), s.loc()))
 	if err != nil {
 		return err
@@ -119,7 +120,7 @@ func (s *Service) reviewAdjustments(ctx context.Context, settings model.Settings
 		a, day := &active[i], days[active[i].AdviceDate]
 		switch {
 		case a.Source == "auto" && a.Kind == model.AdjustExtraPlan:
-			errs = append(errs, s.reviewAutoExtra(ctx, a, day, view, policy))
+			errs = append(errs, s.reviewAutoExtra(ctx, a, day, view, policy, pricesUntil))
 		case a.Source == "auto" && a.Kind == model.AdjustPostpone:
 			if day == nil || day.Recommendation != advice.Defer || (day.AI && !day.AIPostpone) {
 				errs = append(errs, s.endAdjustment(ctx, a, "New prices: today's advice is no longer to defer. "))
@@ -140,14 +141,14 @@ func chargesExtra(day *DayAdviceView) bool {
 // reviewAutoExtra ends an extra plan made automatically when the new advice
 // no longer supports it, and replaces it when its target or ready-by time
 // changed.
-func (s *Service) reviewAutoExtra(ctx context.Context, a *model.Adjustment, day *DayAdviceView, view *PlanView, policy autoPolicy) error {
+func (s *Service) reviewAutoExtra(ctx context.Context, a *model.Adjustment, day *DayAdviceView, view *PlanView, policy autoPolicy,
+	pricesUntil time.Time) error {
 	if !chargesExtra(day) || !actionable(day.Advice) || !policy.acts(day) {
 		return s.endAdjustment(ctx, a, "New prices: the advice no longer charges extra. ")
 	}
-	soc, ready := day.TargetSoC, day.Blocks[len(day.Blocks)-1].Until
+	soc, ready := day.TargetSoC, s.extraReadyBy(view, day, pricesUntil)
 	if prot := protectedTrip(view, day); prot != nil {
 		soc = max(soc, prot.TargetSoC)
-		ready = minTime(ready, prot.DepartAt)
 	}
 	if samePlan(a.Plan, &model.PlanValue{SoC: float64(soc), Time: ready.Truncate(time.Minute)}) {
 		return nil

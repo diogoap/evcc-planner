@@ -133,13 +133,12 @@ func (s *Service) Proposal(ctx context.Context, kind, date string) (*ProposalVie
 		return unavailable("EVCC keeps one plan per vehicle, and %s (leaving %s) needs its plan first. Create this extra plan after that departure.",
 			next.FirstTitle, localtime.Clock(next.DepartAt, s.loc()))
 	}
-	readyBy, latest := end, view.To
+	readyBy, latest := s.extraReadyBy(view, day, pricesEnd(snap.state.PriceSlots)), view.To
 	prot := protectedTrip(view, day)
 	if prot != nil {
 		p.Protected = &ProtectedView{Title: prot.FirstTitle, DepartAt: prot.DepartAt, TargetSoC: prot.TargetSoC}
 		p.MinSoC = prot.TargetSoC
 		latest = prot.DepartAt
-		readyBy = minTime(readyBy, prot.DepartAt)
 	}
 	var before []string
 	for _, b := range view.Blocks {
@@ -151,18 +150,13 @@ func (s *Service) Proposal(ctx context.Context, kind, date string) (*ProposalVie
 		p.Notes = append(p.Notes, fmt.Sprintf("Trips before this window (%s) keep their own plans first when they need charge; this plan follows them.",
 			strings.Join(before, ", ")))
 	}
-	// Charge extra's plan is ready when its cheap blocks end; the AI's
-	// window may run past midnight.
-	if spans := day.Blocks; len(spans) > 0 && !day.Solar {
-		if until := spans[len(spans)-1].Until; day.AI {
-			readyBy = minTime(until, latest)
-		} else {
-			readyBy = minTime(readyBy, until)
-		}
-	}
 	readyBy = readyBy.Truncate(time.Minute)
 	if !readyBy.After(now.Add(15 * time.Minute)) {
 		return unavailable("Too late to charge on this day.")
+	}
+	if prot != nil && readyBy.Before(prot.DepartAt.Truncate(time.Minute)) {
+		p.Notes = append(p.Notes, fmt.Sprintf("Ready by %s, when EVCC's published prices end, rather than when %s leaves (%s): EVCC only plans within its prices.",
+			dateTimeText(readyBy, s.loc()), prot.FirstTitle, dateTimeText(prot.DepartAt, s.loc())))
 	}
 	p.ReadyBy, p.LatestReadyBy = &readyBy, &latest
 	expires := readyBy
@@ -246,6 +240,36 @@ func protectedTrip(view *PlanView, day *DayAdviceView) *BlockView {
 		}
 	}
 	return nil
+}
+
+// extraReadyBy is when an extra plan from a day's advice is ready, given
+// the end of EVCC's published prices. With a departure to keep
+// (protectedTrip) it is ready by that departure, so EVCC picks the cheapest
+// slots before it rather than only those in the advice's cheap hours. It is
+// no later than the last published price, though: EVCC doesn't plan past
+// its prices, and waits instead while there is enough time after them.
+// Without such a departure it is ready when the cheap hours end (the AI's
+// window may run past midnight), else at the end of the day.
+func (s *Service) extraReadyBy(view *PlanView, day *DayAdviceView, pricesUntil time.Time) time.Time {
+	var until time.Time
+	if len(day.Blocks) > 0 && !day.Solar {
+		until = day.Blocks[len(day.Blocks)-1].Until
+	}
+	if prot := protectedTrip(view, day); prot != nil {
+		if pricesUntil.IsZero() {
+			return prot.DepartAt
+		}
+		return minTime(prot.DepartAt, maxTime(pricesUntil, until))
+	}
+	start, _ := localtime.ParseDate(s.loc(), day.Date)
+	end := localtime.AddDays(start, 1)
+	switch {
+	case until.IsZero():
+		return end
+	case day.AI:
+		return minTime(until, view.To)
+	}
+	return minTime(end, until)
 }
 
 // referenceText is the price charge extra compared with, in a few words.
@@ -822,8 +846,8 @@ func (s *Service) autoApply(ctx context.Context, again bool) error {
 		if target == 0 {
 			return nil
 		}
-		// Ready when charge extra's cheap blocks end (the proposal's
-		// default), and ended then.
+		// Ready by the next departure, or when charge extra's cheap blocks
+		// end without one (the proposal's default), and ended then.
 		p, err := s.Proposal(ctx, in.Kind, today)
 		if err != nil || !p.Available {
 			return err

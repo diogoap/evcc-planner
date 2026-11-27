@@ -11,6 +11,7 @@ import (
 	"github.com/diogoap/evcc-planner/internal/evcc"
 	"github.com/diogoap/evcc-planner/internal/forecast"
 	"github.com/diogoap/evcc-planner/internal/localtime"
+	"github.com/diogoap/evcc-planner/internal/model"
 	"github.com/diogoap/evcc-planner/internal/service"
 )
 
@@ -126,7 +127,9 @@ func TestChargeExtraOnACheapSundayWhileAway(t *testing.T) {
 // announced; plugging in clears the reminder.
 func TestPlugInForChargeExtraAndAutomaticPlans(t *testing.T) {
 	ta, _ := cheapSunday(t)
-	ta.notifications(nil)
+	// The trip's own reminder is off: with it, both come in one message
+	// (TestOnePlugInMessageForTheTripAndChargeExtra).
+	ta.notifications(func(s map[string]any) { s["early"] = false })
 	ta.at(time.Date(2026, 11, 15, 18, 30, 0, 0, ams))
 	ta.check()
 	if titles := strings.Join(ta.sent(), ","); !strings.Contains(titles, "Plug in for charge extra") {
@@ -216,7 +219,9 @@ func TestChargeExtraReminderBeforeQuietHours(t *testing.T) {
 	night := func(auto bool) *testApp {
 		ta := newTestApp(t, "")
 		ta.pastWeek(0.40)
-		ta.notifications(nil)
+		// The trip's own reminder is off: with it, both come in one message
+		// (TestOnePlugInMessageForTheTripAndChargeExtra).
+		ta.notifications(func(s map[string]any) { s["early"] = false })
 		if auto {
 			var s map[string]any
 			ta.json("GET", "/api/settings/advice", nil, http.StatusOK, &s)
@@ -290,4 +295,44 @@ func TestChargeExtraReminderBeforeQuietHours(t *testing.T) {
 	if !reminded(ta) {
 		t.Fatal("no reminder before quiet hours after the evening one")
 	}
+}
+
+// Before quiet hours on Monday, the plug-in reminder for Tuesday's school
+// run and charge extra's for Tuesday's cheap night are due at the same
+// time: they come as one message.
+func TestOnePlugInMessageForTheTripAndChargeExtra(t *testing.T) {
+	ta := newTestApp(t, "")
+	ta.pastWeek(0.40)
+	ta.notifications(func(s map[string]any) { s["questions"] = false })
+	ta.at(time.Date(2026, 11, 9, 22, 50, 0, 0, ams))
+	ta.check()
+	ta.expectSent("Plug in to charge cheaply")
+
+	tue := ta.advice().day("2026-11-10")
+	recent, _ := ta.app.Store.RecentNotifications(10)
+	var early *model.Notification
+	for i := range recent {
+		if recent[i].Kind == model.NotifyEarly {
+			early = &recent[i]
+		}
+	}
+	if early == nil || !strings.HasPrefix(early.Message, "Charging is cheapest from ") ||
+		!strings.HasSuffix(early.Message, "Tue 07:48. "+tue.Summary+" Create the plan in the planner.") ||
+		// The later of the trip's latest plug-in time and the cheap hours'
+		// end (05:45).
+		early.Latest == nil || !early.Latest.Equal(time.Date(2026, 11, 10, 6, 36, 0, 0, ams)) {
+		t.Fatalf("plug-in reminder = %+v (advice %q)", early, tue.Summary)
+	}
+	// Charge extra's own reminder counts as told.
+	if x := ta.notification("extra:2026-11-10"); x.State != model.NotifyDone || x.SentAt != nil ||
+		x.Note != "Not sent: said in “Plug in to charge cheaply” at the same time" {
+		t.Errorf("charge extra reminder = %+v", x)
+	}
+	ta.check()
+	ta.expectSent()
+
+	// Plugged in: the one message is cleared.
+	ta.plug(true, 38)
+	ta.check()
+	ta.expectSent("-Plug in to charge cheaply")
 }

@@ -342,8 +342,8 @@ type CalendarSyncStatus struct {
 // only created automatically when AutoApply is on, and never in Manual
 // mode. AI mode always shows advice and acts on it by its own settings
 // (AISettings.AutoApply), so Enabled and the Auto fields don't apply there. An automatic extra plan
-// is ready by the end of charge extra's cheap blocks (or the next
-// departure) and ends then.
+// is ready by the next departure (no later than the last published price;
+// without a departure, when charge extra's cheap blocks end) and ends then.
 type AdviceSettings struct {
 	Enabled           bool `json:"enabled"`
 	AutoApply         bool `json:"autoApply"`

@@ -164,9 +164,9 @@ async function save() {
           <p class="field-hint m-0 mt-n2" data-testid="advice-auto-hint">
             Off by default: you review a proposal and confirm each change. On, it acts once a day on today's
             advice with enough confidence: an extra plan with charge extra's target (or a trip's, when
-            higher), ready when its cheap hours end, after which the previous plan comes back. It skips plans
-            you set in EVCC. The plan for the next trip and charge ahead come from the trip plan mode
-            (Planning), not from here.
+            higher), ready by the next trip so EVCC picks the cheapest hours before it, after which the
+            previous plan comes back. It skips plans you set in EVCC. The plan for the next trip and charge
+            ahead come from the trip plan mode (Planning), not from here.
           </p>
           <div class="form-grid">
             <label class="field">

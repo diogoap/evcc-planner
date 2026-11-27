@@ -63,6 +63,8 @@ test('daily advice per day, with a confirmed extra plan that can be ended', asyn
   let dialog = page.getByRole('dialog', { name: /Create extra plan — Tuesday 10 November/ })
   await expect(dialog.getByTestId('proposal-soc')).toHaveValue('60')
   await expect(dialog.getByTestId('proposal-protected')).toContainText('needs 42%')
+  // Ready by the next departure, so EVCC picks the cheapest slots before it.
+  await expect(dialog.getByTestId('proposal-ready')).toHaveValue('07:48')
   await dialog.getByRole('button', { name: 'Cancel' }).click()
   await expect(page.getByTestId('evcc-plan')).toHaveText('None')
 
@@ -71,9 +73,9 @@ test('daily advice per day, with a confirmed extra plan that can be ended', asyn
   await dialog.getByTestId('proposal-soc').fill('70')
   await shot(page, 'extra-plan')
   await dialog.getByRole('button', { name: 'Confirm and create plan' }).click()
-  await expect(page.getByText('Extra plan sent to EVCC: 70% by Tue 10 Nov, 05:45')).toBeVisible()
-  await expect(page.getByTestId('evcc-plan')).toContainText('70% by Tue 10 Nov, 05:45')
-  await expect(page.getByTestId('active-adjustment')).toContainText('70% by Tue 10 Nov, 05:45')
+  await expect(page.getByText('Extra plan sent to EVCC: 70% by Tue 10 Nov, 07:48')).toBeVisible()
+  await expect(page.getByTestId('evcc-plan')).toContainText('70% by Tue 10 Nov, 07:48')
+  await expect(page.getByTestId('active-adjustment')).toContainText('70% by Tue 10 Nov, 07:48')
   await expect(card.getByTestId('advice-adjustment')).toContainText('Extra plan active')
 
   await card.getByRole('button', { name: 'End now and restore' }).click()
@@ -133,10 +135,9 @@ test('charge extra steps per indication, and auto-apply off by default', async (
 
   const auto = page.getByTestId('advice-auto')
   await expect(auto).toHaveAttribute('aria-checked', 'false')
-  // Automatic plans need nothing else: they are ready when charge extra's
-  // cheap hours end.
+  // Automatic plans need nothing else: they are ready by the next trip.
   await expect(auto).toBeEnabled()
-  await expect(page.getByTestId('advice-auto-hint')).toContainText('ready when its cheap hours end')
+  await expect(page.getByTestId('advice-auto-hint')).toContainText('ready by the next trip')
   await expect(page.getByTestId('advice-enabled')).toHaveAttribute('aria-checked', 'true')
   await auto.click()
   await page.getByRole('button', { name: 'Save advice settings' }).click()
