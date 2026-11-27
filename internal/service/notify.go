@@ -32,7 +32,7 @@ var notificationLabels = map[string]string{
 	"solar": "solar reminders", "extra": "charge extra reminders", "arrival": "back home reminders",
 	"arrivalInQuiet": "back home reminders in quiet hours", "prices": "plan changes after new prices",
 	"evening": "evening reminder", "eveningAt": "evening reminder time", "planSent": "plans sent",
-	"extraPlan": "extra plans created",
+	"extraPlan": "extra plans created", "heatingOn": "car heating on",
 }
 
 // SaveNotificationSettings validates and stores the notification settings.
@@ -175,6 +175,8 @@ func verbTitle(verb string, settings model.NotificationSettings) string {
 		return "Count it"
 	case model.VerbNoTrip:
 		return "Not a trip"
+	case model.VerbHeat:
+		return "Heat now"
 	}
 	return verb
 }
@@ -192,12 +194,14 @@ var notifyEmoji = map[string]string{
 	model.NotifyStopped: "⚠️", model.NotifyUnplugged: "⚠️", model.NotifyMode: "⚠️", model.NotifyMissed: "❌",
 	model.NotifyQuestion: "❓", model.NotifyReady: "✅", model.NotifySolar: "☀️", model.NotifyExtra: "🔋",
 	model.NotifyExtraPlan: "🔌", model.NotifyArrived: "🏠", model.NotifyPrices: "💶", model.NotifyInfo: "⏭️",
-	model.NotifyEvening: "🌙", model.NotifyPlanSent: "📤",
+	model.NotifyEvening: "🌙", model.NotifyPlanSent: "📤", model.NotifyHeatAsk: "❄️", model.NotifyHeatOn: "🔥",
 }
 
 // unlabelled kinds are not about how the car charges, so they don't say
 // which trip plan mode is on.
-var unlabelled = map[string]bool{model.NotifyTest: true, model.NotifyQuestion: true}
+var unlabelled = map[string]bool{
+	model.NotifyTest: true, model.NotifyQuestion: true, model.NotifyHeatAsk: true, model.NotifyHeatOn: true,
+}
 
 // titlePrefix is what comes before a kind's title on the phone.
 func titlePrefix(kind string) string { return AppTag + " " + notifyEmoji[kind] }
@@ -454,6 +458,11 @@ func (s *Service) HandleAction(ctx context.Context, action string) error {
 			return s.confirmSkip(ctx, n, settings)
 		}
 		return nil
+	case model.VerbHeat:
+		if n.Kind != model.NotifyHeatAsk || n.Subject == "" {
+			return invalid("this notification doesn't turn on the car heating")
+		}
+		return s.heatNow(ctx, n, settings, title)
 	}
 	return invalid("unknown button %q", verb)
 }

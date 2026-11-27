@@ -233,6 +233,14 @@ var migrations = []string{
 	`ALTER TABLE manual_trips ADD COLUMN points TEXT;`,
 	// EVCC's solar forecast for each day (kWh) in the history.
 	`ALTER TABLE day_stats ADD COLUMN solar_kwh REAL;`,
+	// Car heating: its decision for each departure, made once.
+	`CREATE TABLE heating_runs (
+		id INTEGER PRIMARY KEY,
+		key TEXT NOT NULL UNIQUE,
+		depart_at TEXT NOT NULL,
+		data TEXT NOT NULL
+	);
+	CREATE INDEX heating_runs_depart ON heating_runs(depart_at);`,
 }
 
 // Open opens (creating if needed) the database at path and migrates it.
@@ -328,6 +336,7 @@ const (
 	connectionsKey   = "connections"
 	notificationsKey = "notifications"
 	aiKey            = "ai"
+	heatingKey       = "heating"
 )
 
 // setting decodes a saved settings row over v, which holds the defaults, and
@@ -1241,6 +1250,7 @@ func (s *Store) Cleanup(cutoff time.Time, loc *time.Location) (map[string]int64,
 		{"ai_runs", `DELETE FROM ai_runs WHERE started_at < ?
 			AND id != COALESCE((SELECT MAX(id) FROM ai_runs WHERE status = ?), 0)`,
 			[]any{at, model.AIRunOK}},
+		{"heating_runs", `DELETE FROM heating_runs WHERE depart_at < ?`, []any{at}},
 	}
 	out := map[string]int64{}
 	err := s.InTx(func(tx *Store) error {
@@ -1264,7 +1274,7 @@ func (s *Store) Cleanup(cutoff time.Time, loc *time.Location) (map[string]int64,
 func (s *Store) Reset() error {
 	for _, table := range []string{"settings", "places", "recurring_templates", "manual_trips", "trip_overrides",
 		"calendar_events", "calendar_sync", "soc_readings", "plan_writes", "forecast_sources", "advice_dismissals",
-		"evcc_adjustments", "audit_events", "notifications", "day_stats", "sensor_readings", "ai_runs"} {
+		"evcc_adjustments", "audit_events", "notifications", "day_stats", "sensor_readings", "ai_runs", "heating_runs"} {
 		if _, err := s.q.Exec("DELETE FROM " + table); err != nil {
 			return err
 		}
@@ -1400,6 +1410,90 @@ func (s *Store) notifications(where string, args ...any) ([]model.Notification, 
 		}
 		n.ID = id
 		out = append(out, n)
+	}
+	return out, rows.Err()
+}
+
+// ---- car heating ----
+
+// HeatingSettings returns the saved car heating settings merged onto
+// defaults.
+func (s *Store) HeatingSettings(defaults model.HeatingSettings) (model.HeatingSettings, error) {
+	v := defaults
+	if _, err := s.setting(heatingKey, &v); err != nil {
+		return defaults, err
+	}
+	return v, nil
+}
+
+// SaveHeatingSettings stores the car heating settings.
+func (s *Store) SaveHeatingSettings(v model.HeatingSettings) error {
+	return s.putSetting(heatingKey, v)
+}
+
+// SaveHeatingRun inserts a departure's heating decision (ID 0) or updates
+// it.
+func (s *Store) SaveHeatingRun(r model.HeatingRun) (model.HeatingRun, error) {
+	data, err := json.Marshal(r)
+	if err != nil {
+		return r, err
+	}
+	if r.ID == 0 {
+		res, err := s.q.Exec(`INSERT INTO heating_runs (key, depart_at, data) VALUES (?, ?, ?)`,
+			r.Key, fmtTime(r.DepartAt), string(data))
+		if err != nil {
+			return r, uniqueErr(err, "this departure already has a heating decision")
+		}
+		r.ID, err = res.LastInsertId()
+		return r, err
+	}
+	res, err := s.q.Exec(`UPDATE heating_runs SET depart_at = ?, data = ? WHERE id = ?`, fmtTime(r.DepartAt), string(data), r.ID)
+	if err != nil {
+		return r, err
+	}
+	return r, expectRow(res)
+}
+
+// HeatingRunByKey returns the heating decision with a key, or nil.
+func (s *Store) HeatingRunByKey(key string) (*model.HeatingRun, error) {
+	list, err := s.heatingRuns(`WHERE key = ?`, key)
+	if err != nil || len(list) == 0 {
+		return nil, err
+	}
+	return &list[0], nil
+}
+
+// RecentHeatingRuns lists the latest heating decisions, newest departure
+// first.
+func (s *Store) RecentHeatingRuns(limit int) ([]model.HeatingRun, error) {
+	return s.heatingRuns(`ORDER BY depart_at DESC, id DESC LIMIT ?`, limit)
+}
+
+// AskedHeatingRuns lists the decisions still waiting for an answer.
+func (s *Store) AskedHeatingRuns() ([]model.HeatingRun, error) {
+	list, err := s.heatingRuns(`WHERE json_extract(data, '$.outcome') = ? ORDER BY id`, model.HeatAsked)
+	return list, err
+}
+
+func (s *Store) heatingRuns(where string, args ...any) ([]model.HeatingRun, error) {
+	rows, err := s.q.Query(`SELECT id, data FROM heating_runs `+where, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []model.HeatingRun{}
+	for rows.Next() {
+		var id int64
+		var data string
+		if err := rows.Scan(&id, &data); err != nil {
+			return nil, err
+		}
+		var r model.HeatingRun
+		if err := json.Unmarshal([]byte(data), &r); err != nil {
+			return nil, fmt.Errorf("decode heating run %d: %w", id, err)
+		}
+		r.ID = id
+		out = append(out, r)
 	}
 	return out, rows.Err()
 }

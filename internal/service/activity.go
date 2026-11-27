@@ -299,7 +299,7 @@ func limitText(v *float64) string {
 var activityTypes = map[string][]string{
 	"trip": {"trip"}, "schedule": {"schedule"}, "place": {"place"}, "settings": {"settings"},
 	"evcc": {"plan", "adjustment"}, "advice": {"advice"}, "api": {"api"}, "system": {"system"},
-	"notification": {"notification"},
+	"notification": {"notification"}, "heating": {"heating"},
 }
 
 var activitySources = map[string]bool{
@@ -510,6 +510,7 @@ var cleanupLabels = map[string][2]string{
 	"adjustments":   {"ended EVCC change", "ended EVCC changes"},
 	"notifications": {"notification", "notifications"},
 	"ai_runs":       {"AI run", "AI runs"},
+	"heating_runs":  {"car heating decision", "car heating decisions"},
 }
 
 // Cleanup deletes history older than the retention period (whole local

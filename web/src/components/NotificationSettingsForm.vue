@@ -31,7 +31,16 @@ const error = ref('')
 
 const toggles: {
   key:
-    'problems' | 'questions' | 'ready' | 'solar' | 'extra' | 'arrival' | 'prices' | 'planSent' | 'extraPlan'
+    | 'problems'
+    | 'questions'
+    | 'ready'
+    | 'solar'
+    | 'extra'
+    | 'arrival'
+    | 'prices'
+    | 'planSent'
+    | 'extraPlan'
+    | 'heatingOn'
   label: string
   hint: string
 }[] = [
@@ -80,6 +89,11 @@ const toggles: {
     label: 'Back home reminders',
     hint: 'Asks you to plug in when the car gets back home from the day’s last trip and still needs charging: for the next trip, charge ahead, or charge extra. Needs the car location sensor.',
   },
+  {
+    key: 'heatingOn',
+    label: 'Car heating on',
+    hint: 'Tells you when car heating (Settings → Heating) turns the car’s climate on, by itself or after Heat now. Also in quiet hours, as the car is about to leave; cleared after 30 minutes.',
+  },
 ]
 
 const verbTitles: Record<NotificationVerb, string> = {
@@ -88,6 +102,7 @@ const verbTitles: Record<NotificationVerb, string> = {
   view: 'View plan',
   count: 'Count it',
   notrip: 'Not a trip',
+  heat: 'Heat now',
 }
 
 const stateText: Record<PhoneNotification['state'], string> = {

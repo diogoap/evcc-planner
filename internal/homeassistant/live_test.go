@@ -70,6 +70,26 @@ func TestLiveHomeAssistant(t *testing.T) {
 			if _, err := ParseConsumption(e); err != nil {
 				line += " · not usable now: " + err.Error()
 			}
+		case KindTemperature:
+			// A candidate for car heating's outside temperature sensor.
+			if v, err := ParseTemperature(e); err != nil {
+				line += " · not usable now: " + err.Error()
+			} else {
+				line += fmt.Sprintf(" · %.1f °C, %s ago", v, time.Since(e.Reported()).Round(time.Minute))
+			}
+		case KindClimate:
+			// A candidate for car heating's climate: what it would send
+			// (read only; the climate is never turned on here).
+			c, err := ParseClimate(e)
+			mode, ok := c.HeatMode()
+			switch {
+			case err != nil:
+				line += " · not usable now: " + err.Error()
+			case !ok:
+				line += fmt.Sprintf(" · no heating mode in %v", c.Modes)
+			default:
+				line += fmt.Sprintf(" · would heat in %s at %g °C (range %g–%g)", mode, c.Clamp(20), c.Min, c.Max)
+			}
 		}
 		t.Log(line)
 	}

@@ -3,11 +3,13 @@ import { computed, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import type { Plan, SendOption, SoCSource, Status } from '../api/types'
 import { historyLink } from '../lib/activity'
+import { heatingLine, temp } from '../lib/heating'
 import { ago, clock, dateTime, duration, km, kw, kwh, localDate, pct, price } from '../lib/format'
 import {
   aheadText,
   blockLabel,
   chargesAhead,
+  climateLabel,
   controlLabel,
   locationLabel,
   readyHeadline,
@@ -27,6 +29,10 @@ const sourceName: Record<SoCSource, string> = { evcc: 'EVCC', homeassistant: 'Ho
 
 const soc = computed(() => props.plan.soc)
 const next = computed(() => props.plan.next)
+// Car heating: the next departure's decision, or when it would heat.
+const heating = computed(() =>
+  heatingLine(props.status?.heating, props.plan.next, props.status?.connected ?? false),
+)
 const fromHA = computed(() => soc.value.source === 'homeassistant')
 // Each source's reading and its age, for the tooltip.
 const sources = computed(() =>
@@ -50,6 +56,16 @@ const connection = computed(() => {
   return { text: 'Unplugged', tone: 'muted', icon: 'plug' as const }
 })
 const location = computed(() => (props.status?.location ? locationLabel(props.status.location) : null))
+const climate = computed(() => (props.status?.climate ? climateLabel(props.status.climate) : null))
+// The climate badge's tooltip: mode, target, and inside temperature.
+const climateTitle = computed(() => {
+  const c = props.status?.climate
+  if (!c) return ''
+  const parts = [`Car climate from Home Assistant: ${c.mode}`]
+  if (c.mode !== 'off' && c.targetC != null) parts.push(`set to ${temp(c.targetC)}`)
+  if (c.currentC != null) parts.push(`${temp(c.currentC)} inside`)
+  return `${parts.join(', ')}; since ${dateTime(c.since)}`
+})
 
 const headline = computed(() => readyHeadline(next.value, props.status, props.plan.now))
 // "School drop-off, at School by 08:15 · then Office visit"
@@ -91,6 +107,14 @@ const adjustments = computed(() => props.plan.advice.adjustments.filter((a) => a
     <div class="card-title">
       <span id="ready-title">{{ status?.vehicleTitle || 'Vehicle' }}</span>
       <span class="row gap-1">
+        <span
+          v-if="climate"
+          class="pill normal-case"
+          :class="`tone-${climate.tone}`"
+          :title="climateTitle"
+          data-testid="climate"
+          ><AppIcon :name="climate.icon" />{{ climate.text }}</span
+        >
         <span
           v-if="location"
           class="pill normal-case"
@@ -227,6 +251,15 @@ const adjustments = computed(() => props.plan.advice.adjustments.filter((a) => a
         <dt>Advice</dt>
         <dd data-testid="auto-apply">Plans created automatically</dd>
       </template>
+      <template v-if="heating">
+        <dt>Heating</dt>
+        <dd
+          data-testid="heating"
+          :class="{ 'text-bad': heating.tone === 'bad', 'text-warn': heating.tone === 'warn' }"
+        >
+          {{ heating.text }}
+        </dd>
+      </template>
       <dt>Energy now</dt>
       <dd data-testid="energy-now">
         {{ price(status?.gridPrice) }} incl. VAT · solar {{ kw(status?.pvPowerW ?? 0) }}
@@ -269,8 +302,16 @@ const adjustments = computed(() => props.plan.advice.adjustments.filter((a) => a
   gap: var(--space-3);
 }
 
+/* The car's name stays on one line; the badges (climate, location,
+   connection) move below it when they don't fit beside it. */
 .ready .card-title {
   margin-bottom: 0;
+  flex-wrap: wrap;
+  row-gap: var(--space-2);
+}
+
+.ready .card-title > :first-child {
+  white-space: nowrap;
 }
 
 .ready-next {

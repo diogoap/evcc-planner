@@ -216,23 +216,38 @@ func TestCandidates(t *testing.T) {
 		{EntityID: "sensor.ev_last_update", State: "2026-11-11T07:30:00+00:00", Attributes: map[string]any{"device_class": "timestamp"}},
 		{EntityID: "sensor.car_efficiency", State: "6.2", Attributes: map[string]any{"unit_of_measurement": "km/kWh"}},
 		{EntityID: "sensor.car_consumption", State: "16.1", Attributes: map[string]any{"unit_of_measurement": "kWh/100 km"}},
+		{EntityID: "sensor.outside_temperature", State: "1.5", Attributes: map[string]any{"device_class": "temperature", "unit_of_measurement": "°C"}},
+		{EntityID: "sensor.attic", State: "60", Attributes: map[string]any{"unit_of_measurement": "°F"}},
+		{EntityID: "climate.car_climate", State: "off", Attributes: map[string]any{"friendly_name": "Car climate"}},
+		{EntityID: "switch.car_climate", State: "off"},
 	}
 	got := Candidates(states)
 	var ids []string
 	for _, c := range got {
 		ids = append(ids, c.EntityID+":"+c.Kind)
 	}
-	if strings.Join(ids, ",") != "sensor.car_consumption:efficiency,sensor.car_efficiency:efficiency,sensor.ev_battery:battery,"+
-		"sensor.ev_last_update:timestamp,sensor.ev_range:range,sensor.phone_battery:battery,sensor.trip:range" {
+	if strings.Join(ids, ",") != "climate.car_climate:climate,sensor.attic:temperature,sensor.car_consumption:efficiency,"+
+		"sensor.car_efficiency:efficiency,sensor.ev_battery:battery,sensor.ev_last_update:timestamp,sensor.ev_range:range,"+
+		"sensor.outside_temperature:temperature,sensor.phone_battery:battery,sensor.trip:range" {
 		t.Errorf("candidates = %v", ids)
 	}
-	if got[2].Name != "Car battery" || got[2].State != "72" || got[2].Unit != "%" {
-		t.Errorf("battery = %+v", got[2])
+	if got[4].Name != "Car battery" || got[4].State != "72" || got[4].Unit != "%" {
+		t.Errorf("battery = %+v", got[4])
+	}
+	if got[0].Name != "Car climate" || got[0].State != "off" {
+		t.Errorf("climate = %+v", got[0])
 	}
 	stub, _ := Stub{Now: time.Now, Car: func() (float64, float64) { return 38, 122 }}.Sensors(context.Background())
 	if len(stub) != 4 || stub[0].EntityID != StubEntity || stub[0].State != "38" || stub[1].Kind != KindEfficiency ||
 		stub[2].Kind != KindTimestamp || stub[3].Kind != KindRange {
 		t.Errorf("stub sensors = %+v", stub)
+	}
+	// With the demo climate: its climate and outside temperature too.
+	climate := NewClimateStub(time.Now)
+	stub, _ = Stub{Now: time.Now, Car: func() (float64, float64) { return 38, 122 }, Climate: climate}.Sensors(context.Background())
+	if len(stub) != 6 || stub[0].EntityID != StubClimateEntity || stub[0].Kind != KindClimate ||
+		stub[5].EntityID != StubOutsideEntity || stub[5].Kind != KindTemperature || stub[5].State != "2" {
+		t.Errorf("stub sensors with the climate = %+v", stub)
 	}
 }
 

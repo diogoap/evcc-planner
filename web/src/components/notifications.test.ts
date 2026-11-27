@@ -41,6 +41,7 @@ const defaults: NotificationSettings = {
   eveningAt: '19:30',
   planSent: true,
   extraPlan: true,
+  heatingOn: true,
 }
 
 const copy: NotificationCopy[] = [
@@ -107,6 +108,16 @@ describe('NotificationSettingsForm', () => {
     await w.get('form').trigger('submit')
     await flushPromises()
     expect(api.saveNotificationSettings).toHaveBeenCalledWith({ ...defaults, arrival: false })
+  })
+
+  it('turns the car heating on message off', async () => {
+    const w = mount(NotificationSettingsForm)
+    await flushPromises()
+    expect(w.text()).toContain('by itself or after Heat now')
+    await w.get('[role="switch"][aria-label="Car heating on"]').trigger('click')
+    await w.get('form').trigger('submit')
+    await flushPromises()
+    expect(api.saveNotificationSettings).toHaveBeenCalledWith({ ...defaults, heatingOn: false })
   })
 
   it('keeps back home reminders out of quiet hours with their own check', async () => {

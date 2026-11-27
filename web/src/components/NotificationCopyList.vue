@@ -12,6 +12,7 @@ const verbTitles: Record<NotificationVerb, string> = {
   view: 'View plan',
   count: 'Count it',
   notrip: 'Not a trip',
+  heat: 'Heat now',
 }
 
 function buttons(c: NotificationCopy) {

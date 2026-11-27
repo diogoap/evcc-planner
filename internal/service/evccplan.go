@@ -46,6 +46,12 @@ type StatusView struct {
 	// Health lists the connections that need attention (the Overview's
 	// health line).
 	Health []HealthIssue `json:"health"`
+	// Heating is car heating's settings and latest decision; nil while it
+	// is off and nothing was decided recently.
+	Heating *HeatingSummary `json:"heating,omitempty"`
+	// Climate is the car's climate from Home Assistant (car heating's
+	// climate entity); nil without one, or when it can't be read.
+	Climate *ClimateStatus `json:"climate,omitempty"`
 }
 
 // HealthIssue is a connection with an error: what went wrong, and when it
@@ -102,9 +108,10 @@ type EVCCPlanView struct {
 // Status returns the cached EVCC state for the UI.
 func (s *Service) Status() StatusView {
 	snap := s.snapshot()
-	v := StatusView{Mode: s.Cfg.EVCC.Mode, PriceSlots: []evcc.Rate{}, Solar: []SolarView{}, Health: s.health()}
+	v := StatusView{Mode: s.Cfg.EVCC.Mode, PriceSlots: []evcc.Rate{}, Solar: []SolarView{}, Health: s.health(),
+		Heating: s.heatingSummary()}
 	s.mu.RLock()
-	v.Location = s.carLoc
+	v.Location, v.Climate = s.carLoc, s.carClimate
 	s.mu.RUnlock()
 	if snap.err != nil {
 		v.Error = snap.err.Error()

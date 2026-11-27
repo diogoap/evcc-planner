@@ -72,11 +72,12 @@ type Fault struct {
 
 // Faults makes demo services fail on request, to see and test how the
 // planner handles an outage (demo mode only). Home Assistant being down
-// also fails the demo phone.
+// also fails the demo phone and the demo car's climate.
 type Faults struct {
-	Phone *homeassistant.NotifyStub
-	mu    sync.Mutex
-	set   map[string]string
+	Phone   *homeassistant.NotifyStub
+	Climate *homeassistant.ClimateStub
+	mu      sync.Mutex
+	set     map[string]string
 }
 
 // Set makes a service fail, or work again with fault "".
@@ -97,6 +98,9 @@ func (f *Faults) Set(service, fault string) error {
 	f.mu.Unlock()
 	if service == FaultHomeAssistant && f.Phone != nil {
 		f.Phone.SetFail(f.faultErr(service))
+	}
+	if service == FaultHomeAssistant && f.Climate != nil {
+		f.Climate.SetFail(f.faultErr(service))
 	}
 	return nil
 }

@@ -2,7 +2,9 @@
 // Assistant's REST API, which has it even while the car is unplugged (EVCC
 // only reads it while plugged in), and sends phone notifications through
 // the Companion app, receiving their button presses over the websocket API.
-// It changes nothing else in Home Assistant. Stubs with the same contracts
+// For car heating it reads an outside temperature sensor and turns the
+// car's climate entity on (climate.set_temperature and set_hvac_mode). It
+// changes nothing else in Home Assistant. Stubs with the same contracts
 // serve demo mode.
 package homeassistant
 
@@ -34,19 +36,19 @@ type Locator interface {
 }
 
 // SensorLister lists sensors that could hold the car's SoC, range, reading
-// time, or consumption.
+// time, consumption, or the outside temperature, and climate entities.
 type SensorLister interface {
 	Sensors(ctx context.Context) ([]Sensor, error)
 }
 
-// Sensor is a candidate for the SoC, range, reading-time, or consumption
-// sensor.
+// Sensor is a candidate for the SoC, range, reading-time, consumption, or
+// outside temperature sensor, or the car's climate.
 type Sensor struct {
 	EntityID string `json:"entityId"`
 	Name     string `json:"name"`
 	State    string `json:"state"`
 	Unit     string `json:"unit"`
-	Kind     string `json:"kind"` // battery, range, timestamp, or efficiency
+	Kind     string `json:"kind"` // battery, range, timestamp, efficiency, temperature, or climate
 }
 
 // Sensor kinds.
@@ -55,19 +57,27 @@ const (
 	KindRange      = "range"
 	KindTimestamp  = "timestamp"
 	KindEfficiency = "efficiency"
+	// KindTemperature is a temperature sensor, such as the outside
+	// temperature; KindClimate a climate entity, such as the car's.
+	KindTemperature = "temperature"
+	KindClimate     = "climate"
 )
 
 // Candidates picks battery level sensors (%), distance sensors (km, mi),
-// timestamp sensors, and consumption sensors (km/kWh, kWh/100 km), sorted by
-// entity ID.
+// timestamp sensors, consumption sensors (km/kWh, kWh/100 km), temperature
+// sensors (°C, °F), and climate entities, sorted by entity ID.
 func Candidates(states []EntityState) []Sensor {
 	var out []Sensor
 	for _, e := range states {
+		name, _ := e.Attributes["friendly_name"].(string)
+		if strings.HasPrefix(e.EntityID, "climate.") {
+			out = append(out, Sensor{EntityID: e.EntityID, Name: name, State: e.State, Kind: KindClimate})
+			continue
+		}
 		if !strings.HasPrefix(e.EntityID, "sensor.") {
 			continue
 		}
 		class, _ := e.Attributes["device_class"].(string)
-		name, _ := e.Attributes["friendly_name"].(string)
 		sn := Sensor{EntityID: e.EntityID, Name: name, State: e.State, Unit: e.Unit()}
 		switch {
 		case class == "battery" && sn.Unit == "%":
@@ -78,6 +88,8 @@ func Candidates(states []EntityState) []Sensor {
 			sn.Kind = KindRange
 		case class == "timestamp":
 			sn.Kind = KindTimestamp
+		case class == "temperature" || sn.Unit == "°C" || sn.Unit == "°F":
+			sn.Kind = KindTemperature
 		default:
 			continue
 		}
@@ -414,6 +426,9 @@ type Stub struct {
 	Now func() time.Time
 	// Car returns the simulated battery: SoC % and range in km.
 	Car func() (soc, rangeKm float64)
+	// Climate, if set, adds the demo climate and outside temperature to
+	// the sensors to choose from.
+	Climate *ClimateStub
 }
 
 // SoC reports the demo car's battery.
@@ -443,10 +458,15 @@ func (s Stub) State(ctx context.Context, entityID string) (*EntityState, error) 
 func (s Stub) Sensors(ctx context.Context) ([]Sensor, error) {
 	soc, rangeKm := s.Car()
 	at := s.Now().Add(-stubLag).Truncate(time.Minute)
-	return []Sensor{
+	out := []Sensor{
 		{EntityID: StubEntity, Name: "Demo car battery", State: strconv.FormatFloat(soc, 'f', -1, 64), Unit: "%", Kind: KindBattery},
 		{EntityID: StubConsumptionEntity, Name: "Demo car efficiency", State: stubConsumption, Unit: "km/kWh", Kind: KindEfficiency},
 		{EntityID: StubUpdatedEntity, Name: "Demo car last update", State: at.UTC().Format(time.RFC3339), Kind: KindTimestamp},
 		{EntityID: StubRangeEntity, Name: "Demo car range", State: strconv.FormatFloat(rangeKm, 'f', -1, 64), Unit: "km", Kind: KindRange},
-	}, nil
+	}
+	if s.Climate != nil {
+		out = append(out, s.Climate.Sensors()...)
+		sort.Slice(out, func(i, j int) bool { return out[i].EntityID < out[j].EntityID })
+	}
+	return out, nil
 }

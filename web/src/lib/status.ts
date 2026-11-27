@@ -2,6 +2,7 @@ import type {
   AheadTrip,
   Block,
   BlockStatus,
+  CarClimate,
   CarLocation,
   ControlView,
   Day,
@@ -129,6 +130,17 @@ export function locationLabel(l: CarLocation): { text: string; tone: Tone; icon:
   if (l.home) return { text: 'Home', tone: 'muted', icon: 'home' }
   if (l.state === 'not_home') return { text: 'Away', tone: 'info', icon: 'route' }
   return { text: l.state, tone: 'info', icon: 'route' }
+}
+
+/** The car's climate as a badge: Climate off, Heating, Cooling, or Climate on (idle, fan, …). */
+export function climateLabel(c: CarClimate): { text: string; tone: Tone; icon: IconName } {
+  const icon = 'thermometer'
+  if (c.mode === 'off') return { text: 'Climate off', tone: 'muted', icon }
+  if (c.action === 'heating' || (!c.action && c.mode === 'heat'))
+    return { text: 'Heating', tone: 'info', icon }
+  if (c.action === 'cooling' || (!c.action && c.mode === 'cool'))
+    return { text: 'Cooling', tone: 'info', icon }
+  return { text: 'Climate on', tone: 'info', icon }
 }
 
 /** The planner's expected charging slots for the automatic target, while it still needs charging. */

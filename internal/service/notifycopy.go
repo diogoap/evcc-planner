@@ -106,6 +106,13 @@ func NotificationCopies() []NotificationCopy {
 		{Setting: "planSent", Kind: model.NotifyPlanSent, Title: "Plan sent", Buttons: view, ai: true,
 			Messages: []string{"EVCC charges to {target}% by {time} for {trip}[, with {later trip} charged ahead]."},
 			Note:     "Once per departure: later changes to its plan come without a message. " + planAtOnce},
+		{Setting: "heating", Kind: model.NotifyHeatAsk, Title: "Heat the car?", Buttons: []string{model.VerbHeat, model.VerbView},
+			Messages: []string{"{outside}, {trip} leaves at {time}. Heat it to {target} °C?"},
+			Note: "{outside}: “1 °C outside” from the outside temperature sensor, or “A low of 1 °C forecast” from the " +
+				"weather forecast. Also in quiet hours; cleared after 30 minutes without an answer."},
+		{Setting: "heatingOn", Kind: model.NotifyHeatOn, Title: "Car heating on", Buttons: view,
+			Messages: []string{"Heating the car to {target} °C: {outside}, {trip} leaves at {time}."},
+			Note:     "When car heating turns the climate on, by itself or after Heat now. Also in quiet hours; cleared after 30 minutes."},
 		{Setting: "arrival", Kind: model.NotifyArrived, Title: "Back home: plug in", ai: true,
 			Buttons: []string{model.VerbSnooze, model.VerbView},
 			Messages: []string{

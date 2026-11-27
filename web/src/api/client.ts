@@ -18,6 +18,8 @@ import type {
   DemoFault,
   EVCCPlan,
   HASensor,
+  HeatingSettings,
+  HeatingView,
   History,
   Meta,
   NotificationCopy,
@@ -170,4 +172,12 @@ export const api = {
   /** Demo mode: presses a notification button as the phone would. */
   pressNotification: (id: number, verb: string) =>
     request<void>('POST', '/api/demo/notification-action', { action: `EVCCP_${verb.toUpperCase()}_${id}` }),
+
+  heatingSettings: () => request<HeatingSettings>('GET', '/api/settings/heating'),
+  saveHeatingSettings: (s: HeatingSettings) => request<HeatingSettings>('PUT', '/api/settings/heating', s),
+  /** Car heating now: the sensors read live, and recent decisions. */
+  heating: () => request<HeatingView>('GET', '/api/heating'),
+  /** Demo mode: sets the outside temperature (or makes it unavailable), then checks car heating. */
+  demoClimate: (input: { outsideC?: number; unavailable?: boolean; climateOff?: boolean }) =>
+    request<HeatingView>('POST', '/api/demo/climate', input),
 }

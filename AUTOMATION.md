@@ -7,7 +7,9 @@ version; this file has every rule.
 The planner only ever writes the car's **one-off plan** in EVCC: a target SoC
 with a ready-by time. EVCC then picks the cheapest slots before that time. The
 planner never changes EVCC's mode, its limits, its cheap-charging limit
-(except a postponement from daily advice, see V2), or repeating plans.
+(except a postponement from daily advice, see V2), or repeating plans. In
+Home Assistant it only turns the car's climate on, for
+[car heating](#car-heating) when that is on; never off.
 
 Plans need EVCC's loadpoint in **Smart** mode while the car is plugged in. In
 Off nothing charges, and in Fast EVCC charges at full power right away,
@@ -565,7 +567,7 @@ sequenceDiagram
   "[EVCC Planner] ⏰ Plug in by 06:36" (🔔 test, 🔌 early reminder and extra
   plan created, ⏰ urgent, 🚨 too late, ⚠️ problems, ❌ missed target, ❓
   question, ✅ ready, ☀️ sun, 🔋 charge extra, 🏠 back home, 🌙 evening, 💶 new prices,
-  ⏭️ trip skipped). A newer message with the same tag
+  ⏭️ trip skipped, ❄️ heat the car?, 🔥 car heating on). A newer message with the same tag
   replaces the old one on the phone; when a message is no longer relevant, the
   planner clears it.
 - **Failed sends:** when no phone gets a message (Home Assistant unreachable,
@@ -687,7 +689,8 @@ gantt
   (or are skipped when their moment has passed). Urgent and too-late reminders
   follow **Urgent reminders in quiet hours**: send (default) or wait until
   quiet hours end. The back-home reminder follows its **Also in quiet hours**
-  check: send (default) or skip.
+  check: send (default) or skip. [Car heating](#car-heating)'s messages
+  always come: the car is about to leave.
 
 ## Charging problems, questions, and ready messages
 
@@ -711,6 +714,90 @@ in Smart mode, and plug in for the sun are cleared from the phone once solved
 (for the sun: plugged in, or the sun is gone). Settings turn problems,
 questions, ready messages, and solar reminders on or off separately.
 
+## Car heating
+
+Before a departure from home, when it is cold outside, the planner turns on
+the car's climate in Home Assistant, so the car is warm and defrosted when you
+leave. It is off until you turn it on under Settings → Heating.
+
+```mermaid
+flowchart TD
+    T[Every minute: the next departure from home<br/>leaves within the set minutes] --> O{Decided for it already?}
+    O -- yes --> Z[Nothing]
+    O -- no --> A{Car home?<br/>by the location sensor}
+    A -- no --> SK[Skipped]
+    A -- yes --> C{Outside temperature<br/>below the setting?}
+    C -- "no reading" --> SK
+    C -- no --> W[Not needed]
+    C -- yes --> ON{Climate already on?}
+    ON -- yes --> SK
+    ON -- no --> Q{Ask first?<br/>plugged in / unplugged}
+    Q -- no --> H[Turn it on<br/>and tell the phone]
+    Q -- yes --> P[Ask on the phone: Heat now]
+    P -- pressed within 30 minutes --> H2[Turn it on<br/>and tell the phone]
+    P -- no answer --> N[Not on]
+```
+
+- **When:** the set minutes (15 by default) before the departure, once per
+  departure: the decision stands, also after a restart. Only departures from
+  home count (the first trip of each run of trips). It runs every minute,
+  apart from the EVCC check, so it also works while EVCC is unreachable.
+- **Outside temperature:** the outside temperature sensor's reading, when it is
+  a number from the last 2 hours. Otherwise the weather forecast's lowest
+  temperature for the day (KNMI's minimum, the lower end of its range). With
+  neither, it is skipped and says why.
+- **Below the setting** (3 °C by default) heats; at or above it, nothing
+  happens and no activity entry is made (mild days stay quiet). The Overview
+  still shows "Not needed: 8 °C outside".
+- **Car away:** with a car location sensor (Settings → Notifications) that
+  doesn't say home, it is skipped; without one, the car counts as home.
+- **Turning on:** it sets the climate's target (20 °C by default, rounded to
+  the entity's step and kept within its range), then its mode: heat, else
+  heat_cool, else auto, whichever the entity offers. A climate that is
+  already on is left alone. The planner never turns it off; the car's own
+  timer does.
+- **Ask first:** separately while plugged in (off by default) and while
+  unplugged (on by default, as it then heats from the battery). When EVCC's
+  data is too old to tell, the car counts as unplugged. The question comes on
+  the phone, also in quiet hours: "Heat the car?" with **Heat now**. Pressing
+  it turns the climate on right away. Without an answer within 30 minutes
+  it is cleared from the phone and the heating stays off. Asking needs phone
+  notifications with a phone, and an administrator token for the button;
+  without them, a departure that would ask is skipped, and Settings → Heating
+  says so.
+- **Car heating on:** each time it turns the climate on, by itself or after
+  Heat now, "Car heating on" goes to the phone, also in quiet hours, and is
+  cleared after 30 minutes: "Heating the car to 20 °C: 2 °C outside, School
+  drop-off leaves at 07:48." It has its own switch under Settings →
+  Notifications (**Car heating on**, on by default). Without it, or without
+  notifications, it heats quietly.
+- **Failures:** when Home Assistant can't be reached or refuses, it tries again
+  at the next checks before the departure, 3 times in all. The first and the
+  last failure are in the activity log; the Overview shows it. Failures don't
+  go to the phone.
+
+| Outcome | Overview | Activity log |
+| --- | --- | --- |
+| Turned on by itself | "On since 07:33 (2 °C outside)" | `heating.on`: "Turned on the car heating for School drop-off: 20 °C, 2 °C outside"; `notification.send` for Car heating on |
+| Asked | "Asked on the phone at 07:33 (2 °C outside)" | `notification.send` |
+| Turned on after Heat now | "On since 07:36, after Heat now (2 °C outside)" | `heating.on` and `notification.action` (source Notification); `notification.send` for Car heating on |
+| No answer | "Not on: no answer within 30 minutes" | `heating.skip` |
+| Not cold enough | "Not needed: 8 °C outside (heats below 3 °C)" | none |
+| Skipped | "Not on: the car isn't home (device_tracker.car is not_home)" | `heating.skip` |
+| Failed | "Failed: home assistant unreachable; trying again" | `heating.on`, as a failure |
+
+Before the departure's time, the Overview says when it would heat: "Below
+3 °C: heats to 20 °C at 07:33, before School drop-off · asks on the phone
+first".
+
+**Climate badge:** with a climate entity chosen (also while car heating is
+off), the car card shows the climate's state next to Home/Away and Plugged
+in: **Climate off**, **Heating**, **Cooling**, or **Climate on** (idle, fan).
+It comes from the entity's `hvac_action` when it reports one, else its mode,
+and is read every minute with the heating check, and right after the planner
+turns the climate on. When the entity can't be read, the badge is left out.
+Hovering it shows the mode, the target, and the temperature inside.
+
 ## When data is too old
 
 Each source has one rule: how old its data may be, what the planner does when
@@ -727,6 +814,7 @@ Settings → Connections.
 | Calendars | No sync for 3 syncs (3 hours by default) | Trips stay as last synced | Its connection ("6 events, last synced 19:00"), health line |
 | Tibber outlook | No fetch for 2 days; contents older than 8 days or past their week | Advice keeps the last outlook; from old contents with confidence 1 | Its connection and the health line (fetch); the advice's sources (contents) |
 | KNMI weather | No fetch for 2 days; an outlook issued more than 36 hours ago | Advice keeps the last outlook, marked stale | Its connection and the health line (fetch); the advice's sources (outlook) |
+| Outside temperature (car heating) | 2 hours | The weather forecast's lowest for the day is used | Settings → Heating ("sensor not used: … was last updated 05:12") |
 | AI plan | 30 hours | The automatic rules apply | AI plan row on the Overview |
 | Background checks | A check hasn't run for 3 of its intervals, and at least 10 minutes | Nothing automatic happens until the planner is restarted; `/readyz` fails, so the container shows as unhealthy | Health line ("The EVCC check last ran at 10:12"), Docker or Portainer |
 
@@ -817,6 +905,20 @@ Settings → **Notifications**:
 | Back home reminders | On (needs the car location sensor), also in quiet hours (a check under it, separate from urgent reminders) |
 | Plan changes after new prices | On (Automatic and AI mode) |
 | Plans sent | On (On plug-in, Automatic, and AI mode; once per departure) |
+| Car heating on | On (when car heating turns the climate on, by itself or after Heat now; also in quiet hours) |
+
+Settings → **Heating** (any trip plan mode, also Manual):
+
+| Setting | Default | Notes |
+| --- | --- | --- |
+| Heat the car before departures | Off | Needs the car's climate entity. |
+| Heat below | 3 °C | Compared with the outside temperature. |
+| Before departure | 15 min | 5 to 60. |
+| Target temperature | 20 °C | Kept within what the climate accepts. |
+| Car climate | empty | A Home Assistant `climate.*` entity, e.g. `climate.car_climate`. |
+| Outside temperature sensor | empty | A `sensor.*` entity; without one, the forecast's lowest for the day. |
+| Ask on the phone first while plugged in | Off | |
+| Ask on the phone first while unplugged | On | Also when EVCC's data is too old to tell. |
 
 ## Activity log entries
 
@@ -833,6 +935,9 @@ Settings → **Notifications**:
 | `ai.skip` | Automation | "AI plan not made on plug-in: 3 runs today already (Settings → Advice → AI mode); the last plan applies", or "… the last of today's 3 runs is kept for tomorrow's prices …" |
 | `adjustment.end` / `adjustment.update` | Automation | New prices: "Extra plan ended: New prices: the advice no longer charges extra. …" / "New prices: raised the extra plan to 80% by Mon 9 Nov, 23:00; …" |
 | `plan.send` (new prices) | Automation | "New prices: raised the chosen plan (44% by 2026-11-10 07:48): sent plan 46% by Tue 10 Nov, 07:48 to EVCC" |
+| `heating.on` | Automation or Notification | "Turned on the car heating for School drop-off: 20 °C, 2 °C outside"; after Heat now "… (Heat now): …"; a failure "Car heating for School drop-off failed: …; trying again" |
+| `heating.skip` | Automation | "Car heating not turned on for School drop-off: no answer within 30 minutes" |
+| `notification.action` (Heat now) | Notification | "Heat now pressed on '[EVCC Planner] ❄️ Heat the car?': car heating on at 20 °C" |
 
 ## Tests
 
@@ -847,5 +952,9 @@ Settings → **Notifications**:
   the checks, failures, and the "(🤖 AI mode)" label.
 - Notifications are only sent to the stub in tests; live tests stay read-only.
   The websocket listener is tested against an `httptest` server.
-- Playwright covers the Planning and Notifications settings, pause and resume,
-  and pressing notification buttons in demo mode.
+- Playwright covers the Planning, Notifications, and Heating settings, pause
+  and resume, and pressing notification buttons in demo mode.
+- Car heating's decision is a pure function (`decideHeating`) with table
+  tests; API tests cover each outcome with the demo climate stub (calls are
+  recorded, never sent), and the live test only reads the climate and the
+  outside sensor.

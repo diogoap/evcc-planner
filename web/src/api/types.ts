@@ -539,6 +539,90 @@ export interface Status {
   location: CarLocation | null
   /** Connections that need attention: the Overview's health line. */
   health: HealthIssue[]
+  /** Car heating's settings and latest decision; absent while it is off and nothing was decided recently. */
+  heating?: HeatingSummary
+  /** The car's climate from Home Assistant; absent without a climate entity, or when it can't be read. */
+  climate?: CarClimate
+}
+
+/** Car heating: before a departure from home, when it is cold, the car's climate is turned on. */
+export interface HeatingSettings {
+  enabled: boolean
+  /** Heats when the outside temperature is below this (°C). */
+  belowC: number
+  /** Minutes before the departure. */
+  leadMin: number
+  /** The car's Home Assistant climate entity. */
+  climateEntity: string
+  /** An outside temperature sensor; without one, the forecast's lowest for the day is used. */
+  outsideEntity: string
+  targetC: number
+  /** Ask on the phone first while plugged in, and while unplugged. */
+  askPlugged: boolean
+  askUnplugged: boolean
+}
+
+export type HeatingOutcome = 'heated' | 'asked' | 'confirmed' | 'no_answer' | 'warm' | 'skipped' | 'failed'
+
+/** Car heating's decision for one departure. */
+export interface HeatingRun {
+  id: number
+  key: string
+  tripKey: string
+  title: string
+  departAt: string
+  decidedAt: string
+  outcome: HeatingOutcome
+  reason?: string
+  outsideC?: number
+  /** sensor, or forecast (the day's lowest). */
+  outsideSource?: 'sensor' | 'forecast'
+  belowC: number
+  /** Absent: unknown (EVCC's data too old). */
+  plugged?: boolean
+  targetC?: number
+  hvacMode?: string
+  heatedAt?: string
+  notificationId?: number
+  tries?: number
+  retry?: boolean
+}
+
+/** Car heating on the Overview. */
+export interface HeatingSummary {
+  enabled: boolean
+  belowC: number
+  leadMin: number
+  targetC: number
+  askPlugged: boolean
+  askUnplugged: boolean
+  /** The latest decision whose departure is ahead or recent. */
+  last?: HeatingRun
+}
+
+/** Car heating under Settings: the sensors now, what would be sent, and recent decisions. */
+export interface HeatingView {
+  settings: HeatingSettings
+  outside: {
+    c: number | null
+    source?: 'sensor' | 'forecast'
+    at?: string
+    /** Why the sensor isn't used. */
+    note?: string
+  }
+  climate: {
+    state?: string
+    targetC?: number
+    minC?: number
+    maxC?: number
+    modes: string[]
+    /** The mode it would turn on, and the target it would send. */
+    mode?: string
+    sendC?: number
+    error?: string
+  }
+  notes: string[]
+  recent: HeatingRun[]
 }
 
 /** A connection with an error: what went wrong, and when it last worked. */
@@ -589,6 +673,17 @@ export interface History {
 export interface CarLocation {
   state: string
   home: boolean
+  since: string
+}
+
+/** The car's climate from Home Assistant (car heating's climate entity). */
+export interface CarClimate {
+  /** The HVAC mode: off, heat_cool, heat, cool, … */
+  mode: string
+  /** What it does, when reported: heating, cooling, idle, off, … */
+  action?: string
+  targetC?: number
+  currentC?: number
   since: string
 }
 
@@ -826,7 +921,7 @@ export interface HASensor {
   name: string
   state: string
   unit: string
-  kind: 'battery' | 'range' | 'timestamp' | 'efficiency'
+  kind: 'battery' | 'range' | 'timestamp' | 'efficiency' | 'temperature' | 'climate'
 }
 
 export interface TripInput {
@@ -844,7 +939,16 @@ export interface TripInput {
 
 export type ActivitySource = 'ui' | 'job' | 'calendar_sync' | 'automation' | 'notification'
 export type ActivityType =
-  'trip' | 'schedule' | 'place' | 'settings' | 'evcc' | 'advice' | 'notification' | 'api' | 'system'
+  | 'trip'
+  | 'schedule'
+  | 'place'
+  | 'settings'
+  | 'evcc'
+  | 'advice'
+  | 'notification'
+  | 'heating'
+  | 'api'
+  | 'system'
 
 /** One entry of the append-only activity log; before/after hold the changed values. */
 export interface AuditEvent {
@@ -937,6 +1041,8 @@ export interface NotificationSettings {
   eveningAt: string
   /** A message when the planner sends EVCC a plan for a departure by itself, once per departure. */
   planSent: boolean
+  /** A message when car heating turns the car's climate on, by itself or after Heat now. */
+  heatingOn: boolean
 }
 
 /** What a kind of notification says: {…} is filled in when sent, […] only when it applies. */
@@ -972,9 +1078,12 @@ export type NotificationKind =
   | 'arrived'
   | 'prices'
   | 'evening'
+  | 'plan_sent'
   | 'info'
+  | 'heat_ask'
+  | 'heat_on'
 
-export type NotificationVerb = 'snooze' | 'skip' | 'view' | 'count' | 'notrip'
+export type NotificationVerb = 'snooze' | 'skip' | 'view' | 'count' | 'notrip' | 'heat'
 
 export interface PhoneNotification {
   id: number

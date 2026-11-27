@@ -79,7 +79,7 @@ out, or `"key"` to refuse its key; `"fault": ""` brings it back).
 | `make verify` | Go format/vet/tests, web format/lint/types/tests, production build, browser tests. Must pass before pushing. |
 | `make test` | Fast Go and web unit tests only. |
 | `make e2e` | Build, then run the Playwright browser tests (desktop and phone), including layout and accessibility checks of every key screen in light and dark. |
-| `make test-live` | Read-only checks against your real EVCC (state and, when plugged in, a plan preview), Home Assistant (its battery, range, and timestamp sensors), and the forecast sources (Tibber page; KNMI with a key; OpenRouter only with `LIVE_OPENROUTER=1`). It does not read the app's database, so give it the addresses: `EVCC_URL=http://… HA_URL=http://… make test-live` (or put them in `.env`; the app itself ignores them). |
+| `make test-live` | Read-only checks against your real EVCC (state and, when plugged in, a plan preview), Home Assistant (its battery, range, timestamp, temperature, and climate entities; nothing is turned on), and the forecast sources (Tibber page; KNMI with a key; OpenRouter only with `LIVE_OPENROUTER=1`). It does not read the app's database, so give it the addresses: `EVCC_URL=http://… HA_URL=http://… make test-live` (or put them in `.env`; the app itself ignores them). |
 | `make docker-smoke` | Build the production image, start it, check health/UI/API, report image size and idle memory. |
 | `make run` | Production build, run locally with your real config. |
 | `make fmt` / `make lint` / `make clean` | Format, lint, remove build output. |
@@ -207,7 +207,8 @@ hourly and keep the last valid forecast.
 EVCC only reads the car's state of charge (SoC) while it is plugged in. If
 Home Assistant has the car (for example through the car maker's integration),
 the planner reads the SoC from it too, so it stays current while the car is
-unplugged. It only reads, through Home Assistant's REST API.
+unplugged. It only reads, through Home Assistant's REST API, except for
+[car heating](#car-heating-optional), which turns the chosen climate entity on.
 
 1. In Home Assistant, create a long-lived access token: your profile (bottom
    left) → **Security** → **Long-lived access tokens** → **Create token**.
@@ -245,7 +246,8 @@ Connections) and keeps each source's last reading. Settings → Connections show
 latest one or the error. Wrong tokens are refused with 401; if Home
 Assistant bans IPs after failed logins (`ip_ban_enabled`), fix the token
 quickly or the planner's address gets banned. Calls to Home Assistant are on
-your network and are not in the activity log.
+your network and are not in the activity log (car heating records what it
+turns on itself).
 
 ### Phone notifications (optional)
 
@@ -271,6 +273,33 @@ Connections shows whether that connection is up. Every message sent and
 every button press is in the activity log. The rules for each message, quiet
 hours (23:00–07:00 by default), and snoozing are in
 [AUTOMATION.md](AUTOMATION.md).
+
+### Car heating (optional)
+
+Before a trip that leaves from home, when it is cold outside, the planner can
+turn on the car's climate in Home Assistant, with the same `HA_TOKEN`. In
+**Settings → Heating**:
+
+1. Choose the car's climate entity, e.g. `climate.car_climate` (the field
+   suggests Home Assistant's climate entities), and an outside temperature
+   sensor, e.g. `sensor.outside_temperature` (it suggests temperature
+   sensors). Without a recent outside reading, the weather forecast's lowest
+   temperature for the day is used.
+2. Set when to heat (below 3 °C, 15 minutes before the departure, to 20 °C by
+   default) and whether to ask on the phone first, while plugged in and while
+   unplugged. Asking needs phone notifications (above), with an administrator
+   token for the **Heat now** button. A **Car heating on** message each time
+   it turns on can be switched off under Settings → Notifications.
+3. Turn it on and save. The tab shows what the sensors read now and what it
+   would send. Once the climate entity is chosen, the Overview's car card
+   shows a badge with its state (Climate off, Heating, Cooling).
+
+It calls `climate.set_temperature` and then `climate.set_hvac_mode` (heat,
+else heat_cool, else auto) on that entity only, once per departure, and never
+turns it off: the car's own timer does. Each turn-on is in the activity log.
+`make test-live` lists climate entities and temperature sensors with what it
+would send, without turning anything on. The rules are in
+[AUTOMATION.md](AUTOMATION.md#car-heating).
 
 ## Install on your phone
 
@@ -516,7 +545,7 @@ internal/trips     merges manual, recurring, and calendar trips with local edits
 internal/calendar  iCal parsing, trip classification, sync, demo feed
 internal/routes    Google Routes client, stub, cache
 internal/evcc      EVCC client and stub
-internal/homeassistant  Home Assistant SoC reader and stub
+internal/homeassistant  Home Assistant SoC reader, notifications, car climate, and stubs
 internal/service   use cases and API view models
 internal/server    HTTP API and static UI
 internal/store     SQLite persistence and migrations

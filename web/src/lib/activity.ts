@@ -17,6 +17,7 @@ export const typeLabels: Record<ActivityType, string> = {
   evcc: 'EVCC plans and changes',
   advice: 'Advice',
   notification: 'Notifications',
+  heating: 'Car heating',
   api: 'External API calls',
   system: 'Maintenance',
 }
@@ -30,6 +31,7 @@ const subjectLabels: Record<string, string> = {
   adjustment: 'EVCC change',
   advice: 'Advice',
   notification: 'Notification',
+  heating: 'Car heating',
   system: 'Maintenance',
 }
 
@@ -132,12 +134,28 @@ const fieldLabels: Record<string, string> = {
   chargeIndicator: 'Charge indicator',
   before: 'Older than',
   deleted: 'Deleted',
+  belowC: 'Heat below (°C)',
+  leadMin: 'Minutes before departure',
+  climateEntity: 'Car climate',
+  outsideEntity: 'Outside temperature sensor',
+  targetC: 'Target temperature (°C)',
+  askPlugged: 'Ask while plugged in',
+  askUnplugged: 'Ask while unplugged',
+  climate: 'Climate',
+  outside: 'Outside',
+  outsideSource: 'Outside temperature from',
+  plugged: 'Plugged in',
+  heatingOn: 'Car heating on',
 }
 
 /** Label for a recorded field; "enabled" in advice settings is daily advice itself. */
 export function fieldLabel(key: string, e?: AuditEvent) {
   if (key === 'enabled' && e?.subjectType === 'settings')
-    return e.subjectId === 'notifications' ? 'Notifications' : 'Daily advice'
+    return e.subjectId === 'notifications'
+      ? 'Notifications'
+      : e.subjectId === 'heating'
+        ? 'Car heating'
+        : 'Daily advice'
   if (fieldLabels[key]) return fieldLabels[key]
   const words = key.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase()
   return words.charAt(0).toUpperCase() + words.slice(1)

@@ -3,6 +3,7 @@ import type { Block, ControlView, Day, Preview, SendOption } from '../api/types'
 import {
   aheadText,
   blockLabel,
+  climateLabel,
   controlLabel,
   dayLabel,
   dayName,
@@ -245,5 +246,23 @@ describe('plannedCost', () => {
     expect(plannedCost(preview({ slots: [] }))).toBeNull()
     expect(plannedCost(preview({ powerW: 0 }))).toBeNull()
     expect(plannedCost(preview({ available: false }))).toBeNull()
+  })
+})
+
+describe('climateLabel', () => {
+  const since = '2026-11-10T06:33:00Z'
+  it('says whether the car is heating, cooling, or off', () => {
+    expect(climateLabel({ mode: 'off', action: 'off', since }).text).toBe('Climate off')
+    expect(climateLabel({ mode: 'heat_cool', action: 'heating', since })).toEqual({
+      text: 'Heating',
+      tone: 'info',
+      icon: 'thermometer',
+    })
+    expect(climateLabel({ mode: 'heat_cool', action: 'cooling', since }).text).toBe('Cooling')
+    // Without hvac_action, the mode says it; on but idle is just on.
+    expect(climateLabel({ mode: 'heat', since }).text).toBe('Heating')
+    expect(climateLabel({ mode: 'cool', since }).text).toBe('Cooling')
+    expect(climateLabel({ mode: 'heat_cool', action: 'idle', since }).text).toBe('Climate on')
+    expect(climateLabel({ mode: 'off', since }).tone).toBe('muted')
   })
 })

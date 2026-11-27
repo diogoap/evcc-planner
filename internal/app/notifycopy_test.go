@@ -74,15 +74,17 @@ func TestNotificationCopyCoversEveryKind(t *testing.T) {
 	var list []service.NotificationCopy
 	ta.json("GET", "/api/notifications/copy", nil, http.StatusOK, &list)
 	kinds := map[string]bool{}
-	settings := []string{"test", "early", "urgent", "problems", "questions", "ready", "solar", "extra", "prices", "arrival", "evening", "planSent", "extraPlan"}
-	verbs := []string{model.VerbSnooze, model.VerbSkip, model.VerbView, model.VerbCount, model.VerbNoTrip}
+	settings := []string{"test", "early", "urgent", "problems", "questions", "ready", "solar", "extra", "prices", "arrival", "evening",
+		"planSent", "extraPlan", "heating", "heatingOn"}
+	verbs := []string{model.VerbSnooze, model.VerbSkip, model.VerbView, model.VerbCount, model.VerbNoTrip, model.VerbHeat}
 	for _, c := range list {
 		kinds[c.Kind] = true
 		// Every title starts with the app's tag and an emoji; all but the
-		// test and questions say when AI mode is on.
+		// test, questions, and car heating (not about charging) say when
+		// AI mode is on.
 		emoji, tagged := strings.CutPrefix(c.TitlePrefix, service.AppTag+" ")
 		label := service.AILabel
-		if c.Kind == model.NotifyTest || c.Kind == model.NotifyQuestion {
+		if c.Kind == model.NotifyTest || c.Kind == model.NotifyQuestion || c.Kind == model.NotifyHeatAsk || c.Kind == model.NotifyHeatOn {
 			label = ""
 		}
 		if !slices.Contains(settings, c.Setting) || len(c.Messages) == 0 || len(c.Buttons) == 0 ||
@@ -97,7 +99,8 @@ func TestNotificationCopyCoversEveryKind(t *testing.T) {
 	}
 	for _, k := range []string{model.NotifyTest, model.NotifyEarly, model.NotifyUrgent, model.NotifyLate, model.NotifyStopped,
 		model.NotifyUnplugged, model.NotifyMode, model.NotifyMissed, model.NotifyQuestion, model.NotifyReady, model.NotifySolar,
-		model.NotifyExtra, model.NotifyExtraPlan, model.NotifyArrived, model.NotifyPrices, model.NotifyInfo, model.NotifyEvening} {
+		model.NotifyExtra, model.NotifyExtraPlan, model.NotifyArrived, model.NotifyPrices, model.NotifyInfo, model.NotifyEvening,
+		model.NotifyPlanSent, model.NotifyHeatAsk, model.NotifyHeatOn} {
 		if !kinds[k] {
 			t.Errorf("no copy for %s", k)
 		}

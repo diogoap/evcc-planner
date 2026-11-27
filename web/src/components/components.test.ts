@@ -139,6 +139,22 @@ describe('ReadyCard', () => {
     expect(w.get('[data-testid=evcc-plan]').text()).toBe('None')
   })
 
+  it('shows car heating for the next departure while it is on', () => {
+    expect(ready(plan()).find('[data-testid=heating]').exists()).toBe(false)
+    const heating = {
+      enabled: true,
+      belowC: 3,
+      leadMin: 15,
+      targetC: 20,
+      askPlugged: false,
+      askUnplugged: true,
+    }
+    const w = ready(plan(), { ...status, heating })
+    expect(w.get('[data-testid=heating]').text()).toBe(
+      'Below 3 °C: heats to 20 °C at 07:33, before School drop-off · asks on the phone first',
+    )
+  })
+
   it('follows the car: charging, plugged in, ready, short of time, or no trips', () => {
     const charging = ready(plan(), { ...status, connected: true, charging: true, chargePowerW: 3680 })
     expect(charging.get('[data-testid=ready-headline]').text()).toBe('Charging for tomorrow 07:48')
@@ -171,6 +187,27 @@ describe('ReadyCard', () => {
     expect(at('home').get('[data-testid=location]').text()).toBe('Home')
     expect(at('not_home').get('[data-testid=location]').text()).toBe('Away')
     expect(at('Work').get('[data-testid=location]').text()).toBe('Work')
+  })
+
+  it("shows the car's climate from Home Assistant", () => {
+    expect(ready(plan()).find('[data-testid=climate]').exists()).toBe(false)
+    const since = '2026-11-10T06:33:00Z'
+    const off = ready(plan(), {
+      ...status,
+      climate: { mode: 'off', action: 'off', targetC: 18, currentC: 10, since },
+    })
+    expect(off.get('[data-testid=climate]').text()).toBe('Climate off')
+    expect(off.get('[data-testid=climate]').attributes('title')).toBe(
+      'Car climate from Home Assistant: off, 10 °C inside; since Tue 10 Nov, 07:33',
+    )
+    const heating = ready(plan(), {
+      ...status,
+      climate: { mode: 'heat_cool', action: 'heating', targetC: 20, currentC: 10, since },
+    })
+    expect(heating.get('[data-testid=climate]').text()).toBe('Heating')
+    expect(heating.get('[data-testid=climate]').attributes('title')).toBe(
+      'Car climate from Home Assistant: heat_cool, set to 20 °C, 10 °C inside; since Tue 10 Nov, 07:33',
+    )
   })
 
   it('shows a paused automatic plan, the plan in EVCC, and active extra plans', async () => {

@@ -31,9 +31,14 @@ type Integrations struct {
 	Notify     homeassistant.Notifier
 	Actions    homeassistant.ActionListener
 	NotifyNote string
-	Routes     *routes.Resolver
-	RoutesNote string // explains a stub fallback (e.g. missing API key)
-	Forecasts  Forecasts
+	// Climate reads the car's climate and the outside temperature, and
+	// turns the climate on (car heating); nil without a Home Assistant
+	// token (ClimateNote says why).
+	Climate     homeassistant.ClimateController
+	ClimateNote string
+	Routes      *routes.Resolver
+	RoutesNote  string // explains a stub fallback (e.g. missing API key)
+	Forecasts   Forecasts
 	// AI makes AI mode's decisions; nil without an OpenRouter key (AINote
 	// says why). Demo mode has a stand-in.
 	AI     aiplan.Decider

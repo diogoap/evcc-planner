@@ -66,6 +66,14 @@ notifications is in [AUTOMATION.md](AUTOMATION.md).
 - A chart below the week's charts shows the prices as a band (lowest to highest) with the average as a line. Wind, sun, driving (km, as bars), the energy the trips need, and the solar forecast (on the same kWh axis as the energy, to compare) can be added (all off by default). Periods: 1 week, 1 month (default), 3 months, 1 year, or everything. Your choices are remembered on the device. Up to a month, each day has dots: point at one to see its day and value.
 - The history is meant for later comparisons, such as today's prices against past prices.
 
+## Car heating
+
+- Off by default (Settings → Heating). When it's cold outside, it turns on the car's climate in Home Assistant a set time before each trip that leaves from home (15 minutes by default), so the car is warm and defrosted.
+- Cold means below a set temperature (3 °C by default) on an outside temperature sensor in Home Assistant. Without a recent reading (2 hours), it uses the weather forecast's lowest temperature for the day.
+- It sets the climate to a target temperature (20 °C by default, kept within what the car accepts) in its heating mode. Once per departure; never when the car isn't home or the climate is already on. It never turns it off: the car's own timer does.
+- It can ask first on the phone, separately while plugged in (off by default) and unplugged (on by default): "Heat the car?" with a **Heat now** button, also in quiet hours. Without an answer within 30 minutes, it stays off. Each time it turns on (by itself or after Heat now), the phone gets "Car heating on", with its own switch under Settings → Notifications (on by default). Both messages are cleared after 30 minutes.
+- The Overview's car card has a Heating row: when it will heat, or what it did ("On since 07:33 (2 °C outside)", "Not needed: 8 °C outside"). A badge next to Home/Away and Plugged in shows the car's climate from Home Assistant: Climate off, Heating, or Cooling (also when it was turned on elsewhere), read every minute once a climate entity is chosen. Settings → Heating shows what the sensors read now, what it would send, and recent decisions. Every change is in the activity log.
+
 ## Phone notifications
 
 - Sent through the Home Assistant Companion app; the buttons act on the planner.
@@ -77,7 +85,7 @@ notifications is in [AUTOMATION.md](AUTOMATION.md).
 - "Back home: plug in" when the car gets home from the day's last trip (by the car location sensor), unplugged, and still needs charging for the next trip, charge ahead, or charge extra. It comes in quiet hours too, unless its "Also in quiet hours" check is off (on by default).
 - Problems: charging stopped, unplugged early, EVCC not in Smart mode, target missed. Questions about unclear calendar events. An optional "ready" message. "Plug in for the sun".
 - Charge extra: "Plug in for charge extra" before its cheap hours when the car is home but unplugged (for a cheap night, just before quiet hours). Reminders to plug in for charge extra wait until the car is back from the last trip before its cheap hours. When the trip's plug-in reminder is due at the same time, both come in one message.
-- Quiet hours (23:00–07:00 by default). Each message is sent once and is cleared when you plug in.
+- Quiet hours (23:00–07:00 by default). Each message is sent once and is cleared when you plug in; car heating's messages come in quiet hours too and are cleared after 30 minutes.
 - A message that doesn't reach the phone is tried again after 2, 5, and 15 more minutes while it still matters. Settings shows it as "Trying again", and Connections shows the last failure.
 - Every title starts with "[EVCC Planner]" and an emoji, such as "[EVCC Planner] 🔌 Extra plan created". In AI mode, messages about charging end their title with "(🤖 AI mode)".
 - Settings → Notifications shows what each message says: hover or tap the info icon next to a setting to see its title, text, and buttons, with placeholders for what is filled in.

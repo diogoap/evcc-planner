@@ -70,10 +70,13 @@ func New(cfg *config.Config, log *slog.Logger) (*App, error) {
 		stub = evcc.NewStub(clk, cfg.Location)
 	}
 	phone := &homeassistant.NotifyStub{}
+	// The demo car's climate and an outside temperature sensor; their
+	// clock follows the service's.
+	climate := homeassistant.NewClimateStub(func() time.Time { return svc.Clock.Now() })
 	// Demo services can be made to fail on request (Settings → Connections).
 	var faults *demo.Faults
 	if cfg.Demo {
-		faults = &demo.Faults{Phone: phone}
+		faults = &demo.Faults{Phone: phone, Climate: climate}
 	}
 
 	var source calendar.Source = calendar.HTTPSource{
@@ -114,11 +117,12 @@ func New(cfg *config.Config, log *slog.Logger) (*App, error) {
 		}
 		i.Forecasts = forecasts(cfg, cs, clk, client)
 		i.AI, i.AINote = aiDecider(cfg, cs, client)
-		i.HA, i.HASensors, i.HANote = homeAssistant(cfg, cs, stub, func() time.Time { return svc.Clock.Now() })
+		i.HA, i.HASensors, i.HANote = homeAssistant(cfg, cs, stub, climate, func() time.Time { return svc.Clock.Now() })
 		if faults != nil && i.HA != nil {
 			i.HA = faults.HomeAssistant(i.HA)
 		}
 		i.Notify, i.Actions, i.NotifyNote = notifier(cfg, cs, phone)
+		i.Climate, i.ClimateNote = climateController(cfg, cs, climate)
 		return i
 	}
 	if cfg.Demo {
@@ -137,9 +141,13 @@ func New(cfg *config.Config, log *slog.Logger) (*App, error) {
 		return nil, err
 	}
 	srv := &server.Server{Svc: svc, Log: log, Demo: stub, Faults: faults}
+	if cfg.Demo && cfg.HomeAssistant.Mode == config.ModeStub {
+		srv.Climate = climate
+	}
 	if cfg.Demo {
 		srv.Reset = func(ctx context.Context) error {
 			faults.Clear()
+			climate.Reset()
 			if err := st.Reset(); err != nil {
 				return err
 			}
@@ -169,6 +177,10 @@ func New(cfg *config.Config, log *slog.Logger) (*App, error) {
 				return err
 			}
 			if err := svc.RefreshForecasts(ctx, true); err != nil {
+				return err
+			}
+			// The Overview's climate badge follows the reset demo car.
+			if err := svc.CheckHeating(ctx); err != nil {
 				return err
 			}
 			return svc.RecordHistory(ctx)
@@ -265,7 +277,7 @@ func aiDecider(cfg *config.Config, cs model.ConnectionSettings,
 // explains why there is none. The stub follows the demo car's battery (a
 // fixed one when EVCC is live). Local Home Assistant calls are not in the
 // activity log.
-func homeAssistant(cfg *config.Config, cs model.ConnectionSettings, car *evcc.Stub,
+func homeAssistant(cfg *config.Config, cs model.ConnectionSettings, car *evcc.Stub, climate *homeassistant.ClimateStub,
 	now func() time.Time) (homeassistant.Reader, homeassistant.SensorLister, string) {
 	ha := cfg.HomeAssistant
 	if ha.Mode == config.ModeStub {
@@ -273,7 +285,7 @@ func homeAssistant(cfg *config.Config, cs model.ConnectionSettings, car *evcc.St
 		if car != nil {
 			battery = car.Battery
 		}
-		s := homeassistant.Stub{Now: now, Car: battery}
+		s := homeassistant.Stub{Now: now, Car: battery, Climate: climate}
 		return s, s, ""
 	}
 	if ha.Token == "" {
@@ -306,6 +318,20 @@ func notifier(cfg *config.Config, cs model.ConnectionSettings, phone *homeassist
 	return c, c, ""
 }
 
+// climateController reads and turns on the car's climate for car heating,
+// or explains why it cannot. The stub is the demo car's climate.
+func climateController(cfg *config.Config, cs model.ConnectionSettings, climate *homeassistant.ClimateStub) (
+	homeassistant.ClimateController, string) {
+	ha := cfg.HomeAssistant
+	if ha.Mode == config.ModeStub {
+		return climate, ""
+	}
+	if ha.Token == "" {
+		return nil, "Set " + ha.TokenEnv + " to turn on the car's heating through Home Assistant"
+	}
+	return &homeassistant.HTTPClient{BaseURL: cs.HAURL, Token: ha.Token, HTTP: &http.Client{Timeout: cs.HATimeout()}}, ""
+}
+
 // knmiLabel names the three requests of a KNMI fetch.
 func knmiLabel(r *http.Request) string {
 	switch {
@@ -323,6 +349,10 @@ const forecastCheck = 15 * time.Minute
 
 // historyCheck is how often the day's history checks whether a save is due.
 const historyCheck = time.Minute
+
+// heatingCheck is how often car heating checks whether a departure's time
+// has come.
+const heatingCheck = time.Minute
 
 // StartJobs runs EVCC polling (restoring temporary EVCC changes, planning
 // when the car is plugged in, and AI mode's runs), Home Assistant SoC polling, calendar
@@ -400,6 +430,14 @@ func (a *App) StartJobs(ctx context.Context) (wait func()) {
 		}
 		if err := a.Service.AutoApply(audit.WithSource(ctx, model.SourceAutomation)); err != nil && ctx.Err() == nil {
 			a.Log.Warn("advice auto-apply failed", "err", err)
+		}
+	})
+	// Car heating decides once its time before a departure has come, and
+	// clears its messages after half an hour; apart from the EVCC check, so
+	// it also works while EVCC is unreachable.
+	a.every(ctx, &wg, "the car heating check", fixed(heatingCheck), func() {
+		if err := a.Service.CheckHeating(jobCtx); err != nil && ctx.Err() == nil {
+			a.Log.Warn("car heating check failed", "err", err)
 		}
 	})
 	// Saves only as the day starts and late in the evening (RecordHistory).

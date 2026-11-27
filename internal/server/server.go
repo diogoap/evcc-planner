@@ -23,6 +23,7 @@ import (
 	"github.com/diogoap/evcc-planner/internal/config"
 	"github.com/diogoap/evcc-planner/internal/demo"
 	"github.com/diogoap/evcc-planner/internal/evcc"
+	"github.com/diogoap/evcc-planner/internal/homeassistant"
 	"github.com/diogoap/evcc-planner/internal/model"
 	"github.com/diogoap/evcc-planner/internal/service"
 )
@@ -41,6 +42,9 @@ type Server struct {
 	Reset func(context.Context) error
 	// Faults makes demo services fail on request (demo mode only).
 	Faults *demo.Faults
+	// Climate is the demo car's climate and outside temperature (demo
+	// mode with the Home Assistant stub only).
+	Climate *homeassistant.ClimateStub
 }
 
 // Handler returns the full HTTP handler.
@@ -97,6 +101,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/ai/preview", s.previewAI)
 	mux.HandleFunc("GET /api/settings/notifications", s.getNotificationSettings)
 	mux.HandleFunc("PUT /api/settings/notifications", s.putNotificationSettings)
+	mux.HandleFunc("GET /api/settings/heating", s.getHeatingSettings)
+	mux.HandleFunc("PUT /api/settings/heating", s.putHeatingSettings)
+	mux.HandleFunc("GET /api/heating", s.heating)
 	mux.HandleFunc("GET /api/notifications", s.notifications)
 	mux.HandleFunc("GET /api/notifications/phones", s.phones)
 	mux.HandleFunc("GET /api/notifications/copy", s.notificationCopy)
@@ -119,6 +126,9 @@ func (s *Server) Handler() http.Handler {
 			writeJSON(w, http.StatusOK, s.Faults.List())
 		})
 		mux.HandleFunc("PUT /api/demo/faults", s.setDemoFault)
+	}
+	if s.Climate != nil && s.Reset != nil {
+		mux.HandleFunc("POST /api/demo/climate", s.demoClimate)
 	}
 	if s.Reset != nil {
 		mux.HandleFunc("POST /api/demo/notification-action", s.demoNotificationAction)
@@ -649,6 +659,76 @@ func (s *Server) putNotificationSettings(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	writeJSON(w, http.StatusOK, saved)
+}
+
+func (s *Server) getHeatingSettings(w http.ResponseWriter, r *http.Request) {
+	v, err := s.Svc.HeatingSettings()
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, v)
+}
+
+// putHeatingSettings decodes onto the saved settings, so a page loaded
+// before a new setting existed can still save.
+func (s *Server) putHeatingSettings(w http.ResponseWriter, r *http.Request) {
+	v, err := s.Svc.HeatingSettings()
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	if err := decode(r, &v); err != nil {
+		s.fail(w, err)
+		return
+	}
+	saved, err := s.Svc.SaveHeatingSettings(r.Context(), v)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, saved)
+}
+
+// heating is car heating's live view: the sensors now and recent decisions.
+func (s *Server) heating(w http.ResponseWriter, r *http.Request) {
+	v, err := s.Svc.Heating(r.Context())
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, v)
+}
+
+// demoClimate sets the demo outside temperature (or makes it unavailable)
+// and can turn the demo car's climate off, then checks car heating as its
+// job would.
+func (s *Server) demoClimate(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		OutsideC    *float64 `json:"outsideC"`
+		Unavailable bool     `json:"unavailable"`
+		ClimateOff  bool     `json:"climateOff"`
+	}
+	if err := decode(r, &in); err != nil {
+		s.fail(w, err)
+		return
+	}
+	switch {
+	case in.Unavailable:
+		s.Climate.SetOutside(nil, time.Time{})
+	case in.OutsideC != nil && (*in.OutsideC < -40 || *in.OutsideC > 45):
+		s.fail(w, service.ValidationError{Msg: "the outside temperature must be between -40 and 45 °C"})
+		return
+	case in.OutsideC != nil:
+		s.Climate.SetOutside(in.OutsideC, time.Time{})
+	}
+	if in.ClimateOff {
+		s.Climate.SetState("off")
+	}
+	if err := s.Svc.CheckHeating(r.Context()); err != nil {
+		s.Log.Warn("car heating check failed", "err", err)
+	}
+	s.heating(w, r)
 }
 
 func (s *Server) notifications(w http.ResponseWriter, r *http.Request) {

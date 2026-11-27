@@ -187,10 +187,14 @@ func (r *reminders) allowed(urgent bool) bool {
 }
 
 // allowedNow is allowed for a notification sent before: a back-home
-// reminder follows its own quiet-hours setting.
+// reminder follows its own quiet-hours setting, and car heating's messages
+// come in quiet hours too (the car is about to leave).
 func (r *reminders) allowedNow(n *model.Notification) bool {
-	if n.Kind == model.NotifyArrived {
+	switch n.Kind {
+	case model.NotifyArrived:
 		return r.arrivalAllowed()
+	case model.NotifyHeatAsk, model.NotifyHeatOn:
+		return true
 	}
 	return r.allowed(n.Urgent)
 }
@@ -316,22 +320,8 @@ func (r *reminders) location() *homeassistant.EntityState {
 		return r.loc
 	}
 	r.locRead = true
-	if r.settings.LocationEntity == "" {
-		return nil
-	}
-	sr, ok := r.s.Clients().Notify.(interface {
-		State(context.Context, string) (*homeassistant.EntityState, error)
-	})
-	if !ok {
-		return nil
-	}
-	e, err := sr.State(r.ctx, r.settings.LocationEntity)
-	if err != nil {
-		r.s.Log.Warn("car location sensor", "entity", r.settings.LocationEntity, "err", err)
-		return nil
-	}
-	r.loc = e
-	return e
+	r.loc = r.s.carLocation(r.ctx, r.settings.LocationEntity)
+	return r.loc
 }
 
 // carAway reports whether the optional car location sensor says the car

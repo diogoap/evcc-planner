@@ -73,18 +73,22 @@ type Service struct {
 	notifyMu   sync.Mutex
 	notifyPrev *notifyState
 
-	mu        sync.RWMutex
-	evccState *evcc.State
-	evccErr   error
-	evccAt    time.Time // last attempt
-	evccOKAt  time.Time // last success
-	haReading *homeassistant.Reading
-	haErr     error
-	haOKAt    time.Time
-	carLoc    *LocationView // from the optional car location sensor
-	consNote  consumptionNote
-	listenErr error // the notification button listener
-	listenOK  bool
+	// heatMu serializes car heating's check and its Heat now button.
+	heatMu sync.Mutex
+
+	mu         sync.RWMutex
+	evccState  *evcc.State
+	evccErr    error
+	evccAt     time.Time // last attempt
+	evccOKAt   time.Time // last success
+	haReading  *homeassistant.Reading
+	haErr      error
+	haOKAt     time.Time
+	carLoc     *LocationView  // from the optional car location sensor
+	carClimate *ClimateStatus // car heating's climate entity, for the Overview
+	consNote   consumptionNote
+	listenErr  error // the notification button listener
+	listenOK   bool
 	// The last notification send, while it failed: its error and time.
 	sendErr   error
 	sendErrAt time.Time

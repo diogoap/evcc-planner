@@ -679,6 +679,9 @@ type NotificationSettings struct {
 	// PlanSent says when the planner sends EVCC a plan for a departure by
 	// itself (On plug-in, Automatic, and AI mode), once per departure.
 	PlanSent bool `json:"planSent"`
+	// HeatingOn says when car heating turns the car's climate on, by itself
+	// or after Heat now.
+	HeatingOn bool `json:"heatingOn"`
 }
 
 // DefaultNotificationSettings are off, with the reminder rules ready.
@@ -686,7 +689,7 @@ func DefaultNotificationSettings() NotificationSettings {
 	return NotificationSettings{
 		Phones: []string{}, Early: true, EarlyLeadMin: 30, UrgentLeadMin: 30, QuietFrom: "23:00", QuietTo: "07:00",
 		UrgentInQuiet: true, SnoozeMin: 30, Problems: true, Questions: true, Solar: true, Extra: true, Arrival: true,
-		ArrivalInQuiet: true, Prices: true, EveningAt: "19:30", PlanSent: true, ExtraPlan: true,
+		ArrivalInQuiet: true, Prices: true, EveningAt: "19:30", PlanSent: true, ExtraPlan: true, HeatingOn: true,
 	}
 }
 
@@ -752,6 +755,93 @@ func (n NotificationSettings) Validate() error {
 	return nil
 }
 
+// HeatingSettings control car heating: before a departure from home, when
+// it is colder outside than BelowC, the car's climate is turned on LeadMin
+// minutes ahead, to TargetC, automatically or after a confirmation on the
+// phone (AskPlugged, AskUnplugged).
+type HeatingSettings struct {
+	Enabled bool    `json:"enabled"`
+	BelowC  float64 `json:"belowC"`
+	LeadMin int     `json:"leadMin"`
+	// ClimateEntity is the car's Home Assistant climate entity;
+	// OutsideEntity an outside temperature sensor (optional: without one,
+	// the weather forecast's lowest temperature for the day is used).
+	ClimateEntity string  `json:"climateEntity"`
+	OutsideEntity string  `json:"outsideEntity"`
+	TargetC       float64 `json:"targetC"`
+	// Ask first on the phone while the car is plugged in, and while it is
+	// unplugged (also when EVCC's data is too old to tell).
+	AskPlugged   bool `json:"askPlugged"`
+	AskUnplugged bool `json:"askUnplugged"`
+}
+
+// DefaultHeatingSettings: off; below 3 °C, 15 minutes ahead, to 20 °C,
+// asking first while unplugged.
+func DefaultHeatingSettings() HeatingSettings {
+	return HeatingSettings{BelowC: 3, LeadMin: 15, TargetC: 20, AskUnplugged: true}
+}
+
+// Validate reports the first invalid field.
+func (h HeatingSettings) Validate() error {
+	switch {
+	case h.BelowC < -20 || h.BelowC > 15:
+		return fmt.Errorf("heat below must be between -20 and 15 °C")
+	case h.LeadMin < 5 || h.LeadMin > 60:
+		return fmt.Errorf("minutes before departure must be between 5 and 60")
+	case h.TargetC < 10 || h.TargetC > 30:
+		return fmt.Errorf("the target temperature must be between 10 and 30 °C")
+	case h.ClimateEntity != "" && (!entityRe.MatchString(h.ClimateEntity) || !strings.HasPrefix(h.ClimateEntity, "climate.")):
+		return fmt.Errorf("the car's climate must be a climate entity, e.g. climate.car_climate")
+	case h.OutsideEntity != "" && (!entityRe.MatchString(h.OutsideEntity) || !strings.HasPrefix(h.OutsideEntity, "sensor.")):
+		return fmt.Errorf("the outside temperature must be a sensor, e.g. sensor.outside_temperature")
+	case h.Enabled && h.ClimateEntity == "":
+		return fmt.Errorf("choose the car's climate entity to turn car heating on")
+	}
+	return nil
+}
+
+// Car heating outcomes for a departure.
+const (
+	HeatHeated    = "heated"    // turned on automatically
+	HeatAsked     = "asked"     // asked on the phone; waiting for Heat now
+	HeatConfirmed = "confirmed" // turned on after Heat now
+	HeatNoAnswer  = "no_answer" // no answer within the time to answer
+	HeatWarm      = "warm"      // not cold enough
+	HeatSkipped   = "skipped"   // not done (Reason says why)
+	HeatFailed    = "failed"    // turning on failed (Reason says why)
+)
+
+// HeatingRun is car heating's decision for one departure, made once.
+type HeatingRun struct {
+	ID        int64     `json:"id"`
+	Key       string    `json:"key"` // "heat:" + the trip key, unique
+	TripKey   string    `json:"tripKey"`
+	Title     string    `json:"title"`
+	DepartAt  time.Time `json:"departAt"`
+	DecidedAt time.Time `json:"decidedAt"`
+	Outcome   string    `json:"outcome"`
+	Reason    string    `json:"reason,omitempty"`
+	// The outside temperature it decided on, and where it came from:
+	// "sensor" or "forecast" (the day's lowest).
+	OutsideC      *float64   `json:"outsideC,omitempty"`
+	OutsideSource string     `json:"outsideSource,omitempty"`
+	BelowC        float64    `json:"belowC"`
+	Plugged       *bool      `json:"plugged,omitempty"` // nil: unknown (EVCC's data too old)
+	TargetC       float64    `json:"targetC,omitempty"`
+	HVACMode      string     `json:"hvacMode,omitempty"`
+	HeatedAt      *time.Time `json:"heatedAt,omitempty"`
+	// NotificationID is the question (asked) or the message (heated).
+	NotificationID int64 `json:"notificationId,omitempty"`
+	// Tries counts failed attempts to turn it on; Retry is set while a
+	// failed one is tried again.
+	Tries int  `json:"tries,omitempty"`
+	Retry bool `json:"retry,omitempty"`
+}
+
+// Final reports whether the decision stands: no question waiting and no
+// attempt to try again.
+func (r HeatingRun) Final() bool { return r.Outcome != HeatAsked && !r.Retry }
+
 // DayStats are one local day's figures, kept indefinitely for history:
 // EVCC's published prices (EUR/kWh incl. VAT; PriceHours is how much of the
 // day they cover), the driving planned that day and the energy it uses, and
@@ -792,6 +882,8 @@ const (
 	NotifyEvening   = "evening"    // charging is planned tonight: an extra reminder in the evening
 	NotifyPlanSent  = "plan_sent"  // a trip plan was sent to EVCC automatically, once per departure
 	NotifyInfo      = "info"       // a follow-up, e.g. after Skip trip
+	NotifyHeatAsk   = "heat_ask"   // car heating: heat the car before the departure? (Heat now)
+	NotifyHeatOn    = "heat_on"    // car heating was turned on automatically
 
 	NotifyPending  = "pending" // a message about a plan, sent at the end of the check (only the highest)
 	NotifySent     = "sent"
@@ -805,6 +897,7 @@ const (
 	VerbView   = "view"
 	VerbCount  = "count"
 	VerbNoTrip = "notrip"
+	VerbHeat   = "heat" // turn the car heating on now
 )
 
 // Notification is a message to the phones, kept to avoid duplicates, to

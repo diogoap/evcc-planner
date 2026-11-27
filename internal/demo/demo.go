@@ -30,6 +30,13 @@ func Seed(s *store.Store, now time.Time, loc *time.Location, defaults model.Sett
 	if err := s.SaveNotificationSettings(notify); err != nil {
 		return err
 	}
+	// Car heating is off, with the demo car's climate and outside
+	// temperature chosen.
+	heating := model.DefaultHeatingSettings()
+	heating.ClimateEntity, heating.OutsideEntity = homeassistant.StubClimateEntity, homeassistant.StubOutsideEntity
+	if err := s.SaveHeatingSettings(heating); err != nil {
+		return err
+	}
 	for _, p := range []model.Place{
 		{Name: "School", Address: "Schoolstraat 1, Demo Town"},
 		{Name: "Office", Address: "Office Park 38, Demo City"},
