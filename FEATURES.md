@@ -68,11 +68,11 @@ notifications is in [AUTOMATION.md](AUTOMATION.md).
 
 ## Car heating
 
-- Off by default (Settings → Heating). When it's cold outside, it turns on the car's climate in Home Assistant a set time before each trip that leaves from home (15 minutes by default), so the car is warm and defrosted.
+- Off by default (Settings → Climate). When it's cold outside, it turns on the car's climate in Home Assistant a set time before each trip that leaves from home (15 minutes by default), so the car is warm and defrosted.
 - Cold means below a set temperature (3 °C by default) on an outside temperature sensor in Home Assistant. Without a recent reading (2 hours), it uses the weather forecast's lowest temperature for the day.
 - It sets the climate to a target temperature (20 °C by default, kept within what the car accepts) in its heating mode. Once per departure; never when the car isn't home or the climate is already on. It never turns it off: the car's own timer does.
 - It can ask first on the phone, separately while plugged in (off by default) and unplugged (on by default): "Heat the car?" with a **Heat now** button, also in quiet hours. Without an answer within 30 minutes, it stays off. Each time it turns on (by itself or after Heat now), the phone gets "Car heating on", with its own switch under Settings → Notifications (on by default). Both messages are cleared after 30 minutes.
-- The Overview's car card has a Heating row: when it will heat, or what it did ("On since 07:33 (2 °C outside)", "Not needed: 8 °C outside"). A badge next to Home/Away and Plugged in shows the car's climate from Home Assistant: Climate off, Heating, or Cooling (also when it was turned on elsewhere), read every minute once a climate entity is chosen. Settings → Heating shows what the sensors read now, what it would send, and recent decisions. Every change is in the activity log.
+- The Overview's car card has a Heating row: when it will heat, or what it did ("On since 07:33 (2 °C outside)", "Not needed: 8 °C outside"). It ends with the temperature inside the car. A badge next to Home/Away and Plugged in shows the car's climate from Home Assistant: Off, Heating, or Cooling (also when it was turned on elsewhere), read every minute once a climate entity is chosen. Settings → Climate shows what the sensors read now, what it would send, and recent decisions. Every change is in the activity log.
 
 ## Phone notifications
 

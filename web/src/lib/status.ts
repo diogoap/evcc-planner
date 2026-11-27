@@ -132,15 +132,15 @@ export function locationLabel(l: CarLocation): { text: string; tone: Tone; icon:
   return { text: l.state, tone: 'info', icon: 'route' }
 }
 
-/** The car's climate as a badge: Climate off, Heating, Cooling, or Climate on (idle, fan, …). */
+/** The car's climate as a badge: Off, Heating, Cooling, or On (idle, fan, …). */
 export function climateLabel(c: CarClimate): { text: string; tone: Tone; icon: IconName } {
   const icon = 'thermometer'
-  if (c.mode === 'off') return { text: 'Climate off', tone: 'muted', icon }
+  if (c.mode === 'off') return { text: 'Off', tone: 'muted', icon }
   if (c.action === 'heating' || (!c.action && c.mode === 'heat'))
     return { text: 'Heating', tone: 'info', icon }
   if (c.action === 'cooling' || (!c.action && c.mode === 'cool'))
     return { text: 'Cooling', tone: 'info', icon }
-  return { text: 'Climate on', tone: 'info', icon }
+  return { text: 'On', tone: 'info', icon }
 }
 
 /** The planner's expected charging slots for the automatic target, while it still needs charging. */

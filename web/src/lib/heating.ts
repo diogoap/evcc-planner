@@ -53,27 +53,25 @@ export function outcomeTone(r: HeatingRun): HeatingTone {
 
 /**
  * The Overview's Heating row: the next departure's decision once made, else
- * when it would heat for it (asking first by whether the car is plugged in
- * now), else the latest decision. Null while car heating is off and nothing
- * was decided recently.
+ * when it would heat for it, else the latest decision; with the temperature
+ * inside the car (the climate's current_temperature) when known. Null while
+ * car heating is off and nothing was decided recently.
  */
 export function heatingLine(
   h: HeatingSummary | undefined,
   next: Pick<Block, 'tripKeys' | 'firstTitle' | 'departAt'> | null,
-  connected: boolean,
+  insideC?: number | null,
 ): { text: string; tone: HeatingTone } | null {
   if (!h) return null
+  const inside = insideC != null ? ` · ${temp(insideC)} in the car` : ''
   const last = h.last
   if (last && (!next || last.tripKey === next.tripKeys[0] || !h.enabled)) {
-    return { text: outcomeText(last), tone: outcomeTone(last) }
+    return { text: outcomeText(last) + inside, tone: outcomeTone(last) }
   }
   if (!next || !h.enabled) return null
   const at = new Date(new Date(next.departAt).getTime() - h.leadMin * 60000)
-  const asks = connected ? h.askPlugged : h.askUnplugged
   return {
-    text:
-      `Below ${temp(h.belowC)}: heats to ${temp(h.targetC)} at ${clock(at)}, before ${next.firstTitle}` +
-      (asks ? ' · asks on the phone first' : ''),
+    text: `Below ${temp(h.belowC)}: heats to ${temp(h.targetC)} at ${clock(at)}, before ${next.firstTitle}${inside}`,
     tone: 'muted',
   }
 }

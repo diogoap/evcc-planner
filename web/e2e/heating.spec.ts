@@ -16,7 +16,7 @@ test('turn on car heating, confirm it on the phone, and see it on the Overview',
   expect((await page.request.put('/api/settings/notifications', { data: on })).status()).toBe(200)
 
   await page.goto('/settings')
-  await page.getByRole('link', { name: 'Heating', exact: true }).click()
+  await page.getByRole('link', { name: 'Climate', exact: true }).click()
   const form = page.getByRole('region', { name: 'Car heating' })
   await expect(page.getByTestId('heating-climateEntity')).toHaveValue('climate.demo_car')
   await expect(page.getByTestId('heating-outside')).toContainText('2 °C')
@@ -51,6 +51,7 @@ test('turn on car heating, confirm it on the phone, and see it on the Overview',
 
   await page.goto('/')
   await expect(page.getByTestId('heating')).toContainText('On since 19:00, after Heat now')
+  await expect(page.getByTestId('heating')).toContainText('10 °C in the car')
   // The car's climate from Home Assistant, next to Home and Unplugged.
   await expect(page.getByTestId('climate')).toHaveText('Heating')
   await page.goto('/activity')

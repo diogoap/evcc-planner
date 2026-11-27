@@ -309,7 +309,7 @@ Scope:
 <details>
 <summary><b>Car heating</b> ✅ (2026-11-27)</summary>
 
-Before a departure from home, when it is cold outside, turn on the car's climate in Home Assistant, by itself or after a confirmation on the phone. UI: Settings → Heating, and a Heating row on the Overview. Every rule: [AUTOMATION.md](AUTOMATION.md#car-heating).
+Before a departure from home, when it is cold outside, turn on the car's climate in Home Assistant, by itself or after a confirmation on the phone. UI: Settings → Climate (named for cooling later), and a Heating row and a climate badge on the Overview. Every rule: [AUTOMATION.md](AUTOMATION.md#car-heating).
 
 - **Decisions (2026-11-27):** only departures from home; the outside temperature comes from a Home Assistant sensor (the car's own temperature isn't enough), else the weather forecast's lowest for the day; asking first is set separately for plugged in and unplugged; the question and the "Car heating on" message come in quiet hours too, and both are cleared after 30 minutes; once per departure; the planner never turns the climate off (the car's timer does), and leaves one that is already on alone; failures show in the app only.
 - **Built:** `climate.set_temperature` then `climate.set_hvac_mode` through the existing Home Assistant client (`internal/homeassistant/climate.go`, with a demo climate stub); a per-minute job apart from the EVCC check; one decision per departure in a new `heating_runs` table; a pure `decideHeating`; the **Heat now** button; `heating.on` and `heating.skip` in the activity log. Tests: the decision table, API tests for each outcome, the live test only reads.

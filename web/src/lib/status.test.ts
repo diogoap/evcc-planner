@@ -252,7 +252,7 @@ describe('plannedCost', () => {
 describe('climateLabel', () => {
   const since = '2026-11-10T06:33:00Z'
   it('says whether the car is heating, cooling, or off', () => {
-    expect(climateLabel({ mode: 'off', action: 'off', since }).text).toBe('Climate off')
+    expect(climateLabel({ mode: 'off', action: 'off', since }).text).toBe('Off')
     expect(climateLabel({ mode: 'heat_cool', action: 'heating', since })).toEqual({
       text: 'Heating',
       tone: 'info',
@@ -262,7 +262,7 @@ describe('climateLabel', () => {
     // Without hvac_action, the mode says it; on but idle is just on.
     expect(climateLabel({ mode: 'heat', since }).text).toBe('Heating')
     expect(climateLabel({ mode: 'cool', since }).text).toBe('Cooling')
-    expect(climateLabel({ mode: 'heat_cool', action: 'idle', since }).text).toBe('Climate on')
+    expect(climateLabel({ mode: 'heat_cool', action: 'idle', since }).text).toBe('On')
     expect(climateLabel({ mode: 'off', since }).tone).toBe('muted')
   })
 })

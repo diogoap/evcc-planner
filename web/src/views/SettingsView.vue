@@ -28,14 +28,15 @@ import { controlLabel, keepsPlan } from '../lib/status'
 import { useUnsaved } from '../lib/unsaved'
 import { mutate, notify, refresh, resumeAutomaticPlans, state } from '../store'
 
-type Tab = 'home' | 'planning' | 'advice' | 'places' | 'notifications' | 'heating' | 'connections'
+type Tab = 'home' | 'planning' | 'advice' | 'places' | 'notifications' | 'climate' | 'connections'
 const tabs: [Tab, string][] = [
   ['home', 'Home & vehicle'],
   ['planning', 'Planning'],
   ['advice', 'Advice'],
   ['places', 'Places'],
   ['notifications', 'Notifications'],
-  ['heating', 'Heating'],
+  // The car's climate: heating before departures (cooling later).
+  ['climate', 'Climate'],
   ['connections', 'Connections'],
 ]
 // Advice has two parts: the automatic rules' (Manual, On plug-in,
@@ -641,7 +642,7 @@ async function applyDemo() {
 
     <NotificationSettingsForm v-if="tab === 'notifications'" @dirty="(d) => (childDirty = d)" />
 
-    <HeatingSettingsForm v-if="tab === 'heating'" @dirty="(d) => (childDirty = d)" />
+    <HeatingSettingsForm v-if="tab === 'climate'" @dirty="(d) => (childDirty = d)" />
 
     <div v-if="tab === 'connections'" class="stack">
       <section class="card">

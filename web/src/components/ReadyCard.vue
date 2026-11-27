@@ -29,9 +29,10 @@ const sourceName: Record<SoCSource, string> = { evcc: 'EVCC', homeassistant: 'Ho
 
 const soc = computed(() => props.plan.soc)
 const next = computed(() => props.plan.next)
-// Car heating: the next departure's decision, or when it would heat.
+// Car heating: the next departure's decision, or when it would heat, with
+// the temperature inside the car.
 const heating = computed(() =>
-  heatingLine(props.status?.heating, props.plan.next, props.status?.connected ?? false),
+  heatingLine(props.status?.heating, props.plan.next, props.status?.climate?.currentC),
 )
 const fromHA = computed(() => soc.value.source === 'homeassistant')
 // Each source's reading and its age, for the tooltip.

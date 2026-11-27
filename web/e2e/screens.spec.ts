@@ -114,13 +114,13 @@ const screens: Screen[] = [
     },
   },
   {
-    name: 'settings-heating',
+    name: 'settings-climate',
     open: async (page) => {
       const heating = await (await page.request.get('/api/settings/heating')).json()
       expect(
         (await page.request.put('/api/settings/heating', { data: { ...heating, enabled: true } })).status(),
       ).toBe(200)
-      await settingsTab('Heating')(page)
+      await settingsTab('Climate')(page)
       await expect(page.getByTestId('heating-now')).toBeVisible()
     },
   },

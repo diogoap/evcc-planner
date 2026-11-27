@@ -718,7 +718,7 @@ questions, ready messages, and solar reminders on or off separately.
 
 Before a departure from home, when it is cold outside, the planner turns on
 the car's climate in Home Assistant, so the car is warm and defrosted when you
-leave. It is off until you turn it on under Settings → Heating.
+leave. It is off until you turn it on under Settings → Climate.
 
 ```mermaid
 flowchart TD
@@ -763,7 +763,7 @@ flowchart TD
   it turns the climate on right away. Without an answer within 30 minutes
   it is cleared from the phone and the heating stays off. Asking needs phone
   notifications with a phone, and an administrator token for the button;
-  without them, a departure that would ask is skipped, and Settings → Heating
+  without them, a departure that would ask is skipped, and Settings → Climate
   says so.
 - **Car heating on:** each time it turns the climate on, by itself or after
   Heat now, "Car heating on" goes to the phone, also in quiet hours, and is
@@ -787,12 +787,13 @@ flowchart TD
 | Failed | "Failed: home assistant unreachable; trying again" | `heating.on`, as a failure |
 
 Before the departure's time, the Overview says when it would heat: "Below
-3 °C: heats to 20 °C at 07:33, before School drop-off · asks on the phone
-first".
+3 °C: heats to 20 °C at 07:33, before School drop-off · 10 °C in the car".
+Every Heating row ends with the temperature inside the car (the climate's
+`current_temperature`) when Home Assistant reports it.
 
 **Climate badge:** with a climate entity chosen (also while car heating is
 off), the car card shows the climate's state next to Home/Away and Plugged
-in: **Climate off**, **Heating**, **Cooling**, or **Climate on** (idle, fan).
+in: a thermometer with **Off**, **Heating**, **Cooling**, or **On** (idle, fan).
 It comes from the entity's `hvac_action` when it reports one, else its mode,
 and is read every minute with the heating check, and right after the planner
 turns the climate on. When the entity can't be read, the badge is left out.
@@ -814,7 +815,7 @@ Settings → Connections.
 | Calendars | No sync for 3 syncs (3 hours by default) | Trips stay as last synced | Its connection ("6 events, last synced 19:00"), health line |
 | Tibber outlook | No fetch for 2 days; contents older than 8 days or past their week | Advice keeps the last outlook; from old contents with confidence 1 | Its connection and the health line (fetch); the advice's sources (contents) |
 | KNMI weather | No fetch for 2 days; an outlook issued more than 36 hours ago | Advice keeps the last outlook, marked stale | Its connection and the health line (fetch); the advice's sources (outlook) |
-| Outside temperature (car heating) | 2 hours | The weather forecast's lowest for the day is used | Settings → Heating ("sensor not used: … was last updated 05:12") |
+| Outside temperature (car heating) | 2 hours | The weather forecast's lowest for the day is used | Settings → Climate ("sensor not used: … was last updated 05:12") |
 | AI plan | 30 hours | The automatic rules apply | AI plan row on the Overview |
 | Background checks | A check hasn't run for 3 of its intervals, and at least 10 minutes | Nothing automatic happens until the planner is restarted; `/readyz` fails, so the container shows as unhealthy | Health line ("The EVCC check last ran at 10:12"), Docker or Portainer |
 
@@ -907,7 +908,7 @@ Settings → **Notifications**:
 | Plans sent | On (On plug-in, Automatic, and AI mode; once per departure) |
 | Car heating on | On (when car heating turns the climate on, by itself or after Heat now; also in quiet hours) |
 
-Settings → **Heating** (any trip plan mode, also Manual):
+Settings → **Climate** (any trip plan mode, also Manual):
 
 | Setting | Default | Notes |
 | --- | --- | --- |

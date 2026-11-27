@@ -92,7 +92,7 @@ const toggles: {
   {
     key: 'heatingOn',
     label: 'Car heating on',
-    hint: 'Tells you when car heating (Settings → Heating) turns the car’s climate on, by itself or after Heat now. Also in quiet hours, as the car is about to leave; cleared after 30 minutes.',
+    hint: 'Tells you when car heating (Settings → Climate) turns the car’s climate on, by itself or after Heat now. Also in quiet hours, as the car is about to leave; cleared after 30 minutes.',
   },
 ]
 

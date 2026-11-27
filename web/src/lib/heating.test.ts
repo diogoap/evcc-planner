@@ -64,18 +64,21 @@ describe('car heating texts', () => {
     expect(outcomeTone(run({ outcome: 'warm' }))).toBe('muted')
   })
 
-  it("shows the next departure's decision, else when it would heat", () => {
-    expect(heatingLine(undefined, next, false)).toBeNull()
-    expect(heatingLine(summary({}), next, false)).toEqual({
-      text: 'Below 3 °C: heats to 20 °C at 07:33, before School drop-off · asks on the phone first',
+  it("shows the next departure's decision, else when it would heat, with the car's inside temperature", () => {
+    expect(heatingLine(undefined, next, 10)).toBeNull()
+    expect(heatingLine(summary({}), next, 10)).toEqual({
+      text: 'Below 3 °C: heats to 20 °C at 07:33, before School drop-off · 10 °C in the car',
       tone: 'muted',
     })
-    // Plugged in it turns on by itself (the default).
-    expect(heatingLine(summary({}), next, true)?.text).toBe(
+    // Without the climate's reading, no inside temperature.
+    expect(heatingLine(summary({}), next)?.text).toBe(
       'Below 3 °C: heats to 20 °C at 07:33, before School drop-off',
     )
     const decided = summary({ last: run({ heatedAt: '2026-11-10T06:33:00Z' }) })
-    expect(heatingLine(decided, next, false)).toEqual({ text: 'On since 07:33 (2 °C outside)', tone: 'ok' })
+    expect(heatingLine(decided, next, 14.2)).toEqual({
+      text: 'On since 07:33 (2 °C outside) · 14.2 °C in the car',
+      tone: 'ok',
+    })
     // An earlier departure's decision gives way to the next departure.
     const later = {
       ...next,
@@ -83,13 +86,11 @@ describe('car heating texts', () => {
       firstTitle: 'School pickup',
       departAt: '2026-11-10T13:33:00Z',
     }
-    expect(heatingLine(decided, later, false)?.text).toBe(
-      'Below 3 °C: heats to 20 °C at 14:18, before School pickup · asks on the phone first',
+    expect(heatingLine(decided, later)?.text).toBe(
+      'Below 3 °C: heats to 20 °C at 14:18, before School pickup',
     )
     // Turned off: only a recent decision shows.
-    expect(heatingLine(summary({ enabled: false }), next, false)).toBeNull()
-    expect(heatingLine({ ...decided, enabled: false }, later, false)?.text).toBe(
-      'On since 07:33 (2 °C outside)',
-    )
+    expect(heatingLine(summary({ enabled: false }), next)).toBeNull()
+    expect(heatingLine({ ...decided, enabled: false }, later)?.text).toBe('On since 07:33 (2 °C outside)')
   })
 })

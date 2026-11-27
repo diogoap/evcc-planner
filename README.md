@@ -278,7 +278,7 @@ hours (23:00–07:00 by default), and snoozing are in
 
 Before a trip that leaves from home, when it is cold outside, the planner can
 turn on the car's climate in Home Assistant, with the same `HA_TOKEN`. In
-**Settings → Heating**:
+**Settings → Climate**:
 
 1. Choose the car's climate entity, e.g. `climate.car_climate` (the field
    suggests Home Assistant's climate entities), and an outside temperature
@@ -292,7 +292,7 @@ turn on the car's climate in Home Assistant, with the same `HA_TOKEN`. In
    it turns on can be switched off under Settings → Notifications.
 3. Turn it on and save. The tab shows what the sensors read now and what it
    would send. Once the climate entity is chosen, the Overview's car card
-   shows a badge with its state (Climate off, Heating, Cooling).
+   shows a badge with its state (Off, Heating, Cooling).
 
 It calls `climate.set_temperature` and then `climate.set_hvac_mode` (heat,
 else heat_cool, else auto) on that entity only, once per departure, and never

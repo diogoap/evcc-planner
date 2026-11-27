@@ -149,9 +149,10 @@ describe('ReadyCard', () => {
       askPlugged: false,
       askUnplugged: true,
     }
-    const w = ready(plan(), { ...status, heating })
+    const climate = { mode: 'off', action: 'off', currentC: 9.5, since: '2026-11-09T16:00:00Z' }
+    const w = ready(plan(), { ...status, heating, climate })
     expect(w.get('[data-testid=heating]').text()).toBe(
-      'Below 3 °C: heats to 20 °C at 07:33, before School drop-off · asks on the phone first',
+      'Below 3 °C: heats to 20 °C at 07:33, before School drop-off · 9.5 °C in the car',
     )
   })
 
@@ -196,7 +197,7 @@ describe('ReadyCard', () => {
       ...status,
       climate: { mode: 'off', action: 'off', targetC: 18, currentC: 10, since },
     })
-    expect(off.get('[data-testid=climate]').text()).toBe('Climate off')
+    expect(off.get('[data-testid=climate]').text()).toBe('Off')
     expect(off.get('[data-testid=climate]').attributes('title')).toBe(
       'Car climate from Home Assistant: off, 10 °C inside; since Tue 10 Nov, 07:33',
     )
